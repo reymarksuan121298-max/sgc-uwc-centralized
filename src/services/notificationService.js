@@ -255,6 +255,9 @@ class NotificationService {
     return await this.dispatchSystemNotification(title, {
       body,
       tag: `stl-chat-${roomId || senderId || 'global'}`,
+      actions: [
+        { action: 'open', title: '💬 Open Chat' }
+      ],
       data: {
         type: 'CHAT_MESSAGE',
         senderName,

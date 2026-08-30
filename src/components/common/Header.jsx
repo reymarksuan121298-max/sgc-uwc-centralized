@@ -536,7 +536,7 @@ export default function Header({
 
           {/* MESSENGER ACTIVE USERS DROPDOWN */}
           {isMiniWidgetOpen && (
-            <div className="absolute right-0 top-full mt-2 w-84 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3">
+            <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3 max-h-[82vh] overflow-y-auto">
               
               {/* Header Bar */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
@@ -820,7 +820,7 @@ export default function Header({
 
           {/* NOTIFICATION CENTER DROPDOWN PANEL (Matches UI Mockup) */}
           {isNotificationOpen && (
-            <div className="absolute right-0 top-full mt-2 w-[calc(100vw-24px)] max-w-sm sm:w-[380px] bg-white border border-slate-100 rounded-3xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col max-h-[520px]">
+            <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[380px] bg-white border border-slate-100 rounded-3xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col max-h-[82vh] sm:max-h-[520px]">
               
               {/* Clean Mockup Header */}
               <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100/90 bg-white shrink-0">
@@ -947,7 +947,7 @@ export default function Header({
 
           {/* COLLAPSIBLE PROFILE DROPDOWN MENU */}
           {isProfileOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3.5">
+            <div className="fixed left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-full sm:mt-2 sm:w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3.5">
               
               {/* Profile Header */}
               <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
