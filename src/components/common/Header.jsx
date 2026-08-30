@@ -3,10 +3,13 @@ import {
   Menu, RefreshCw, MessageSquare, Bell, Search, 
   CheckCircle2, ArrowRight, X, Sparkles, ExternalLink,
   Users, Building2, ShieldCheck, UserCheck, Circle,
-  ChevronDown, LogOut, User, Shield, Plus
+  ChevronDown, LogOut, User, Shield, Plus,
+  Volume2, VolumeX, ShieldAlert, CheckCheck, Trash2,
+  Sliders, BellOff, Info, Check
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole } from '../../utils/permissions';
+import { notificationService } from '../../services/notificationService';
 import CreateGroupChatModal from '../chat/CreateGroupChatModal';
 import AgentMascotAvatar from '../chat/AgentMascotAvatar';
 
@@ -32,6 +35,7 @@ const getUserAvatarColor = (name = '', subOffice = '') => {
 
 export default function Header({ 
   activeTab, 
+  onSelectTab = null,
   onToggleSidebar, 
   onSync, 
   loading,
@@ -39,10 +43,21 @@ export default function Header({
   onLogout,
   pendingTicketsChatCount = 0,
   onOpenTicketChat = null,
-  onOpenBot = null
+  onOpenBot = null,
+  notifications = [],
+  onMarkNotificationRead = null,
+  onMarkAllNotificationsRead = null,
+  onClearNotifications = null
 }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMiniWidgetOpen, setIsMiniWidgetOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [notificationTab, setNotificationTab] = useState('all'); // 'all' | 'chat' | 'audit'
+  const [permissionStatus, setPermissionStatus] = useState(() => notificationService.getPermissionStatus());
+  const [notifSettings, setNotifSettings] = useState(() => {
+    const userKey = currentUser?.id || currentUser?.username || 'default';
+    return notificationService.getSettings(userKey);
+  });
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [userSearch, setUserSearch] = useState('');
@@ -127,6 +142,7 @@ export default function Header({
 
   const profileRef = useRef(null);
   const messengerRef = useRef(null);
+  const notificationRef = useRef(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -137,10 +153,86 @@ export default function Header({
       if (messengerRef.current && !messengerRef.current.contains(e.target)) {
         setIsMiniWidgetOpen(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(e.target)) {
+        setIsNotificationOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  const userKey = currentUser?.id || currentUser?.username || 'default';
+
+  // Request browser web push notification permission
+  const handleRequestPermission = async () => {
+    const res = await notificationService.requestPermission();
+    setPermissionStatus(res);
+    if (res === 'granted') {
+      notificationService.playTone('chat', userKey);
+    }
+  };
+
+  // Toggle notification settings
+  const handleToggleSound = () => {
+    const nextVal = !notifSettings.sound;
+    const updated = notificationService.saveSettings(userKey, { sound: nextVal });
+    setNotifSettings(updated);
+    if (nextVal) notificationService.playTone('chat', userKey);
+  };
+
+  const handleToggleChatNotifs = () => {
+    const updated = notificationService.saveSettings(userKey, { chatNotifications: !notifSettings.chatNotifications });
+    setNotifSettings(updated);
+  };
+
+  const handleToggleAuditNotifs = () => {
+    const updated = notificationService.saveSettings(userKey, { auditNotifications: !notifSettings.auditNotifications });
+    setNotifSettings(updated);
+  };
+
+  // Click on a notification item
+  const handleClickNotificationItem = (notif) => {
+    if (!notif) return;
+    if (onMarkNotificationRead) {
+      onMarkNotificationRead(notif.id);
+    }
+    setIsNotificationOpen(false);
+
+    if (notif.type === 'chat') {
+      if (onOpenTicketChat) {
+        if (notif.roomId) {
+          onOpenTicketChat({
+            id: notif.roomId,
+            name: notif.senderName || 'Chat Room',
+            sub_office: notif.subOffice || '',
+            isGroup: String(notif.roomId).startsWith('group-')
+          });
+        } else {
+          onOpenTicketChat({
+            id: notif.senderId || notif.senderName,
+            username: notif.senderName,
+            full_name: notif.senderName,
+            sub_office: notif.subOffice || ''
+          });
+        }
+      }
+    } else if (notif.type === 'audit') {
+      if (onSelectTab) {
+        onSelectTab('audit_logs');
+      }
+    }
+  };
+
+  const unreadNotificationsCount = useMemo(() => {
+    return (notifications || []).filter(n => !n.read).length;
+  }, [notifications]);
+
+  const filteredNotifications = useMemo(() => {
+    const list = notifications || [];
+    if (notificationTab === 'chat') return list.filter(n => n.type === 'chat');
+    if (notificationTab === 'audit') return list.filter(n => n.type === 'audit');
+    return list;
+  }, [notifications, notificationTab]);
 
   // Fetch all active users from database
   const fetchActiveUsers = async () => {
@@ -645,18 +737,276 @@ export default function Header({
           )}
         </div>
 
-        {/* NOTIFICATIONS BELL */}
-        <div className="relative hidden sm:block">
+        {/* NOTIFICATIONS CENTER BELL & DROPDOWN */}
+        <div className="relative" ref={notificationRef}>
           <button
             type="button"
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-full transition-all cursor-pointer relative"
-            title="System Notifications"
+            onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+            className={`p-2 rounded-full transition-all cursor-pointer relative border ${
+              isNotificationOpen
+                ? 'bg-blue-50/90 text-[#002B66] border-[#002B66]/30 ring-2 ring-[#002B66]/15'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 border-slate-200'
+            }`}
+            title="System & Chat Notifications"
           >
             <Bell size={17} />
-            <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-mono text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-              2
-            </span>
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-mono text-[9px] font-black min-w-4 h-4 px-1 rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+              </span>
+            )}
           </button>
+
+          {/* NOTIFICATION CENTER DROPDOWN / MOBILE POPUP PANEL */}
+          {isNotificationOpen && (
+            <>
+              {/* Mobile Backdrop Overlay */}
+              <div 
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] sm:hidden animate-in fade-in duration-150"
+                onClick={() => setIsNotificationOpen(false)}
+              />
+
+              <div className="fixed inset-x-2.5 top-14 bottom-6 sm:bottom-auto sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 max-h-[85vh] sm:max-h-[540px] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col">
+              
+              {/* Header */}
+              <div className="p-3.5 bg-gradient-to-r from-[#001D47] to-[#002B66] text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-[#FFD700]">
+                    <Bell size={15} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs tracking-tight uppercase flex items-center gap-1.5">
+                      <span>Notifications</span>
+                      {unreadNotificationsCount > 0 && (
+                        <span className="bg-[#FFD700] text-[#002B66] text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+                          {unreadNotificationsCount} new
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-[10px] text-blue-200/80 font-medium">Real-time chat & audit log feed</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {/* Sound Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleSound}
+                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                      notifSettings.sound ? 'text-[#FFD700] hover:bg-white/10' : 'text-slate-400 hover:bg-white/10'
+                    }`}
+                    title={notifSettings.sound ? 'Notification Chimes: ON (Click to Mute)' : 'Notification Chimes: MUTED (Click to Enable)'}
+                  >
+                    {notifSettings.sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                  </button>
+
+                  {/* Mark All As Read */}
+                  {unreadNotificationsCount > 0 && onMarkAllNotificationsRead && (
+                    <button
+                      type="button"
+                      onClick={onMarkAllNotificationsRead}
+                      className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                      title="Mark all as read"
+                    >
+                      <CheckCheck size={15} />
+                    </button>
+                  )}
+
+                  {/* Clear All */}
+                  {(notifications || []).length > 0 && onClearNotifications && (
+                    <button
+                      type="button"
+                      onClick={onClearNotifications}
+                      className="p-1.5 text-blue-200 hover:text-rose-300 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                      title="Clear notification history"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+
+                  {/* Close */}
+                  <button
+                    type="button"
+                    onClick={() => setIsNotificationOpen(false)}
+                    className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer ml-0.5"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Web Push Permission Banner */}
+              {permissionStatus !== 'granted' && (
+                <div className="bg-amber-50 border-b border-amber-200/80 p-2.5 px-3 flex items-center justify-between gap-2 shrink-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                    <p className="text-[11px] text-amber-900 font-semibold truncate">
+                      Enable Web Push for background alerts
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRequestPermission}
+                    className="bg-[#002B66] text-[#FFD700] hover:bg-[#001D47] font-black text-[10px] uppercase px-2.5 py-1 rounded-md shadow-2xs shrink-0 cursor-pointer transition-all active:scale-95"
+                  >
+                    Allow
+                  </button>
+                </div>
+              )}
+
+              {/* Category Filter Tabs */}
+              <div className="flex border-b border-slate-100 bg-slate-50/70 p-1 gap-1 text-[11px] font-bold shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setNotificationTab('all')}
+                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                    notificationTab === 'all'
+                      ? 'bg-white text-[#002B66] shadow-2xs font-extrabold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  All ({(notifications || []).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationTab('chat')}
+                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                    notificationTab === 'chat'
+                      ? 'bg-white text-blue-700 shadow-2xs font-extrabold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <MessageSquare size={12} />
+                  <span>Chats ({((notifications || []).filter(n => n.type === 'chat')).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationTab('audit')}
+                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                    notificationTab === 'audit'
+                      ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Shield size={12} />
+                  <span>Audit ({((notifications || []).filter(n => n.type === 'audit')).length})</span>
+                </button>
+              </div>
+
+              {/* Notification List Scroll Area */}
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 min-h-[160px] max-h-[320px]">
+                {filteredNotifications.length === 0 ? (
+                  <div className="py-10 px-4 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                      <BellOff size={22} />
+                    </div>
+                    <h5 className="font-bold text-slate-700 text-xs">No notifications yet</h5>
+                    <p className="text-[11px] text-slate-400 max-w-[220px] mx-auto">
+                      Incoming chat messages and audit trail activities will appear here in real-time.
+                    </p>
+                  </div>
+                ) : (
+                  filteredNotifications.map((notif) => {
+                    const isUnread = !notif.read;
+                    const isChat = notif.type === 'chat';
+
+                    return (
+                      <div
+                        key={notif.id || notif.timestamp}
+                        onClick={() => handleClickNotificationItem(notif)}
+                        className={`p-3 hover:bg-slate-50 transition-colors cursor-pointer flex items-start gap-2.5 group ${
+                          isUnread ? 'bg-blue-50/40 border-l-3 border-[#002B66]' : ''
+                        }`}
+                      >
+                        {/* Icon / Avatar */}
+                        <div className="shrink-0 mt-0.5">
+                          {isChat ? (
+                            <div className="w-8 h-8 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center font-black text-xs font-mono shadow-2xs">
+                              {(notif.senderName || 'U')[0].toUpperCase()}
+                            </div>
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 border border-purple-200 flex items-center justify-center shadow-2xs">
+                              <ShieldAlert size={15} />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Text Details */}
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <h5 className="font-extrabold text-slate-900 text-xs truncate">
+                              {notif.title || (isChat ? notif.senderName : notif.action)}
+                            </h5>
+                            <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                              {formatMsgTime(notif.timestamp)}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+                            {notif.message || notif.details || ''}
+                          </p>
+
+                          <div className="flex items-center gap-1.5 pt-0.5 text-[9px] font-mono">
+                            {notif.subOffice && (
+                              <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold">
+                                {notif.subOffice}
+                              </span>
+                            )}
+                            {notif.action && (
+                              <span className="bg-purple-50 text-purple-700 border border-purple-200/60 px-1.5 py-0.2 rounded font-bold uppercase">
+                                {notif.action.replace(/_/g, ' ')}
+                              </span>
+                            )}
+                            {isUnread && (
+                              <span className="text-[#002B66] font-black text-[9px] ml-auto">
+                                • Unread
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Arrow on Hover */}
+                        <div className="shrink-0 text-slate-300 group-hover:text-[#002B66] transition-colors self-center">
+                          <ArrowRight size={14} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Notification Center Footer Settings */}
+              <div className="bg-slate-50 border-t border-slate-100 p-2.5 px-3 flex items-center justify-between text-[10px] font-semibold text-slate-500 shrink-0">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1 cursor-pointer hover:text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={notifSettings.chatNotifications}
+                      onChange={handleToggleChatNotifs}
+                      className="rounded text-[#002B66] focus:ring-0 cursor-pointer w-3 h-3"
+                    />
+                    <span>Chat Alerts</span>
+                  </label>
+
+                  <label className="flex items-center gap-1 cursor-pointer hover:text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={notifSettings.auditNotifications}
+                      onChange={handleToggleAuditNotifs}
+                      className="rounded text-[#002B66] focus:ring-0 cursor-pointer w-3 h-3"
+                    />
+                    <span>Audit Alerts</span>
+                  </label>
+                </div>
+
+                <span className="font-mono text-[9px] text-slate-400">
+                  {permissionStatus === 'granted' ? '🟢 Push Active' : '⚪ Push Inactive'}
+                </span>
+              </div>
+
+            </div>
+          </>
+        )}
         </div>
 
         {/* COLLAPSIBLE USER PROFILE */}
