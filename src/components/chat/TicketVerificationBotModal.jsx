@@ -34,6 +34,62 @@ export default function TicketVerificationBotModal({
   const [isUploading, setIsUploading] = useState(false);
   const [windowMode, setWindowMode] = useState('docked'); // 'docked' | 'expanded' | 'minimized'
   const [copiedId, setCopiedId] = useState(null);
+  const [modalPos, setModalPos] = useState({ x: null, y: null });
+  const modalDragRef = useRef(null);
+  const modalDragData = useRef({ startX: 0, startY: 0, initX: 0, initY: 0, moved: false });
+
+  const handleHeaderPointerDown = (e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (clientX === undefined || clientY === undefined) return;
+
+    const el = modalDragRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+
+    modalDragData.current = {
+      startX: clientX,
+      startY: clientY,
+      initX: rect.left,
+      initY: rect.top,
+      moved: false
+    };
+
+    const handlePointerMove = (moveEvent) => {
+      const curX = moveEvent.clientX ?? moveEvent.touches?.[0]?.clientX;
+      const curY = moveEvent.clientY ?? moveEvent.touches?.[0]?.clientY;
+      if (curX === undefined || curY === undefined) return;
+
+      const deltaX = curX - modalDragData.current.startX;
+      const deltaY = curY - modalDragData.current.startY;
+
+      if (Math.hypot(deltaX, deltaY) > 5) {
+        modalDragData.current.moved = true;
+      }
+
+      if (modalDragData.current.moved) {
+        const maxX = window.innerWidth - rect.width - 10;
+        const maxY = window.innerHeight - rect.height - 10;
+        const newX = Math.max(10, Math.min(maxX, modalDragData.current.initX + deltaX));
+        const newY = Math.max(10, Math.min(maxY, modalDragData.current.initY + deltaY));
+        setModalPos({ x: newX, y: newY });
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+  };
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -216,16 +272,31 @@ export default function TicketVerificationBotModal({
   const isExpanded = windowMode === 'expanded';
   const userDisplayName = currentUser?.full_name || currentUser?.username || formatRoleName(currentUser?.role) || 'Master Super Administrator';
 
+  const modalStyle = modalPos.x !== null && modalPos.y !== null ? {
+    left: `${modalPos.x}px`,
+    top: `${modalPos.y}px`,
+    bottom: 'auto',
+    right: 'auto',
+    position: 'fixed'
+  } : {};
+
   return (
     <div 
-      className={`fixed bottom-4 sm:bottom-6 right-3 sm:right-6 z-[99999] flex flex-col overflow-hidden bg-[#F4F6F9] text-slate-900 border border-slate-300/90 rounded-2xl sm:rounded-3xl shadow-[0_24px_65px_-12px_rgba(0,43,102,0.35)] transition-all duration-300 animate-in slide-in-from-bottom-5 ${
+      ref={modalDragRef}
+      style={modalStyle}
+      className={`fixed ${modalPos.x === null ? 'bottom-4 sm:bottom-6 right-3 sm:right-6' : ''} z-[99999] flex flex-col overflow-hidden bg-[#F4F6F9] text-slate-900 border border-slate-300/90 rounded-2xl sm:rounded-3xl shadow-[0_24px_65px_-12px_rgba(0,43,102,0.35)] transition-all duration-300 animate-in slide-in-from-bottom-5 ${
         isExpanded 
           ? 'w-[calc(100vw-1.5rem)] sm:w-[560px] md:w-[680px] h-[82vh] max-h-[850px]' 
           : 'w-[calc(100vw-1.5rem)] sm:w-[440px] md:w-[480px] h-[640px] max-h-[calc(100vh-3.5rem)]'
       }`}
     >
-      {/* HEADER */}
-      <div className="bg-[#002B66] text-white px-4 py-3 flex items-center justify-between gap-2 shrink-0 border-b border-blue-900/80 shadow-xs">
+      {/* HEADER (Draggable on desktop & mobile) */}
+      <div 
+        onMouseDown={handleHeaderPointerDown}
+        onTouchStart={handleHeaderPointerDown}
+        className="bg-[#002B66] text-white px-4 py-3 flex items-center justify-between gap-2 shrink-0 border-b border-blue-900/80 shadow-xs cursor-move select-none touch-none"
+        title="Drag header to move window"
+      >
         <div className="flex items-center gap-3 min-w-0">
           <AgentMascotAvatar size="md" showStatus={true} />
           <div className="min-w-0">

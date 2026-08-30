@@ -591,13 +591,10 @@ export default function App() {
                 read: false
               };
 
-              // 1. Append to notification center feed
+              // 1. Append to upper-right notification center feed
               appendNotification(chatNotif);
 
-              // 2. Trigger in-app floating banner popup (Mobile & Desktop)
-              triggerNotificationPopup(chatNotif);
-
-              // 3. Dispatch Web Push / Browser notification + audio chime
+              // 2. Dispatch Web Push / Browser notification + audio chime
               notificationService.sendChatNotification({
                 senderName: sender,
                 senderId,
@@ -630,7 +627,6 @@ export default function App() {
                 setPendingTicketsChatCount(0);
               } else {
                 setPendingTicketsChatCount(prev => prev + 1);
-                showToast(`💬 ${sender}: "${msgSnippet.slice(0, 45)}${msgSnippet.length > 45 ? '...' : ''}"`);
               }
             }
           } else {
@@ -1158,19 +1154,9 @@ export default function App() {
         onNavigateToSettlement={handleNavigateToSettlement}
       />
 
-      {/* Floating Agent Maria Verifier Bot Launcher */}
+      {/* Floating Draggable Agent Maria Verifier Bot Launcher */}
       {!isBotOpen && openChats.length === 0 && currentUser && (
-        <button
-          type="button"
-          onClick={() => setIsBotOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex flex-col items-center group cursor-pointer hover:scale-105 active:scale-95 transition-transform animate-in fade-in"
-          title="Open Agent Maria Verifier Bot"
-        >
-          <AgentMascotAvatar size="lg" showStatus={true} />
-          <span className="mt-1 bg-[#FFD700] text-[#002B66] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md shadow-lg tracking-wider border border-[#002B66]/20">
-            VERIFIER BOT
-          </span>
-        </button>
+        <DraggableBotLauncher onClick={() => setIsBotOpen(true)} />
       )}
 
       {/* Standalone Reusable Confirmation Modal */}
@@ -1203,5 +1189,106 @@ export default function App() {
         onCopyTransId={handleCopyTransId}
       />
     </>
+  );
+}
+
+// Draggable Floating Verifier Bot Launcher Component
+function DraggableBotLauncher({ onClick }) {
+  const [pos, setPos] = useState({ x: null, y: null });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef(null);
+  const dragDataRef = useRef({ startX: 0, startY: 0, initX: 0, initY: 0, moved: false });
+
+  const handlePointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (clientX === undefined || clientY === undefined) return;
+
+    const el = dragRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+
+    dragDataRef.current = {
+      startX: clientX,
+      startY: clientY,
+      initX: rect.left,
+      initY: rect.top,
+      moved: false
+    };
+
+    const handlePointerMove = (moveEvent) => {
+      const curX = moveEvent.clientX ?? moveEvent.touches?.[0]?.clientX;
+      const curY = moveEvent.clientY ?? moveEvent.touches?.[0]?.clientY;
+      if (curX === undefined || curY === undefined) return;
+
+      const deltaX = curX - dragDataRef.current.startX;
+      const deltaY = curY - dragDataRef.current.startY;
+
+      if (Math.hypot(deltaX, deltaY) > 5) {
+        dragDataRef.current.moved = true;
+        setIsDragging(true);
+      }
+
+      if (dragDataRef.current.moved) {
+        const maxX = window.innerWidth - rect.width - 10;
+        const maxY = window.innerHeight - rect.height - 10;
+        const newX = Math.max(10, Math.min(maxX, dragDataRef.current.initX + deltaX));
+        const newY = Math.max(10, Math.min(maxY, dragDataRef.current.initY + deltaY));
+        setPos({ x: newX, y: newY });
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+      setTimeout(() => setIsDragging(false), 50);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+  };
+
+  const handleClick = (e) => {
+    if (dragDataRef.current.moved || isDragging) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onClick();
+  };
+
+  const style = pos.x !== null && pos.y !== null ? {
+    left: `${pos.x}px`,
+    top: `${pos.y}px`,
+    bottom: 'auto',
+    right: 'auto',
+    position: 'fixed'
+  } : {};
+
+  return (
+    <div
+      ref={dragRef}
+      onMouseDown={handlePointerDown}
+      onTouchStart={handlePointerDown}
+      style={style}
+      className={`fixed ${pos.x === null ? 'bottom-6 right-6' : ''} z-40 flex flex-col items-center select-none cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 transition-transform animate-in fade-in touch-none`}
+      title="Drag anywhere or click to open Agent Maria Verifier Bot"
+    >
+      <button
+        type="button"
+        onClick={handleClick}
+        className="flex flex-col items-center group pointer-events-auto"
+      >
+        <AgentMascotAvatar size="lg" showStatus={true} />
+        <span className="mt-1 bg-[#FFD700] text-[#002B66] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md shadow-lg tracking-wider border border-[#002B66]/20 shadow-blue-950/20">
+          VERIFIER BOT
+        </span>
+      </button>
+    </div>
   );
 }

@@ -223,7 +223,7 @@ export default function TicketVerificationChatModal({
   // Clear seen state when switching contacts
   useEffect(() => {
     setPartnerSeenInfo(null);
-  }, [activeContact, activeGroup]);
+  }, [activeContact]);
 
   // Auto clear partner typing state after timeout
   useEffect(() => {
@@ -378,27 +378,7 @@ export default function TicketVerificationChatModal({
       realtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [isOpen, activeContact, activeGroup, currentUser]);
-
-  // Broadcast seen status when reading conversation
-  useEffect(() => {
-    if (!isOpen || (!activeContact && !activeGroup) || displayedMessages.length === 0) return;
-    const lastMsg = displayedMessages[displayedMessages.length - 1];
-    const isFromOther = lastMsg && (lastMsg.sender_id !== (currentUser?.id || currentUser?.username) && lastMsg.sender_name !== currentUser?.full_name);
-    
-    if (realtimeChannelRef.current && isFromOther) {
-      realtimeChannelRef.current.send({
-        type: 'broadcast',
-        event: 'message_seen',
-        payload: {
-          userId: currentUser?.id || currentUser?.username,
-          name: currentUser?.full_name || currentUser?.username,
-          lastMsgId: lastMsg.id,
-          seenAt: new Date().toISOString()
-        }
-      }).catch(() => {});
-    }
-  }, [isOpen, displayedMessages, activeContact, activeGroup, currentUser]);
+  }, [isOpen, activeContact, currentUser]);
 
   useEffect(() => {
     scrollToBottom();
@@ -553,6 +533,26 @@ export default function TicketVerificationChatModal({
       return false;
     });
   }, [messages, isGroupChat, activeContact, directRoomId, currentUser]);
+
+  // Broadcast seen status when reading conversation
+  useEffect(() => {
+    if (!isOpen || !activeContact || displayedMessages.length === 0) return;
+    const lastMsg = displayedMessages[displayedMessages.length - 1];
+    const isFromOther = lastMsg && (lastMsg.sender_id !== (currentUser?.id || currentUser?.username) && lastMsg.sender_name !== currentUser?.full_name);
+    
+    if (realtimeChannelRef.current && isFromOther) {
+      realtimeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'message_seen',
+        payload: {
+          userId: currentUser?.id || currentUser?.username,
+          name: currentUser?.full_name || currentUser?.username,
+          lastMsgId: lastMsg.id,
+          seenAt: new Date().toISOString()
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen, displayedMessages, activeContact, currentUser]);
 
   // 5. Send Message (Handles 1-on-1 Direct Messages and Group Channels)
   const handleSendMessage = async (textToSend = null) => {
@@ -948,7 +948,7 @@ export default function TicketVerificationChatModal({
                     (partnerTyping && idx === lastMyMsgIndex)
                   );
 
-                  const partnerDisplayName = isGroupChat ? (activeGroup?.name || 'Members') : (activeContact?.full_name || activeContact?.username || 'Partner');
+                  const partnerDisplayName = activeContact?.name || activeContact?.full_name || activeContact?.username || 'Partner';
                   const partnerInitial = partnerDisplayName ? partnerDisplayName[0].toUpperCase() : 'P';
 
                   return (
