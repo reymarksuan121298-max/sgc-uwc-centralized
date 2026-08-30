@@ -213,19 +213,106 @@ export default function TicketVerificationChatModal({
     }
   };
 
+  // Live Typing & AFK States
+  const [partnerTyping, setPartnerTyping] = useState(null); // { name, lastAt }
+  const [partnerStatus, setPartnerStatus] = useState('active'); // 'active' | 'afk' | 'afk_typing'
+  const realtimeChannelRef = useRef(null);
+  const typingTimerRef = useRef(null);
+
+  // Auto clear partner typing state after timeout
+  useEffect(() => {
+    if (!partnerTyping) return;
+    const interval = setInterval(() => {
+      if (Date.now() - partnerTyping.lastAt > 3500) {
+        setPartnerTyping(null);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [partnerTyping]);
+
+  // Global AFK Activity Tracker for local user
+  useEffect(() => {
+    let inactivityTimer = null;
+
+    const notifyActivity = () => {
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'presence_status',
+          payload: {
+            userId: currentUser?.id,
+            username: currentUser?.username,
+            status: 'active'
+          }
+        });
+      }
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        if (realtimeChannelRef.current) {
+          realtimeChannelRef.current.send({
+            type: 'broadcast',
+            event: 'presence_status',
+            payload: {
+              userId: currentUser?.id,
+              username: currentUser?.username,
+              status: inputText.trim().length > 0 ? 'afk_typing' : 'afk'
+            }
+          });
+        }
+      }, 60000); // 1 minute inactivity = AFK
+    };
+
+    window.addEventListener('mousemove', notifyActivity);
+    window.addEventListener('keydown', notifyActivity);
+    window.addEventListener('click', notifyActivity);
+    window.addEventListener('focus', notifyActivity);
+    window.addEventListener('blur', () => {
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'presence_status',
+          payload: {
+            userId: currentUser?.id,
+            username: currentUser?.username,
+            status: inputText.trim().length > 0 ? 'afk_typing' : 'afk'
+          }
+        });
+      }
+    });
+
+    return () => {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      window.removeEventListener('mousemove', notifyActivity);
+      window.removeEventListener('keydown', notifyActivity);
+      window.removeEventListener('click', notifyActivity);
+      window.removeEventListener('focus', notifyActivity);
+    };
+  }, [inputText, currentUser]);
+
   useEffect(() => {
     if (isOpen) {
       fetchMessages();
     }
   }, [isOpen]);
 
-  // 2. Real-time Subscription for Incoming Tickets & Live Verifications
+  // 2. Real-time Subscription for Incoming Tickets, Live Verifications, and Typing/AFK Broadcasts
   useEffect(() => {
     if (!isOpen) return;
 
-    const channelName = `rt_chat_${activeContact?.id || activeContact?.username || 'general'}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const myId = String(currentUser?.id || currentUser?.username || 'me').toLowerCase();
+    const theirId = String(activeContact?.id || activeContact?.username || 'them').toLowerCase();
+    const isGroup = Boolean(activeContact?.isGroup || activeContact?.member_ids || activeContact?.id?.toString().startsWith('group-'));
+
+    const channelName = isGroup
+      ? `rt_chat_${activeContact?.id || 'group-all-branches-ssr'}`
+      : `rt_chat_${[myId, theirId].sort().join('_')}`;
+
     const channel = supabase
-      .channel(channelName)
+      .channel(channelName, {
+        config: {
+          broadcast: { self: false }
+        }
+      })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ticket_verification_chats' },
@@ -245,12 +332,37 @@ export default function TicketVerificationChatModal({
           }
         }
       )
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload && payload.userId !== currentUser?.id && payload.username !== currentUser?.username) {
+          if (payload.isTyping) {
+            setPartnerTyping({
+              name: payload.name || payload.username || 'Partner',
+              lastAt: Date.now()
+            });
+            setPartnerStatus('typing');
+          } else {
+            setPartnerTyping(null);
+            setPartnerStatus(payload.status || 'active');
+          }
+        }
+      })
+      .on('broadcast', { event: 'presence_status' }, ({ payload }) => {
+        if (payload && payload.userId !== currentUser?.id && payload.username !== currentUser?.username) {
+          setPartnerStatus(payload.status || 'active');
+          if (payload.status === 'afk' || payload.status === 'afk_typing') {
+            setPartnerTyping(null);
+          }
+        }
+      })
       .subscribe();
 
+    realtimeChannelRef.current = channel;
+
     return () => {
+      realtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [isOpen, activeContact]);
+  }, [isOpen, activeContact, currentUser]);
 
   useEffect(() => {
     scrollToBottom();
@@ -278,6 +390,42 @@ export default function TicketVerificationChatModal({
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
     if (file) await processImageFile(file);
+  };
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setInputText(val);
+
+    if (realtimeChannelRef.current) {
+      realtimeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: {
+          userId: currentUser?.id,
+          username: currentUser?.username,
+          name: currentUser?.full_name || currentUser?.username,
+          isTyping: val.length > 0
+        }
+      });
+    }
+
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      if (realtimeChannelRef.current) {
+        const stillHasDraft = val.trim().length > 0;
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: {
+            userId: currentUser?.id,
+            username: currentUser?.username,
+            name: currentUser?.full_name || currentUser?.username,
+            isTyping: false,
+            status: stillHasDraft ? 'afk_typing' : 'active'
+          }
+        });
+      }
+    }, 2800);
   };
 
   // 4. Clipboard Paste Handler (Ctrl + V / Cmd + V)
@@ -430,6 +578,21 @@ export default function TicketVerificationChatModal({
       setFilePreview(null);
       setOcrResult(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: {
+            userId: currentUser?.id,
+            username: currentUser?.username,
+            name: currentUser?.full_name || currentUser?.username,
+            isTyping: false,
+            status: 'active'
+          }
+        });
+      }
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     } catch (err) {
       console.error('Send error:', err);
     } finally {
@@ -617,11 +780,30 @@ export default function TicketVerificationChatModal({
                   </span>
                 )}
               </div>
-              <p className="text-[9.5px] text-emerald-600 font-bold leading-none mt-0.5 truncate flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 inline-block animate-pulse" />
-                <span>Active now</span>
-                <span className="text-slate-300">•</span>
-                <span className="text-slate-400 font-medium truncate">{chatHeaderSubOffice}</span>
+              <p className="text-[9.5px] font-bold leading-none mt-0.5 truncate flex items-center gap-1">
+                {partnerTyping ? (
+                  <span className="text-[#0084FF] font-bold flex items-center gap-1 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0084FF]" />
+                    <span>{isGroupChat ? `${partnerTyping.name} is typing...` : 'Typing...'}</span>
+                  </span>
+                ) : partnerStatus === 'afk_typing' ? (
+                  <span className="text-amber-600 font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 ring-2 ring-amber-200" />
+                    <span>Away (idle while typing)</span>
+                  </span>
+                ) : partnerStatus === 'afk' ? (
+                  <span className="text-amber-600 font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    <span>Away / AFK</span>
+                  </span>
+                ) : (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 inline-block animate-pulse" />
+                    <span className="text-emerald-600">Active now</span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-400 font-medium truncate">{chatHeaderSubOffice}</span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -849,6 +1031,33 @@ export default function TicketVerificationChatModal({
                   );
                 })
               )}
+              {/* PARTNER TYPING INDICATOR BUBBLE */}
+              {partnerTyping && (
+                <div className="flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-150 py-1">
+                  <div className="w-6 h-6 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center text-[9px] font-black font-mono shrink-0 shadow-xs">
+                    {(partnerTyping.name || 'U')[0].toUpperCase()}
+                  </div>
+                  <div className="bg-slate-100 border border-slate-200/90 rounded-2xl rounded-bl-xs px-3 py-2 flex items-center gap-1.5 shadow-2xs">
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0084FF] animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0084FF] animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0084FF] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-medium italic ml-1">
+                      {isGroupChat ? `${partnerTyping.name} is typing...` : 'typing...'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* PARTNER AFK WHILE TYPING NOTIFICATION */}
+              {!partnerTyping && partnerStatus === 'afk_typing' && (
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl w-fit mx-auto animate-in fade-in">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="font-semibold">{chatHeaderName} is away (idle while typing)</span>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
 
@@ -931,7 +1140,7 @@ export default function TicketVerificationChatModal({
                   type="text"
                   placeholder={`Message ${chatHeaderName}... (Ctrl+V to paste)`}
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={handleInputChange}
                   onPaste={handlePaste}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
