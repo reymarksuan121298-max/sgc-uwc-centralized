@@ -102,7 +102,7 @@ export default function Login({ onLoginSuccess }) {
         {/* ========================================================================= */}
         {/* LEFT COLUMN: 3D ANIMATED ROBOT CHARACTER (THREE.JS WEBGL) */}
         {/* ========================================================================= */}
-        <div className="w-full lg:w-1/2 flex items-center justify-center relative min-h-[340px] sm:min-h-[420px] lg:min-h-[500px]">
+        <div className="hidden lg:flex lg:w-1/2 items-center justify-center relative lg:min-h-[500px]">
           <Robot3DScene isLit={isLit} isTyping={Boolean(username || password)} />
         </div>
 
