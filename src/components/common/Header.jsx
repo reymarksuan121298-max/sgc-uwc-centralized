@@ -454,8 +454,11 @@ export default function Header({
         <div className="relative" ref={messengerRef}>
           <button
             type="button"
-            onClick={() => {
-              setIsMiniWidgetOpen(!isMiniWidgetOpen);
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMiniWidgetOpen(prev => !prev);
+              setIsNotificationOpen(false);
+              setIsProfileOpen(false);
               if (pendingTicketsChatCount > 0 && currentUser) {
                 const userKey = currentUser.id || currentUser.username || 'user';
                 localStorage.setItem(`stl_chat_last_read_${userKey}`, new Date().toISOString());
@@ -741,7 +744,12 @@ export default function Header({
         <div className="relative" ref={notificationRef}>
           <button
             type="button"
-            onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsNotificationOpen(prev => !prev);
+              setIsMiniWidgetOpen(false);
+              setIsProfileOpen(false);
+            }}
             className={`p-2 rounded-full transition-all cursor-pointer relative border ${
               isNotificationOpen
                 ? 'bg-blue-50/90 text-[#002B66] border-[#002B66]/30 ring-2 ring-[#002B66]/15'
@@ -757,16 +765,9 @@ export default function Header({
             )}
           </button>
 
-          {/* NOTIFICATION CENTER DROPDOWN / MOBILE POPUP PANEL */}
+          {/* NOTIFICATION CENTER DROPDOWN PANEL */}
           {isNotificationOpen && (
-            <>
-              {/* Mobile Backdrop Overlay */}
-              <div 
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] sm:hidden animate-in fade-in duration-150"
-                onClick={() => setIsNotificationOpen(false)}
-              />
-
-              <div className="fixed inset-x-2.5 top-14 bottom-6 sm:bottom-auto sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 max-h-[85vh] sm:max-h-[540px] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col">
+            <div className="absolute right-0 top-full mt-2 w-[calc(100vw-24px)] max-w-sm sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col max-h-[540px]">
               
               {/* Header */}
               <div className="p-3.5 bg-gradient-to-r from-[#001D47] to-[#002B66] text-white flex items-center justify-between shrink-0">
@@ -1005,15 +1006,19 @@ export default function Header({
               </div>
 
             </div>
-          </>
-        )}
+          )}
         </div>
 
         {/* COLLAPSIBLE USER PROFILE */}
         <div className="relative pl-1 border-l border-slate-200" ref={profileRef}>
           <button
             type="button"
-            onClick={() => setIsProfileOpen(!isProfileOpen)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsProfileOpen(prev => !prev);
+              setIsNotificationOpen(false);
+              setIsMiniWidgetOpen(false);
+            }}
             className={`flex items-center gap-1 p-1 rounded-xl transition-all cursor-pointer ${
               isProfileOpen 
                 ? 'bg-blue-50/80 ring-2 ring-[#002B66]/20' 
