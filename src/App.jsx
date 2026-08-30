@@ -502,6 +502,34 @@ export default function App() {
     return () => { isMounted = false; };
   }, [currentUser]);
 
+  // Service Worker and Notification Action Listener initialization
+  useEffect(() => {
+    notificationService.initServiceWorker();
+    const unsub = notificationService.onNotificationAction((payload) => {
+      if (payload.type === 'CHAT_MESSAGE') {
+        if (payload.roomId) {
+          handleOpenTicketChat({
+            id: payload.roomId,
+            name: payload.senderName || 'SSR',
+            sub_office: payload.subOffice || '',
+            isGroup: String(payload.roomId).startsWith('group-')
+          });
+        } else {
+          handleOpenTicketChat({
+            id: payload.senderId || payload.senderName,
+            username: payload.senderName,
+            full_name: payload.senderName,
+            sub_office: payload.subOffice || ''
+          });
+        }
+      } else if (payload.type === 'AUDIT_LOG') {
+        setActiveTab('audit_logs');
+      }
+    });
+
+    return () => unsub();
+  }, [handleOpenTicketChat, setActiveTab]);
+
   // Re-fetch on filter changes
   useEffect(() => {
     if (!currentUser) return;

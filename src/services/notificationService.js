@@ -183,7 +183,16 @@ class NotificationService {
       return null;
     }
 
-    if (Notification.permission !== 'granted') {
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      try {
+        permission = await Notification.requestPermission();
+      } catch (e) {
+        console.warn('Could not auto-request notification permission:', e);
+      }
+    }
+
+    if (permission !== 'granted') {
       return null;
     }
 

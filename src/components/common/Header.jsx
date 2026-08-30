@@ -824,19 +824,48 @@ export default function Header({
               
               {/* Clean Mockup Header */}
               <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100/90 bg-white shrink-0">
-                <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
-                  Notifications
-                </h3>
-                {onMarkAllNotificationsRead && (
+                <div className="flex items-center gap-2">
+                  <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
+                    Notifications
+                  </h3>
+                  {permissionStatus === 'granted' && (
+                    <span className="bg-emerald-50 text-emerald-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Push On
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {onMarkAllNotificationsRead && (
+                    <button
+                      type="button"
+                      onClick={onMarkAllNotificationsRead}
+                      className="text-xs font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Web Push Permission Banner (When Permission is Pending or Default) */}
+              {permissionStatus !== 'granted' && (
+                <div className="bg-blue-50/90 border-b border-blue-100 p-2.5 px-4 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-2 h-2 rounded-full bg-[#0084FF] animate-ping shrink-0" />
+                    <p className="text-[11px] text-[#002B66] font-bold truncate">
+                      Enable Web Push for background desktop alerts
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={onMarkAllNotificationsRead}
-                    className="text-xs font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    onClick={handleRequestPermission}
+                    className="bg-[#002B66] text-[#FFD700] hover:bg-blue-900 font-black text-[10px] uppercase px-3 py-1 rounded-lg shadow-2xs shrink-0 cursor-pointer transition-all active:scale-95"
                   >
-                    Mark all as read
+                    Enable
                   </button>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Notification Items List */}
               <div className="p-3 space-y-2.5 overflow-y-auto max-h-[440px]">
