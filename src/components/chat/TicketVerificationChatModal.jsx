@@ -5,7 +5,7 @@ import {
   Trash2, UploadCloud, Clock, Search, 
   FileText, Sparkles, Copy, ThumbsUp, Smile,
   Minus, Maximize2, Minimize2, Users,
-  MessageSquare, ChevronLeft, Plus, Building2
+  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
@@ -213,11 +213,17 @@ export default function TicketVerificationChatModal({
     }
   };
 
-  // Live Typing & AFK States
+  // Live Typing, Presence & Seen Receipt States
   const [partnerTyping, setPartnerTyping] = useState(null); // { name, lastAt }
   const [partnerStatus, setPartnerStatus] = useState('active'); // 'active' | 'afk' | 'afk_typing'
+  const [partnerSeenInfo, setPartnerSeenInfo] = useState(null); // { userId, name, at, lastMsgId }
   const realtimeChannelRef = useRef(null);
   const typingTimerRef = useRef(null);
+
+  // Clear seen state when switching contacts
+  useEffect(() => {
+    setPartnerSeenInfo(null);
+  }, [activeContact, activeGroup]);
 
   // Auto clear partner typing state after timeout
   useEffect(() => {
@@ -354,6 +360,16 @@ export default function TicketVerificationChatModal({
           }
         }
       })
+      .on('broadcast', { event: 'message_seen' }, ({ payload }) => {
+        if (payload && payload.userId !== (currentUser?.id || currentUser?.username)) {
+          setPartnerSeenInfo({
+            userId: payload.userId,
+            name: payload.name || 'Partner',
+            at: payload.seenAt || new Date().toISOString(),
+            lastMsgId: payload.lastMsgId
+          });
+        }
+      })
       .subscribe();
 
     realtimeChannelRef.current = channel;
@@ -362,7 +378,27 @@ export default function TicketVerificationChatModal({
       realtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [isOpen, activeContact, currentUser]);
+  }, [isOpen, activeContact, activeGroup, currentUser]);
+
+  // Broadcast seen status when reading conversation
+  useEffect(() => {
+    if (!isOpen || (!activeContact && !activeGroup) || displayedMessages.length === 0) return;
+    const lastMsg = displayedMessages[displayedMessages.length - 1];
+    const isFromOther = lastMsg && (lastMsg.sender_id !== (currentUser?.id || currentUser?.username) && lastMsg.sender_name !== currentUser?.full_name);
+    
+    if (realtimeChannelRef.current && isFromOther) {
+      realtimeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'message_seen',
+        payload: {
+          userId: currentUser?.id || currentUser?.username,
+          name: currentUser?.full_name || currentUser?.username,
+          lastMsgId: lastMsg.id,
+          seenAt: new Date().toISOString()
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen, displayedMessages, activeContact, activeGroup, currentUser]);
 
   useEffect(() => {
     scrollToBottom();
@@ -886,7 +922,7 @@ export default function TicketVerificationChatModal({
                   <p className="text-[10.5px] text-slate-400 mt-0.5">Send a message or attach a ticket receipt to begin.</p>
                 </div>
               ) : (
-                displayedMessages.map((msg) => {
+                displayedMessages.map((msg, idx) => {
                   const isMine = msg.sender_id === (currentUser?.id || currentUser?.username) || 
                                  msg.sender_name === currentUser?.full_name || 
                                  msg.sender_name === currentUser?.username;
@@ -895,17 +931,41 @@ export default function TicketVerificationChatModal({
                   
                   const senderInitials = (msg.sender_name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
                   const senderColor = getAvatarColor(msg.sender_name, msg.sub_office);
+                  const isLastMessage = idx === displayedMessages.length - 1;
+
+                  const lastMyMsgIndex = displayedMessages.map((m, i) => {
+                    const isMy = m.sender_id === (currentUser?.id || currentUser?.username) || 
+                                 m.sender_name === currentUser?.full_name || 
+                                 m.sender_name === currentUser?.username;
+                    return isMy ? i : -1;
+                  }).filter(i => i !== -1).pop();
+
+                  const isLatestMyMessage = isMine && idx === lastMyMsgIndex;
+
+                  const isMessageSeen = isMine && (
+                    (partnerSeenInfo && (partnerSeenInfo.lastMsgId === msg.id || new Date(partnerSeenInfo.at) >= new Date(msg.created_at))) ||
+                    displayedMessages.some((m, mIdx) => mIdx > idx && (m.sender_id !== (currentUser?.id || currentUser?.username) && m.sender_name !== currentUser?.full_name)) ||
+                    (partnerTyping && idx === lastMyMsgIndex)
+                  );
+
+                  const partnerDisplayName = isGroupChat ? (activeGroup?.name || 'Members') : (activeContact?.full_name || activeContact?.username || 'Partner');
+                  const partnerInitial = partnerDisplayName ? partnerDisplayName[0].toUpperCase() : 'P';
 
                   return (
                     <div
                       key={msg.id}
                       className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} space-y-1`}
                     >
-                      {/* Timestamp Metadata Bar */}
-                      <div className={`flex items-center text-[10px] font-medium text-slate-400 px-1 font-mono ${isMine ? 'justify-end' : 'justify-start'}`}>
+                      {/* Timestamp & Sent/Seen Status Metadata Bar */}
+                      <div className={`flex items-center gap-1 text-[10px] font-medium text-slate-400 px-1 font-mono ${isMine ? 'justify-end' : 'justify-start'}`}>
                         <span>
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
+                        {isMine && (
+                          <span className={`flex items-center gap-0.5 ${isMessageSeen ? 'text-[#0084FF]' : 'text-slate-400'}`} title={isMessageSeen ? 'Seen' : 'Sent'}>
+                            <CheckCheck size={12} className="stroke-[2.5]" />
+                          </span>
+                        )}
                       </div>
 
                       <div className={`flex items-end gap-1.5 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -916,7 +976,7 @@ export default function TicketVerificationChatModal({
                           </div>
                         )}
 
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {/* Text bubble */}
                           {msg.message_text && (
                             <div
@@ -1021,6 +1081,25 @@ export default function TicketVerificationChatModal({
                                   </button>
                                 )}
                               </div>
+                            </div>
+                          )}
+
+                          {/* Sent / Seen Status Indicator for latest outgoing message */}
+                          {isMine && (isLastMessage || isLatestMyMessage) && (
+                            <div className="flex items-center justify-end gap-1.5 text-[9.5px] font-bold font-mono pr-1 -mt-0.5 animate-in fade-in duration-150">
+                              {isMessageSeen ? (
+                                <>
+                                  <div className="w-3.5 h-3.5 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center text-[7.5px] font-black font-mono shadow-2xs" title={`Seen by ${partnerDisplayName}`}>
+                                    {partnerInitial}
+                                  </div>
+                                  <span className="text-[#0084FF] font-sans font-bold">Seen</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCheck size={11} className="text-slate-400 stroke-[2]" />
+                                  <span className="text-slate-400 font-sans">Sent</span>
+                                </>
+                              )}
                             </div>
                           )}
                         </div>
