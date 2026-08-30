@@ -11,6 +11,7 @@ import TicketQrModal from './components/winnings/TicketQrModal';
 import TicketVerificationChatModal from './components/chat/TicketVerificationChatModal';
 import TicketVerificationBotModal from './components/chat/TicketVerificationBotModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
+import { notificationService } from './services/notificationService';
 import { MessageSquare, Sparkles, Bot } from 'lucide-react';
 
 const DEFAULT_COMMISSIONS = {
@@ -88,8 +89,137 @@ export default function App() {
   const [isBotOpen, setIsBotOpen] = useState(false);
   const [pendingTicketsChatCount, setPendingTicketsChatCount] = useState(0);
 
+  // In-App Heads-Up Notification Banner Popup State (Mobile & Desktop)
+  const [activeNotificationPopup, setActiveNotificationPopup] = useState(null);
+  const activePopupTimerRef = useRef(null);
+
+  const triggerNotificationPopup = useCallback((notif) => {
+    if (activePopupTimerRef.current) {
+      clearTimeout(activePopupTimerRef.current);
+    }
+    setActiveNotificationPopup(notif);
+    activePopupTimerRef.current = setTimeout(() => {
+      setActiveNotificationPopup(null);
+    }, 6000);
+  }, []);
+
+  // System Notifications State (Chat & Audit Trail)
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const userKey = currentUser?.id || currentUser?.username || 'default';
+      const saved = localStorage.getItem(`stl_notifications_${userKey}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const appendNotification = useCallback((notif) => {
+    if (!notif) return;
+    const userKey = currentUser?.id || currentUser?.username || 'default';
+    setNotifications((prev) => {
+      const filtered = prev.filter(n => n.id !== notif.id);
+      const updated = [notif, ...filtered].slice(0, 60);
+      try {
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn(e);
+      }
+      return updated;
+    });
+  }, [currentUser]);
+
+  const handleMarkNotificationRead = useCallback((notifId) => {
+    const userKey = currentUser?.id || currentUser?.username || 'default';
+    setNotifications((prev) => {
+      const updated = prev.map(n => n.id === notifId ? { ...n, read: true } : n);
+      try {
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn(e);
+      }
+      return updated;
+    });
+  }, [currentUser]);
+
+  const handleMarkAllNotificationsRead = useCallback(() => {
+    const userKey = currentUser?.id || currentUser?.username || 'default';
+    setNotifications((prev) => {
+      const updated = prev.map(n => ({ ...n, read: true }));
+      try {
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn(e);
+      }
+      return updated;
+    });
+  }, [currentUser]);
+
+  const handleClearNotifications = useCallback(() => {
+    const userKey = currentUser?.id || currentUser?.username || 'default';
+    setNotifications([]);
+    try {
+      localStorage.removeItem(`stl_notifications_${userKey}`);
+    } catch (e) {
+      console.warn(e);
+    }
+  }, [currentUser]);
+
   const isSuperAdmin = isSuperAdminRole(currentUser?.role);
   const isSSR = isSSRRole(currentUser?.role);
+
+  const handleOpenTicketChat = useCallback((contact) => {
+    const targetContact = contact || {
+      id: 'group-all-branches-ssr',
+      name: 'All Branches SSR Desk',
+      sub_office: 'All',
+      isGroup: true,
+      created_by: 'Mandaue Central'
+    };
+    setOpenChats((prev) => {
+      const targetKey = targetContact.id || targetContact.username;
+      const exists = prev.find((c) => (c.id || c.username) === targetKey);
+      if (exists) {
+        // Bring to front
+        return [targetContact, ...prev.filter((c) => (c.id || c.username) !== targetKey)];
+      }
+      // Allow up to 4 simultaneous docked chat windows
+      return [targetContact, ...prev.slice(0, 3)];
+    });
+    if (currentUser) {
+      const userKey = currentUser.id || currentUser.username || 'user';
+      localStorage.setItem(`stl_chat_last_read_${userKey}`, new Date().toISOString());
+    }
+    setPendingTicketsChatCount(0);
+  }, [currentUser]);
+
+  // Handle incoming notification clicks (Service Worker or browser push events)
+  useEffect(() => {
+    notificationService.initServiceWorker();
+    const unsubscribe = notificationService.onNotificationAction((payload) => {
+      if (!payload) return;
+      if (payload.type === 'CHAT_MESSAGE') {
+        if (payload.roomId) {
+          handleOpenTicketChat({
+            id: payload.roomId,
+            name: payload.senderName || 'Chat Room',
+            sub_office: payload.subOffice || '',
+            isGroup: String(payload.roomId).startsWith('group-')
+          });
+        } else {
+          handleOpenTicketChat({
+            id: payload.senderId || payload.senderName,
+            username: payload.senderName,
+            full_name: payload.senderName,
+            sub_office: payload.subOffice || ''
+          });
+        }
+      } else if (payload.type === 'AUDIT_LOG') {
+        setActiveTab('audit_logs');
+      }
+    });
+    return () => unsubscribe();
+  }, [handleOpenTicketChat]);
 
   const handleNavigateToSettlement = (ticketOrId) => {
     const transId = typeof ticketOrId === 'string'
@@ -441,19 +571,136 @@ export default function App() {
                          (payload.new?.sender_name && String(payload.new.sender_name).trim().toLowerCase() === currentUserName);
 
             if (!isMe) {
+              const sender = payload.new?.sender_name || 'SSR Agent';
+              const msgSnippet = payload.new?.message_text || payload.new?.message || payload.new?.text || 'Sent a new message';
+              const roomId = payload.new?.room_id || null;
+              const subOffice = payload.new?.sub_office || '';
+              const senderId = payload.new?.sender_id || null;
+              const notifId = payload.new?.id ? `chat-${payload.new.id}` : `chat-${Date.now()}`;
+
+              const chatNotif = {
+                id: notifId,
+                type: 'chat',
+                title: sender,
+                senderName: sender,
+                senderId,
+                roomId,
+                subOffice,
+                message: msgSnippet,
+                timestamp: payload.new?.created_at || new Date().toISOString(),
+                read: false
+              };
+
+              // 1. Append to notification center feed
+              appendNotification(chatNotif);
+
+              // 2. Trigger in-app floating banner popup (Mobile & Desktop)
+              triggerNotificationPopup(chatNotif);
+
+              // 3. Dispatch Web Push / Browser notification + audio chime
+              notificationService.sendChatNotification({
+                senderName: sender,
+                senderId,
+                roomId,
+                subOffice,
+                message: msgSnippet,
+                currentUserId: currentUser?.id || currentUser?.username,
+                onClick: () => {
+                  if (roomId) {
+                    handleOpenTicketChat({
+                      id: roomId,
+                      name: sender,
+                      sub_office: subOffice,
+                      isGroup: String(roomId).startsWith('group-')
+                    });
+                  } else {
+                    handleOpenTicketChat({
+                      id: senderId || sender,
+                      username: sender,
+                      full_name: sender,
+                      sub_office: subOffice
+                    });
+                  }
+                }
+              });
+
               if (openChats.length > 0) {
                 const userKey = currentUser?.id || currentUser?.username || 'user';
                 localStorage.setItem(`stl_chat_last_read_${userKey}`, new Date().toISOString());
                 setPendingTicketsChatCount(0);
               } else {
                 setPendingTicketsChatCount(prev => prev + 1);
-                const sender = payload.new?.sender_name || 'SSR';
-                const msgSnippet = payload.new?.message || payload.new?.text || 'Sent a new message';
                 showToast(`💬 ${sender}: "${msgSnippet.slice(0, 45)}${msgSnippet.length > 45 ? '...' : ''}"`);
               }
             }
           } else {
             fetchPendingChatCount();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'audit_logs'
+        },
+        (payload) => {
+          if (!payload.new) return;
+          const currentUserName = (currentUser?.full_name || currentUser?.username || '').trim().toLowerCase();
+          const actorName = payload.new.actor_username || 'System';
+          const isMe = String(actorName).trim().toLowerCase() === currentUserName;
+
+          const action = payload.new.action || 'ACTIVITY';
+          const targetType = payload.new.target_type || '';
+          const targetId = payload.new.target_id || '';
+          const subOffice = payload.new.sub_office || '';
+          const actorRole = payload.new.actor_role || '';
+          let detailsStr = '';
+          if (payload.new.details) {
+            try {
+              detailsStr = typeof payload.new.details === 'object' ? JSON.stringify(payload.new.details) : String(payload.new.details);
+            } catch {
+              detailsStr = String(payload.new.details);
+            }
+          }
+
+          const notifId = payload.new.id ? `audit-${payload.new.id}` : `audit-${Date.now()}`;
+
+          const auditNotif = {
+            id: notifId,
+            type: 'audit',
+            title: `Audit: ${action.replace(/_/g, ' ')}`,
+            action,
+            actorUsername: actorName,
+            actorRole,
+            targetType,
+            targetId,
+            subOffice,
+            message: `${actorName}${actorRole ? ` (${actorRole})` : ''} performed ${action.replace(/_/g, ' ')}${targetId ? ` on #${targetId}` : ''}`,
+            details: detailsStr,
+            timestamp: payload.new.created_at || new Date().toISOString(),
+            read: false
+          };
+
+          // 1. Append to notification center feed
+          appendNotification(auditNotif);
+
+          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self)
+          if (!isMe) {
+            triggerNotificationPopup(auditNotif);
+            notificationService.sendAuditNotification({
+              actorUsername: actorName,
+              actorRole,
+              action,
+              targetType,
+              targetId,
+              subOffice,
+              currentUserId: currentUser?.id || currentUser?.username,
+              onClick: () => {
+                setActiveTab('audit_logs');
+              }
+            });
           }
         }
       )
@@ -826,31 +1073,14 @@ export default function App() {
         pendingCount={pendingFilteredData.length}
         returnedCount={returnedData.length}
         pendingTicketsChatCount={pendingTicketsChatCount}
-        onOpenTicketChat={(contact) => {
-          const targetContact = contact || {
-            id: 'group-all-branches-ssr',
-            name: 'All Branches SSR Desk',
-            sub_office: 'All',
-            isGroup: true,
-            created_by: 'Mandaue Central'
-          };
-          setOpenChats((prev) => {
-            const targetKey = targetContact.id || targetContact.username;
-            const exists = prev.find((c) => (c.id || c.username) === targetKey);
-            if (exists) {
-              // Bring to front
-              return [targetContact, ...prev.filter((c) => (c.id || c.username) !== targetKey)];
-            }
-            // Allow up to 4 simultaneous docked chat windows
-            return [targetContact, ...prev.slice(0, 3)];
-          });
-          if (currentUser) {
-            const userKey = currentUser.id || currentUser.username || 'user';
-            localStorage.setItem(`stl_chat_last_read_${userKey}`, new Date().toISOString());
-          }
-          setPendingTicketsChatCount(0);
-        }}
+        onOpenTicketChat={handleOpenTicketChat}
         onOpenBot={() => setIsBotOpen(true)}
+        notifications={notifications}
+        onMarkNotificationRead={handleMarkNotificationRead}
+        onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+        onClearNotifications={handleClearNotifications}
+        activeNotificationPopup={activeNotificationPopup}
+        onDismissNotificationPopup={() => setActiveNotificationPopup(null)}
       >
         <AppRoutes
           activeTab={activeTab}
