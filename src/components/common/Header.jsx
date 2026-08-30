@@ -400,9 +400,6 @@ export default function Header({
                       {filteredUsers.length + filteredGroups.length} Active
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    {isSSR ? 'Direct line with Admins & Unclaimed Specialists' : '1-on-1 claim verification & group channels'}
-                  </span>
                 </div>
 
                 {/* Create Group Button for Unclaimed Specialists & Admins */}
