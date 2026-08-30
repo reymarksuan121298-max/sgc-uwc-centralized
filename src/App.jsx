@@ -103,12 +103,12 @@ export default function App() {
     }, 6000);
   }, []);
 
-  // System Notifications State (Chat & Audit Trail)
+  // System Notifications State (Audit Trail & Activity Logs Only)
   const [notifications, setNotifications] = useState(() => {
     try {
       const userKey = currentUser?.id || currentUser?.username || 'default';
       const saved = localStorage.getItem(`stl_notifications_${userKey}`);
-      return saved ? JSON.parse(saved) : [];
+      return saved ? JSON.parse(saved).filter(n => n.type !== 'chat') : [];
     } catch {
       return [];
     }
@@ -604,25 +604,8 @@ export default function App() {
               const roomId = payload.new?.room_id || null;
               const subOffice = payload.new?.sub_office || '';
               const senderId = payload.new?.sender_id || null;
-              const notifId = payload.new?.id ? `chat-${payload.new.id}` : `chat-${Date.now()}`;
 
-              const chatNotif = {
-                id: notifId,
-                type: 'chat',
-                title: sender,
-                senderName: sender,
-                senderId,
-                roomId,
-                subOffice,
-                message: msgSnippet,
-                timestamp: payload.new?.created_at || new Date().toISOString(),
-                read: false
-              };
-
-              // 1. Append to upper-right notification center feed
-              appendNotification(chatNotif);
-
-              // 2. Dispatch Web Push / Browser notification + audio chime
+              // Dispatch Web Push / Browser notification + audio chime for chats
               notificationService.sendChatNotification({
                 senderName: sender,
                 senderId,

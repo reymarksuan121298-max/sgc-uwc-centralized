@@ -876,7 +876,7 @@ export default function Header({
                     </div>
                     <h5 className="font-bold text-slate-700 text-xs">No notifications yet</h5>
                     <p className="text-[11px] text-slate-400 max-w-[220px] mx-auto">
-                      Activity updates, verifications, and chat messages will appear here.
+                      System activity logs, settlement agreements, and verifications will appear here.
                     </p>
                   </div>
                 ) : (
