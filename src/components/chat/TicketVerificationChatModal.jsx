@@ -901,11 +901,9 @@ export default function TicketVerificationChatModal({
                       key={msg.id}
                       className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} space-y-1`}
                     >
-                      {/* Sender Metadata Bar */}
-                      <div className={`flex items-center gap-1.5 text-[10px] font-bold text-slate-400 px-1 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-                        <span className="text-slate-700 font-extrabold">{msg.sender_name}</span>
-                        <span>•</span>
-                        <span className="font-mono">
+                      {/* Timestamp Metadata Bar */}
+                      <div className={`flex items-center text-[10px] font-medium text-slate-400 px-1 font-mono ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        <span>
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
