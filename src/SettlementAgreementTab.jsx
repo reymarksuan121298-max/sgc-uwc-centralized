@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FileText, Save, Printer, ListOrdered, PlusCircle, Calendar, ChevronLeft, ChevronRight, CreditCard, X, ChevronDown, ChevronUp } from 'lucide-react';
 import {openSettlementAgreementPrint} from './utils/settlementAgreementPrint';
-import { supabase } from './supabaseClient';
+import { supabase } from './config/supabaseClient';
 
 const getSemiMonthlyDueDate = (startDateStr, installmentIndex) => {
   const date = new Date(`${startDateStr}T00:00:00`);
@@ -471,7 +471,7 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
   ];
 
   return (
-    <div className="space-y-6 w-full max-w-5xl mx-auto pb-12 print:max-w-none print:pb-0 print:space-y-0">
+    <div className="space-y-4 w-full pb-12 print:max-w-none print:pb-0 print:space-y-0">
       
       {/* SUB-TABS NAVIGATION (Hidden when printing) */}
       <div className="print:hidden flex items-center gap-2 border-b border-slate-200 pb-3">
@@ -732,8 +732,8 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
             <div><span className="block text-[10px] font-black uppercase text-slate-400">Total Settlement</span><strong className="text-emerald-700">PHP {installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></div>
           </div>
 
-          {/* PRINTABLE DOCUMENT CONTAINER */}
-          <div id="settlement-agreement-print-area" className={`${currentStep === 4 ? 'bg-white border border-slate-300 rounded-xl shadow-md p-8' : 'bg-transparent border-0 shadow-none p-0'} space-y-6 text-slate-900 font-sans print:w-full print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0`}>
+          {/* PRINTABLE DOCUMENT CONTAINER / STEP CARD CONTAINER */}
+          <div id="settlement-agreement-print-area" className={`${currentStep === 4 ? 'bg-white border border-slate-300 rounded-xl shadow-md p-6 sm:p-8 max-w-4xl mx-auto' : 'bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs'} space-y-6 text-slate-900 font-sans w-full print:w-full print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0`}>
             
             {/* HEADER WITH LOGOS */}
             <div className={`${currentStep === 4 ? '' : 'hidden'} flex justify-between items-center border-b-2 border-[#002B66] pb-4`}>
