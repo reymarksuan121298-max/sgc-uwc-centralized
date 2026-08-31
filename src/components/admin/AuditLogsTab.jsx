@@ -35,6 +35,11 @@ export default function AuditLogsTab() {
 
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
+      const isCallLog = log.action === 'VIDEO_CALL_COMPLETED' || 
+                        log.target_type === 'VIDEO_CALL' || 
+                        String(log.action || '').includes('VIDEO_CALL');
+      if (isCallLog) return false;
+
       const matchAction = actionFilter === 'ALL' || log.action === actionFilter;
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q || (

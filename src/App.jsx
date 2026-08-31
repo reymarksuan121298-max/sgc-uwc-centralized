@@ -790,6 +790,16 @@ export default function App() {
           const targetId = payload.new.target_id || '';
           const subOffice = payload.new.sub_office || '';
           const actorRole = payload.new.actor_role || '';
+
+          // Omit video call logs from push notifications & popup alerts
+          if (
+            action.includes('VIDEO_CALL') || 
+            targetType === 'VIDEO_CALL' || 
+            action === 'VIDEO_CALL_COMPLETED' ||
+            action.includes('CALL_LOG')
+          ) {
+            return;
+          }
           let detailsStr = '';
           if (payload.new.details) {
             try {

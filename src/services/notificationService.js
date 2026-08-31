@@ -283,6 +283,16 @@ class NotificationService {
     const settings = this.getSettings(currentUserId);
     if (!settings.auditNotifications) return false;
 
+    // Filter out video call logs from Web Push Notifications
+    if (
+      action.includes('VIDEO_CALL') || 
+      targetType === 'VIDEO_CALL' || 
+      action === 'VIDEO_CALL_COMPLETED' ||
+      action.includes('CALL_LOG')
+    ) {
+      return false;
+    }
+
     // Play subtle chime
     this.playTone('audit', currentUserId);
 

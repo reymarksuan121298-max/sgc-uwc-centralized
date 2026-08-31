@@ -3,31 +3,50 @@ import {
   Video, VideoOff, Mic, MicOff, PhoneOff, Phone, 
   Maximize2, Minimize2, Monitor, Camera, Sparkles, 
   RefreshCw, Volume2, VolumeX, ShieldCheck, Building2, 
-  CheckCircle2, AlertCircle, Scan, Eye
+  CheckCircle2, AlertCircle, Scan, Eye, Globe2, Wifi
 } from 'lucide-react';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { supabase } from '../../config/supabaseClient';
 
-// Public STUN and free TURN servers for 100% reliable NAT traversal across networks
-const ICE_SERVERS = {
+// Global Multi-Region Anycast STUN & High-Penetration TURN Relay Infrastructure
+// Enables long-distance, cross-country, cellular & restrictive firewall WebRTC traversal
+const GLOBAL_ICE_SERVERS = {
   iceServers: [
+    // 1. Google Global Anycast STUN (Multi-region low latency)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+
+    // 2. Cloudflare & Twilio Global Edge STUN
+    { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:global.stun.twilio.com:3478' },
     { urls: 'stun:stun.services.mozilla.com' },
+
+    // 3. OpenRelay Global Multi-Region TURN (UDP standard port 80 & 443)
     {
       urls: [
         'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turns:openrelay.metered.ca:443?transport=tcp'
+        'turn:openrelay.metered.ca:443'
+      ],
+      username: 'openrelay',
+      credential: 'openrelay'
+    },
+
+    // 4. OpenRelay Global Encrypted TLS TURN over TCP (Penetrates strict corporate / CGNAT firewalls)
+    {
+      urls: [
+        'turns:openrelay.metered.ca:443?transport=tcp',
+        'turns:openrelay.metered.ca:5349?transport=tcp'
       ],
       username: 'openrelay',
       credential: 'openrelay'
     }
-  ]
+  ],
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require'
 };
 
 // Safe Realtime Broadcaster that avoids REST API fallback warning
@@ -62,6 +81,7 @@ export default function VideoCallWindow({
   const [scanResult, setScanResult] = useState(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasCameraError, setHasCameraError] = useState(null);
+  const [networkQuality, setNetworkQuality] = useState('good'); // 'good' | 'fair' | 'reconnecting'
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -182,7 +202,7 @@ export default function VideoCallWindow({
     }
   };
 
-  // 1. Initialize Local Media Stream
+  // 1. Initialize Local Media Stream with Adaptive Audio & Video Constraints
   const initLocalStream = useCallback(async () => {
     try {
       setHasCameraError(null);
@@ -192,11 +212,16 @@ export default function VideoCallWindow({
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 360 },
+          frameRate: { ideal: 30, min: 15 },
           facingMode: 'user'
         },
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
 
       localStreamRef.current = stream;
@@ -227,7 +252,7 @@ export default function VideoCallWindow({
     }
   }, [remoteStreamRef.current, callState]);
 
-  // 2. Get or Create Peer Connection (Persistent per call session)
+  // 2. Get or Create Peer Connection (Persistent per call session with Global Auto-Recovery)
   const getOrCreatePeerConnection = useCallback((stream) => {
     if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
       if (stream) {
@@ -241,7 +266,7 @@ export default function VideoCallWindow({
       return peerConnectionRef.current;
     }
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(GLOBAL_ICE_SERVERS);
     peerConnectionRef.current = pc;
 
     if (stream) {
@@ -252,7 +277,7 @@ export default function VideoCallWindow({
 
     // Remote track arrived
     pc.ontrack = (event) => {
-      console.log('WebRTC ontrack received remote media:', event.streams);
+      console.log('WebRTC ontrack received global remote media:', event.streams);
       if (event.streams && event.streams[0]) {
         remoteStreamRef.current = event.streams[0];
         if (remoteVideoRef.current) {
@@ -262,7 +287,28 @@ export default function VideoCallWindow({
       }
     };
 
-    // ICE Candidate generation
+    // Global ICE Connection State & Auto-Restart on Network Disconnection
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      console.log('Global WebRTC ICE State:', state);
+      if (state === 'connected' || state === 'completed') {
+        setNetworkQuality('good');
+      } else if (state === 'checking') {
+        setNetworkQuality('fair');
+      } else if (state === 'disconnected' || state === 'failed') {
+        setNetworkQuality('reconnecting');
+        // Auto-attempt ICE restart for long-distance recovery
+        if (typeof pc.restartIce === 'function') {
+          try {
+            pc.restartIce();
+          } catch (e) {
+            console.warn('ICE restart notice:', e);
+          }
+        }
+      }
+    };
+
+    // ICE Candidate generation & multi-channel broadcast
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         const icePayload = {
@@ -270,9 +316,25 @@ export default function VideoCallWindow({
           senderUsername: currentUser?.username,
           candidate: event.candidate
         };
+
+        // 1. Shared direct room broadcast
         if (realtimeChannel) {
           sendSafeBroadcast(realtimeChannel, 'video_ice_candidate', icePayload);
         }
+
+        // 2. Global signaling room broadcast
+        const globalCallChannel = supabase.channel('global_video_signaling_room');
+        globalCallChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            globalCallChannel.send({
+              type: 'broadcast',
+              event: 'video_ice_candidate',
+              payload: icePayload
+            }).catch(() => {});
+          }
+        });
+
+        // 3. Direct recipient inbox broadcast
         const targetUsername = String(partner?.username || partner?.id || '').toLowerCase().trim();
         if (targetUsername) {
           const directInboxChannel = supabase.channel(`user_inbox_${targetUsername}`);
@@ -398,6 +460,17 @@ export default function VideoCallWindow({
           sendSafeBroadcast(realtimeChannel, 'video_call_answer', answerPayload);
         }
 
+        const globalCallChannel = supabase.channel('global_video_signaling_room');
+        globalCallChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            globalCallChannel.send({
+              type: 'broadcast',
+              event: 'video_call_answer',
+              payload: answerPayload
+            }).catch(() => {});
+          }
+        });
+
         if (offerData.callerUsername) {
           const callerInbox = supabase.channel(`user_inbox_${String(offerData.callerUsername).toLowerCase().trim()}`);
           callerInbox.subscribe((status) => {
@@ -457,7 +530,15 @@ export default function VideoCallWindow({
         .on('broadcast', { event: 'video_call_end' }, onEnd);
     }
 
-    // Also listen on personal inbox for direct fallback signaling
+    // Also listen on global room & personal inbox for robust redundant signaling
+    const globalCallChannel = supabase.channel('global_video_signaling_room');
+    globalCallChannel
+      .on('broadcast', { event: 'video_call_accept' }, onAccept)
+      .on('broadcast', { event: 'video_call_answer' }, onAnswer)
+      .on('broadcast', { event: 'video_ice_candidate' }, onIce)
+      .on('broadcast', { event: 'video_call_end' }, onEnd)
+      .subscribe();
+
     let myInboxChannel = null;
     if (currentUser?.username) {
       myInboxChannel = supabase.channel(`user_inbox_${String(currentUser.username).toLowerCase().trim()}`);
@@ -470,11 +551,12 @@ export default function VideoCallWindow({
     }
 
     return () => {
+      supabase.removeChannel(globalCallChannel);
       if (myInboxChannel) supabase.removeChannel(myInboxChannel);
     };
   }, [realtimeChannel, currentUser, onEndCall, stopRingtone]);
 
-  // Clean up streams & peer connection and persist call log
+  // Clean up streams & peer connection
   const cleanUpCall = useCallback(async () => {
     stopRingtone();
     hasInitiatedOfferRef.current = false;
@@ -489,31 +571,7 @@ export default function VideoCallWindow({
       peerConnectionRef.current = null;
     }
     remoteStreamRef.current = null;
-
-    // Persist call log to Supabase audit_logs
-    if (callDuration > 0 || callState === 'connected') {
-      try {
-        await supabase.from('audit_logs').insert([{
-          actor_username: currentUser?.username || 'officer',
-          actor_role: currentUser?.role || 'Staff',
-          action: 'VIDEO_CALL_COMPLETED',
-          target_type: 'VIDEO_CALL',
-          target_id: partner?.username || partner?.id || 'partner',
-          sub_office: currentUser?.sub_office || 'Mandaue Central',
-          details: {
-            durationSeconds: callDuration,
-            callerName: currentUser?.full_name || currentUser?.username,
-            partnerName: partner?.name || partner?.full_name || partner?.username,
-            scannedTicket: scanResult?.transactionId || null,
-            callType: isScreenSharing ? 'SCREEN_SHARE' : 'VIDEO',
-            status: 'COMPLETED'
-          }
-        }]);
-      } catch (err) {
-        console.warn('Video call log persist notice:', err);
-      }
-    }
-  }, [stopRingtone, callDuration, callState, currentUser, partner, isScreenSharing, scanResult]);
+  }, [stopRingtone]);
 
   // Toggle Mute Audio
   const handleToggleMic = () => {
@@ -644,6 +702,15 @@ export default function VideoCallWindow({
               <span className={callState === 'connected' ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
                 {callState === 'connected' ? formatTime(callDuration) : callState === 'calling' ? 'Calling...' : 'Incoming Video Call...'}
               </span>
+              {callState === 'connected' && (
+                <>
+                  <span>•</span>
+                  <span className="flex items-center gap-0.5 text-[9px] text-blue-400 bg-blue-950/70 px-1.5 py-0.5 rounded border border-blue-800/50">
+                    <Globe2 size={9} />
+                    <span>Global HD</span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -762,6 +829,14 @@ export default function VideoCallWindow({
               <span>Bet: ₱{Number(scanResult.totalBet || 0).toFixed(2)}</span>
               <span>Draw: {scanResult.draw || 'N/A'}</span>
             </div>
+          </div>
+        )}
+
+        {/* Network Reconnection Banner (for Long Distance Fluctuation) */}
+        {networkQuality === 'reconnecting' && callState === 'connected' && (
+          <div className="absolute bottom-16 inset-x-4 bg-amber-900/90 border border-amber-500 text-white rounded-2xl p-2 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
+            <RefreshCw size={14} className="animate-spin text-amber-300" />
+            <span>Re-optimizing global connection...</span>
           </div>
         )}
 
