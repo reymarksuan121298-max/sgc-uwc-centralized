@@ -3,16 +3,36 @@
 
 <head>
   <meta charset="UTF-8" />
-  <!-- BROWSER TAB LOGO / FAVICON -->
-  <link rel="icon" type="image/png" href="/lbp.png" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  
+  <!-- Primary Meta Tags -->
+  <title>SGC - Unclaimed Winnings Centralized Portal</title>
+  <meta name="title" content="SGC - Unclaimed Winnings Centralized Portal" />
+  <meta name="description" content="Centralized Unclaimed Winnings, Ticket Verification Desk, WebRTC Video Chat & Audit Trail Management Portal" />
+  
+  <!-- PWA & Web App Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#002B66" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="SGC Portal" />
+  
+  <!-- Apple iOS Web App Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SGC Portal" />
+  <link rel="apple-touch-icon" href="/lbp.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/lbp.png" />
+  <link rel="apple-touch-icon" sizes="512x512" href="/lbp.png" />
 
-  <!-- BROWSER TAB TITLE -->
-  <title>SGC - Unclaimed Winnings
-  </title>
+  <!-- Microsoft Windows Tile -->
+  <meta name="msapplication-TileColor" content="#002B66" />
+  <meta name="msapplication-TileImage" content="/lbp.png" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/lbp.png" />
 </head>
 
-<body>
+<body className="bg-slate-100 text-slate-800 antialiased selection:bg-[#002B66] selection:text-white">
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

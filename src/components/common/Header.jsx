@@ -5,7 +5,8 @@ import {
   Users, Building2, ShieldCheck, UserCheck, Circle,
   ChevronDown, LogOut, User, Shield, Plus,
   Volume2, VolumeX, ShieldAlert, CheckCheck, Trash2,
-  Sliders, BellOff, Info, Check, FileText, AlertTriangle
+  Sliders, BellOff, Info, Check, FileText, AlertTriangle,
+  Download, Smartphone
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole } from '../../utils/permissions';
@@ -180,6 +181,40 @@ export default function Header({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  // PWA Install Prompt State & Handling
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Check if already installed as standalone PWA
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setIsInstallable(false);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) {
+      alert('To install SGC Portal on your device:\n\n• Android/Chrome: Tap (⋮) in the top-right and select "Install app" or "Add to Home screen".\n• iPhone/iPad (Safari): Tap the Share button (⎋) and select "Add to Home Screen".\n• Desktop Chrome/Edge: Click the Install icon in your browser URL address bar.');
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstallable(false);
+    }
+    setDeferredPrompt(null);
+  };
 
   const userKey = currentUser?.id || currentUser?.username || 'default';
 
@@ -516,6 +551,17 @@ export default function Header({
         >
           <RefreshCw size={13} className={loading ? 'animate-spin text-[#FFD700]' : 'text-[#FFD700]'} />
           <span className="hidden sm:inline">{loading ? 'Syncing...' : 'SYNC LEDGER'}</span>
+        </button>
+
+        {/* PWA INSTALL APP BUTTON */}
+        <button
+          type="button"
+          onClick={handleInstallPWA}
+          className="flex items-center gap-1.5 sm:gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-black tracking-wider uppercase transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 border border-emerald-500/50"
+          title="Install SGC Progressive Web App on your PC or Mobile"
+        >
+          <Download size={13} className="text-[#FFD700]" />
+          <span className="hidden md:inline">INSTALL APP</span>
         </button>
 
 
@@ -1008,6 +1054,19 @@ export default function Header({
                   </span>
                 </div>
               </div>
+
+              {/* PWA Install Desktop/Mobile App Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsProfileOpen(false);
+                  handleInstallPWA();
+                }}
+                className="w-full bg-[#002B66] hover:bg-blue-900 text-[#FFD700] border border-[#FFD700]/30 font-black py-2 px-3 rounded-xl text-center text-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-xs"
+              >
+                <Download size={13} className="text-[#FFD700]" />
+                <span>INSTALL APP (DESKTOP & MOBILE)</span>
+              </button>
 
               {/* Logout Action Button */}
               {onLogout && (
