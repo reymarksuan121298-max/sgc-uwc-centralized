@@ -5,12 +5,14 @@ import {
   Trash2, UploadCloud, Clock, Search, 
   FileText, Sparkles, Copy, ThumbsUp, Smile,
   Minus, Maximize2, Minimize2, Users,
-  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck
+  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck,
+  Video, PhoneCall
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { canApproveDeletionRequests, isAdminRole, formatRoleName, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 import CreateGroupChatModal from './CreateGroupChatModal';
+import VideoCallWindow from './VideoCallWindow';
 
 // Deterministic Color Generator for User Initials per Sub-Office / Name
 const getAvatarColor = (name = '', subOffice = '') => {
@@ -30,6 +32,18 @@ const getAvatarColor = (name = '', subOffice = '') => {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
+};
+
+// Safe Realtime Broadcaster that avoids REST API fallback warnings
+const sendBroadcastSafe = (channel, event, payload) => {
+  if (!channel) return;
+  if (channel.state === 'joined' || channel.state === 'subscribed') {
+    channel.send({
+      type: 'broadcast',
+      event,
+      payload
+    }).catch(() => {});
+  }
 };
 
 export default function TicketVerificationChatModal({ 
@@ -64,6 +78,11 @@ export default function TicketVerificationChatModal({
 
   // Messenger Window Mode: 'docked' (floating bottom-right window) | 'expanded' (full modal) | 'minimized'
   const [windowMode, setWindowMode] = useState('docked');
+
+  // Live WebRTC Video Call States
+  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [videoCallState, setVideoCallState] = useState('idle'); // 'idle' | 'calling' | 'incoming' | 'connected'
+  const [incomingCallData, setIncomingCallData] = useState(null);
 
   // Custom persistent chat groups
   const [chatGroups, setChatGroups] = useState(() => {
@@ -236,59 +255,48 @@ export default function TicketVerificationChatModal({
     return () => clearInterval(interval);
   }, [partnerTyping]);
 
-  // Global AFK Activity Tracker for local user
+  // Global AFK Activity Tracker for local user (Throttled to avoid unnecessary socket traffic)
+  const lastPresenceStateRef = useRef('active');
+
   useEffect(() => {
     let inactivityTimer = null;
 
     const notifyActivity = () => {
-      if (realtimeChannelRef.current) {
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'presence_status',
-          payload: {
-            userId: currentUser?.id,
-            username: currentUser?.username,
-            status: 'active'
-          }
+      if (lastPresenceStateRef.current !== 'active') {
+        lastPresenceStateRef.current = 'active';
+        sendBroadcastSafe(realtimeChannelRef.current, 'presence_status', {
+          userId: currentUser?.id,
+          username: currentUser?.username,
+          status: 'active'
         });
       }
       if (inactivityTimer) clearTimeout(inactivityTimer);
       inactivityTimer = setTimeout(() => {
-        if (realtimeChannelRef.current) {
-          realtimeChannelRef.current.send({
-            type: 'broadcast',
-            event: 'presence_status',
-            payload: {
-              userId: currentUser?.id,
-              username: currentUser?.username,
-              status: inputText.trim().length > 0 ? 'afk_typing' : 'afk'
-            }
-          });
-        }
+        const newStatus = inputText.trim().length > 0 ? 'afk_typing' : 'afk';
+        lastPresenceStateRef.current = newStatus;
+        sendBroadcastSafe(realtimeChannelRef.current, 'presence_status', {
+          userId: currentUser?.id,
+          username: currentUser?.username,
+          status: newStatus
+        });
       }, 60000); // 1 minute inactivity = AFK
     };
 
-    window.addEventListener('mousemove', notifyActivity);
     window.addEventListener('keydown', notifyActivity);
     window.addEventListener('click', notifyActivity);
     window.addEventListener('focus', notifyActivity);
     window.addEventListener('blur', () => {
-      if (realtimeChannelRef.current) {
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'presence_status',
-          payload: {
-            userId: currentUser?.id,
-            username: currentUser?.username,
-            status: inputText.trim().length > 0 ? 'afk_typing' : 'afk'
-          }
-        });
-      }
+      const newStatus = inputText.trim().length > 0 ? 'afk_typing' : 'afk';
+      lastPresenceStateRef.current = newStatus;
+      sendBroadcastSafe(realtimeChannelRef.current, 'presence_status', {
+        userId: currentUser?.id,
+        username: currentUser?.username,
+        status: newStatus
+      });
     });
 
     return () => {
       if (inactivityTimer) clearTimeout(inactivityTimer);
-      window.removeEventListener('mousemove', notifyActivity);
       window.removeEventListener('keydown', notifyActivity);
       window.removeEventListener('click', notifyActivity);
       window.removeEventListener('focus', notifyActivity);
@@ -370,6 +378,27 @@ export default function TicketVerificationChatModal({
           });
         }
       })
+      // WebRTC Live Video Calling Realtime Signaling
+      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
+        if (payload && payload.callerId !== (currentUser?.id || currentUser?.username)) {
+          setIncomingCallData(payload);
+          setVideoCallState('incoming');
+          setIsVideoCallOpen(true);
+        }
+      })
+      .on('broadcast', { event: 'video_call_accept' }, () => {
+        setVideoCallState('connected');
+      })
+      .on('broadcast', { event: 'video_call_reject' }, () => {
+        setIsVideoCallOpen(false);
+        setVideoCallState('idle');
+        setIncomingCallData(null);
+      })
+      .on('broadcast', { event: 'video_call_end' }, () => {
+        setIsVideoCallOpen(false);
+        setVideoCallState('idle');
+        setIncomingCallData(null);
+      })
       .subscribe();
 
     realtimeChannelRef.current = channel;
@@ -412,35 +441,23 @@ export default function TicketVerificationChatModal({
     const val = e.target.value;
     setInputText(val);
 
-    if (realtimeChannelRef.current) {
-      realtimeChannelRef.current.send({
-        type: 'broadcast',
-        event: 'typing',
-        payload: {
-          userId: currentUser?.id,
-          username: currentUser?.username,
-          name: currentUser?.full_name || currentUser?.username,
-          isTyping: val.length > 0
-        }
-      });
-    }
+    sendBroadcastSafe(realtimeChannelRef.current, 'typing', {
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      name: currentUser?.full_name || currentUser?.username,
+      isTyping: val.length > 0
+    });
 
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
-      if (realtimeChannelRef.current) {
-        const stillHasDraft = val.trim().length > 0;
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'typing',
-          payload: {
-            userId: currentUser?.id,
-            username: currentUser?.username,
-            name: currentUser?.full_name || currentUser?.username,
-            isTyping: false,
-            status: stillHasDraft ? 'afk_typing' : 'active'
-          }
-        });
-      }
+      const stillHasDraft = val.trim().length > 0;
+      sendBroadcastSafe(realtimeChannelRef.current, 'typing', {
+        userId: currentUser?.id,
+        username: currentUser?.username,
+        name: currentUser?.full_name || currentUser?.username,
+        isTyping: false,
+        status: stillHasDraft ? 'afk_typing' : 'active'
+      });
     }, 2800);
   };
 
@@ -540,17 +557,13 @@ export default function TicketVerificationChatModal({
     const lastMsg = displayedMessages[displayedMessages.length - 1];
     const isFromOther = lastMsg && (lastMsg.sender_id !== (currentUser?.id || currentUser?.username) && lastMsg.sender_name !== currentUser?.full_name);
     
-    if (realtimeChannelRef.current && isFromOther) {
-      realtimeChannelRef.current.send({
-        type: 'broadcast',
-        event: 'message_seen',
-        payload: {
-          userId: currentUser?.id || currentUser?.username,
-          name: currentUser?.full_name || currentUser?.username,
-          lastMsgId: lastMsg.id,
-          seenAt: new Date().toISOString()
-        }
-      }).catch(() => {});
+    if (isFromOther) {
+      sendBroadcastSafe(realtimeChannelRef.current, 'message_seen', {
+        userId: currentUser?.id || currentUser?.username,
+        name: currentUser?.full_name || currentUser?.username,
+        lastMsgId: lastMsg.id,
+        seenAt: new Date().toISOString()
+      });
     }
   }, [isOpen, displayedMessages, activeContact, currentUser]);
 
@@ -691,6 +704,44 @@ export default function TicketVerificationChatModal({
     } finally {
       setIsProcessingVerify(null);
     }
+  };
+
+  // Video Call Action Handlers
+  const handleStartVideoCall = () => {
+    setIsVideoCallOpen(true);
+    setVideoCallState('calling');
+  };
+
+  const handleAcceptCall = () => {
+    setVideoCallState('connected');
+    sendBroadcastSafe(realtimeChannelRef.current, 'video_call_accept', {
+      responderId: currentUser?.id || currentUser?.username
+    });
+  };
+
+  const handleRejectCall = () => {
+    setIsVideoCallOpen(false);
+    setVideoCallState('idle');
+    setIncomingCallData(null);
+    sendBroadcastSafe(realtimeChannelRef.current, 'video_call_reject', {
+      responderId: currentUser?.id || currentUser?.username
+    });
+  };
+
+  const handleEndCall = (isLocalInitiator = true) => {
+    setIsVideoCallOpen(false);
+    setVideoCallState('idle');
+    setIncomingCallData(null);
+    if (isLocalInitiator) {
+      sendBroadcastSafe(realtimeChannelRef.current, 'video_call_end', {
+        senderId: currentUser?.id || currentUser?.username
+      });
+    }
+  };
+
+  const handleTicketSnapshotScanned = (scanRes, previewUrl) => {
+    if (previewUrl) setFilePreview(previewUrl);
+    if (scanRes) setOcrResult(scanRes);
   };
 
   // Filtered contacts list
@@ -846,6 +897,16 @@ export default function TicketVerificationChatModal({
 
           {/* Action Icons */}
           <div className="flex items-center gap-0.5 shrink-0 text-[#0084FF]">
+            {/* Start Live Video Call Button */}
+            <button
+              type="button"
+              onClick={handleStartVideoCall}
+              className="p-1 rounded-full hover:bg-blue-50 text-[#0084FF] hover:text-blue-700 transition-colors cursor-pointer"
+              title={`Start Video Call with ${chatHeaderName}`}
+            >
+              <Video size={16} />
+            </button>
+
             <button
               type="button"
               onClick={() => setWindowMode(isExpanded ? 'docked' : 'expanded')}
@@ -881,35 +942,7 @@ export default function TicketVerificationChatModal({
           {/* MESSENGER CHAT BODY */}
           <div className="flex-1 p-3.5 overflow-y-auto space-y-3.5 bg-white">
             
-            {/* PROFILE WELCOME CARD */}
-            <div className="py-3 text-center space-y-1.5 border-b border-slate-100 pb-4">
-                <div className="relative w-12 h-12 mx-auto">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-black font-mono border-2 border-white shadow-md mx-auto ${chatHeaderAvatarClass}`}>
-                    {chatHeaderInitials}
-                  </div>
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
-                </div>
-                
-                <div>
-                  <h4 className="text-sm font-black text-slate-900">{chatHeaderName}</h4>
-                  <div className="flex items-center justify-center gap-1.5 mt-1">
-                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-300 text-[9px] font-black px-2 py-0.5 rounded-full uppercase inline-block">
-                      {chatHeaderRole}
-                    </span>
-                    <span className="bg-blue-50 text-[#002B66] border border-blue-200 text-[9px] font-black px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
-                      <Building2 size={10} /> {chatHeaderSubOffice}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-[10.5px] text-slate-500 max-w-xs mx-auto leading-relaxed font-medium">
-                  {isGroupChat 
-                    ? `Group Verification Channel for ${chatHeaderSubOffice}. All member SSRs and Specialists collaborate live here.`
-                    : `Direct 1-on-1 private verification line between you and ${chatHeaderName}.`}
-                </p>
-              </div>
-
-              {/* CHAT MESSAGES */}
+            {/* CHAT MESSAGES */}
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-6 text-slate-400 space-y-1.5">
                   <RefreshCw size={18} className="animate-spin text-[#0084FF]" />
@@ -1285,6 +1318,19 @@ export default function TicketVerificationChatModal({
         currentUser={currentUser}
         activeUsers={activeUsers}
         onCreateGroup={handleCreateGroup}
+      />
+
+      {/* LIVE WEBRTC VIDEO CALL OVERLAY WINDOW */}
+      <VideoCallWindow
+        isOpen={isVideoCallOpen}
+        callState={videoCallState}
+        partner={incomingCallData ? { name: incomingCallData.callerName, sub_office: incomingCallData.callerSubOffice } : activeContact}
+        currentUser={currentUser}
+        realtimeChannel={realtimeChannelRef.current}
+        onEndCall={handleEndCall}
+        onAcceptCall={handleAcceptCall}
+        onRejectCall={handleRejectCall}
+        onTicketSnapshotScanned={handleTicketSnapshotScanned}
       />
     </div>
   );

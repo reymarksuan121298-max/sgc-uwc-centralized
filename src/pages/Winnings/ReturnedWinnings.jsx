@@ -73,25 +73,38 @@ export default function ReturnedWinnings({
   }, [liveWinningsData]);
 
   const checkIsInSourceRecords = (item, transId) => {
-    // Check explicit unclaimed flag
-    if ([item.is_claimed, item.isClaimed, item.isClaime, item.isClaim].some(v => v === 0 || v === '0' || v === false || v === 'false') || Boolean(item.isClaime0)) {
-      return true;
+    // 1. Direct check: If ticket is marked with isClaime: 1 or isClaim: 1
+    const isExplicitlyClaimed = [
+      item.isClaime,
+      item.isClaim,
+      item.is_claime,
+      item.is_claimed,
+      item.isClaimed
+    ].some(v => v === 1 || v === '1' || v === true || v === 'true');
+
+    if (isExplicitlyClaimed) {
+      return false; // Not in unclaimed records -> ALREADY CLAIMED
     }
-    // Check explicit claimed flag
-    if ([item.is_claimed, item.isClaimed, item.isClaime, item.isClaim].some(v => v === 1 || v === '1' || v === true || v === 'true')) {
-      return false;
+
+    // 2. Base status on the live Unclaimed API endpoints if loaded
+    if (hasLoadedSourceData) {
+      const cleanTrans = superClean(transId);
+      const cleanApiId = superClean(item.apiId || item.api_id || '');
+      const cleanBet = superClean(item.betNo || item.bet_no || '');
+      const winAmt = parseFloat(item.winAmount ?? item.win_amount ?? 0);
+
+      const existsInUnclaimedApi = activeSourceTransIds.has(cleanTrans) ||
+        (item.id && activeSourceTransIds.has(superClean(item.id))) ||
+        (cleanApiId && activeSourceTransIds.has(cleanApiId)) ||
+        (item.sourceId && activeSourceTransIds.has(superClean(item.sourceId))) ||
+        (cleanBet && winAmt > 0 && activeSourceComposites.has(`${cleanBet}_${winAmt}`));
+
+      // If found in the unclaimed API records -> Still Unclaimed (Return Unremitted)
+      // If not found in the unclaimed API records -> Already Claimed in the original STL system!
+      return existsInUnclaimedApi;
     }
 
-    if (isLoadingLiveData || !hasLoadedSourceData) return true;
-
-    const cleanTrans = superClean(transId);
-    const cleanBet = superClean(item.betNo || item.bet_no || '');
-    const winAmt = parseFloat(item.winAmount ?? item.win_amount ?? 0);
-
-    return activeSourceTransIds.has(cleanTrans) ||
-      (item.id && activeSourceTransIds.has(superClean(item.id))) ||
-      (item.sourceId && activeSourceTransIds.has(superClean(item.sourceId))) ||
-      activeSourceComposites.has(`${cleanBet}_${winAmt}`);
+    return true;
   };
 
   // Pending Deletion Requests

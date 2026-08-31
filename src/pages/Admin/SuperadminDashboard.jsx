@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { 
   ShieldCheck, ArrowLeftRight, CreditCard, Users, CheckCircle2, 
   Clock, AlertTriangle, TrendingUp, Building2, Smartphone, Landmark, 
   Coins, FileText, ChevronRight, Activity, Percent 
 } from 'lucide-react';
+import { supabase } from '../../config/supabaseClient';
 
 export default function SuperadminDashboard({ 
   returnedData = [], 
@@ -11,6 +12,38 @@ export default function SuperadminDashboard({
   receipts = [], 
   onNavigateTab 
 }) {
+  // Load official sub-offices directly from database table
+  const [dbSubOffices, setDbSubOffices] = useState([]);
+
+  useEffect(() => {
+    const fetchSubOffices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sub_offices')
+          .select('*')
+          .order('name', { ascending: true });
+        if (!error && data) {
+          setDbSubOffices(data);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch sub_offices:', err);
+      }
+    };
+
+    fetchSubOffices();
+
+    const channel = supabase
+      .channel('superadmin_sub_offices_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        fetchSubOffices();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   // Financial & Commission Aggregations
   const stats = useMemo(() => {
     let totalUnclaimedWin = 0;
@@ -27,8 +60,6 @@ export default function SuperadminDashboard({
     let totalStaffComm = 0;
     let totalCollectorComm = 0;
     let underSettlementCount = 0;
-
-    const subOfficeMap = {};
 
     returnedData.forEach((i) => {
       const win = parseFloat(i.winAmount ?? 0);
@@ -48,15 +79,45 @@ export default function SuperadminDashboard({
       totalCollectorComm += col;
 
       if (i.isUnderSettlement) underSettlementCount += 1;
+    });
 
-      const sub = i.sub_office || 'Mandaue Central';
-      if (!subOfficeMap[sub]) {
-        subOfficeMap[sub] = { subOffice: sub, count: 0, totalWin: 0, returnOut: 0, adminComm: 0 };
-      }
-      subOfficeMap[sub].count += 1;
-      subOfficeMap[sub].totalWin += win;
-      subOfficeMap[sub].returnOut += out;
-      subOfficeMap[sub].adminComm += adm;
+    // Map sub-offices strictly from database sub_offices table
+    const subOfficesStats = dbSubOffices.map((office) => {
+      const officeName = office.name || '';
+      let count = 0;
+      let totalWin = 0;
+      let returnOut = 0;
+      let adminComm = 0;
+
+      returnedData.forEach((i) => {
+        const itemOffice = (i.sub_office || '').toLowerCase().trim();
+        const targetOffice = officeName.toLowerCase().trim();
+        
+        // Match ticket if it references this sub-office name, or if Mandaue Central is default
+        const isMatch = itemOffice === targetOffice || 
+          (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === itemOffice)));
+
+        if (isMatch) {
+          const win = parseFloat(i.winAmount ?? 0);
+          const out = parseFloat(i.return_amount_out ?? win);
+          const adm = parseFloat(i.admin_commission ?? (win * 0.50));
+          count += 1;
+          totalWin += win;
+          returnOut += out;
+          adminComm += adm;
+        }
+      });
+
+      return {
+        id: office.id,
+        subOffice: office.name,
+        location: office.location,
+        status: office.status || 'ACTIVE',
+        count,
+        totalWin,
+        returnOut,
+        adminComm
+      };
     });
 
     const pendingVerificationCount = receipts.filter(r => r.verification_status === 'PENDING').length;
@@ -78,9 +139,9 @@ export default function SuperadminDashboard({
       pendingVerificationCount,
       verifiedReceiptsCount,
       totalReceiptsAmount,
-      subOffices: Object.values(subOfficeMap)
+      subOffices: subOfficesStats
     };
-  }, [returnedData, unclaimedData, receipts]);
+  }, [returnedData, unclaimedData, receipts, dbSubOffices]);
 
   return (
     <div className="w-full space-y-6">
