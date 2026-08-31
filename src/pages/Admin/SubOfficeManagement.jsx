@@ -129,14 +129,19 @@ export default function SubOfficeManagement({ currentUser }) {
       };
 
       if (editingOffice?.id) {
-        payload.id = editingOffice.id;
+        // Update existing record by ID
+        const { error } = await supabase
+          .from('sub_offices')
+          .update(payload)
+          .eq('id', editingOffice.id);
+        if (error) throw error;
+      } else {
+        // Insert new record without passing primary key ID
+        const { error } = await supabase
+          .from('sub_offices')
+          .insert([payload]);
+        if (error) throw error;
       }
-
-      const { error } = await supabase
-        .from('sub_offices')
-        .upsert(payload, { onConflict: 'name' });
-
-      if (error) throw error;
 
       // Audit Log
       await supabase.from('audit_logs').insert([{

@@ -187,10 +187,10 @@ export default function Login({ onLoginSuccess }) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm sm:text-base font-black text-white tracking-wide uppercase leading-tight">
-                  Lucky Betplay Corporation
+                  CENTRALIZED
                 </h1>
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
-                  STL Mandaue
+                  Unclaimed Winnings
                 </span>
               </div>
               <p className="text-[11px] text-cyan-200/70 font-semibold tracking-normal">
@@ -380,7 +380,7 @@ export default function Login({ onLoginSuccess }) {
               <div className="mt-5 p-3.5 bg-[#0a0f1d]/90 rounded-2xl border border-cyan-900/50 text-[11px] text-slate-400 flex items-start gap-2.5">
                 <Info size={15} className="text-cyan-400 shrink-0 mt-0.5" />
                 <span>
-                  Forgot password? Contact the Lucky Betplay Corp IT Administrator or Operations Supervisor.
+                  Forgot password? Contact the System IT Administrator or Operations Supervisor.
                 </span>
               </div>
             </div>
@@ -427,7 +427,7 @@ export default function Login({ onLoginSuccess }) {
           <div className="space-y-1">
             <p className="font-extrabold text-white uppercase tracking-wider flex items-center justify-center md:justify-start gap-2">
               <Landmark size={14} className="text-cyan-400" />
-              <span>Lucky Betplay Corporation • STL Mandaue Branch</span>
+              <span>CENTRALIZED UNCLAIMED WINNINGS • STL OPERATIONS</span>
             </p>
             <p className="text-[11px] text-slate-500">
               Data protection in compliance with the Philippine Data Privacy Act of 2012 (RA 10173).

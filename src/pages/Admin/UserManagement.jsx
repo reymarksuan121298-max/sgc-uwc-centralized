@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Users, UserPlus, Shield, Building2, CheckCircle2, 
-  Edit2, Search, RefreshCw, Lock, Unlock 
+  Edit2, Search, RefreshCw, Lock, Unlock, Trash2, AlertTriangle 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { ROLES, formatRoleName } from '../../utils/permissions';
@@ -19,6 +19,7 @@ export default function UserManagement({ currentUser }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Form Fields
   const [username, setUsername] = useState('');
@@ -137,12 +138,19 @@ export default function UserManagement({ currentUser }) {
     setErrorMessage('');
 
     try {
+      // Sanitize sub_office for PostgreSQL foreign key constraint:
+      // If 'All', empty, or not in database, store as NULL
+      const matchingOffice = (subOffices || []).find(so => typeof so === 'string' ? so.toLowerCase().trim() === String(subOffice).toLowerCase().trim() : (so?.name || '').toLowerCase().trim() === String(subOffice).toLowerCase().trim());
+      const finalSubOffice = (subOffice === 'All' || !matchingOffice) 
+        ? null 
+        : (typeof matchingOffice === 'string' ? matchingOffice : matchingOffice.name);
+
       if (editingUser) {
         // Update user
         const updatePayload = {
           full_name: fullName.trim() || null,
           role,
-          sub_office: subOffice,
+          sub_office: finalSubOffice,
           is_active: isActive,
           updated_at: new Date().toISOString()
         };
@@ -164,7 +172,7 @@ export default function UserManagement({ currentUser }) {
             action: 'USER_UPDATED',
             target_type: 'USER',
             target_id: username.trim(),
-            sub_office: subOffice,
+            sub_office: finalSubOffice || 'All Branches',
             details: { role, is_active: isActive }
           }]);
         } catch {}
@@ -183,7 +191,7 @@ export default function UserManagement({ currentUser }) {
             password: password.trim(),
             full_name: fullName.trim() || null,
             role,
-            sub_office: subOffice,
+            sub_office: finalSubOffice,
             is_active: isActive
           }]);
 
@@ -225,6 +233,47 @@ export default function UserManagement({ currentUser }) {
       await fetchUsers();
     } catch (err) {
       alert(`Error updating user status: ${err.message}`);
+    }
+  };
+
+  const executeDeleteUser = async () => {
+    if (!deletingUser) return;
+    if (deletingUser.username === currentUser?.username) {
+      alert('You cannot delete your own active session account!');
+      setDeletingUser(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      let query = supabase.from('app_users').delete();
+      if (deletingUser.id) {
+        query = query.eq('id', deletingUser.id);
+      } else {
+        query = query.eq('username', deletingUser.username);
+      }
+      const { error } = await query;
+      if (error) throw error;
+
+      try {
+        await supabase.from('audit_logs').insert([{
+          actor_username: currentUser?.username || 'admin',
+          actor_role: currentUser?.role || 'Super Admin',
+          action: 'USER_DELETED',
+          target_type: 'USER',
+          target_id: deletingUser.username,
+          sub_office: deletingUser.sub_office || 'All Branches',
+          details: { role: deletingUser.role, full_name: deletingUser.full_name }
+        }]);
+      } catch {}
+
+      showToast(`User account @${deletingUser.username} permanently deleted.`);
+      setDeletingUser(null);
+      await fetchUsers();
+    } catch (err) {
+      alert(`Failed to delete user: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -371,13 +420,25 @@ export default function UserManagement({ currentUser }) {
                       {u.last_login_at ? new Date(u.last_login_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Never'}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => openEditModal(u)}
-                        className="inline-flex items-center gap-1 bg-slate-100 hover:bg-[#002B66] text-slate-700 hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                      >
-                        <Edit2 size={12} />
-                        <span>Edit / Reset</span>
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          onClick={() => openEditModal(u)}
+                          className="inline-flex items-center gap-1 bg-slate-100 hover:bg-[#002B66] text-slate-700 hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          title="Edit user details or reset password"
+                        >
+                          <Edit2 size={12} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => setDeletingUser(u)}
+                          disabled={u.username === currentUser?.username}
+                          className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={u.username === currentUser?.username ? "You cannot delete your own active account" : "Delete user account"}
+                        >
+                          <Trash2 size={12} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -509,6 +570,51 @@ export default function UserManagement({ currentUser }) {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-rose-600 rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-rose-600 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-white">
+                <AlertTriangle size={18} className="text-[#FFD700]" />
+                <span>Confirm User Deletion</span>
+              </div>
+              <button onClick={() => setDeletingUser(null)} className="text-rose-200 hover:text-white cursor-pointer font-bold">✕</button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs text-slate-700">
+              <p className="font-semibold text-slate-800">
+                Are you sure you want to permanently delete user account <strong className="font-mono text-rose-700">@{deletingUser.username}</strong> ({deletingUser.full_name || 'No Name'})?
+              </p>
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-800 space-y-1">
+                <p className="font-bold">⚠️ Warning: Irreversible Action</p>
+                <p>This will revoke all access for this user and remove their database credentials immediately.</p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeletingUser(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={executeDeleteUser}
+                  disabled={isDeleting}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-lg shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Trash2 size={13} />
+                  <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

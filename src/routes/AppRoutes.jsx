@@ -17,6 +17,8 @@ export default function AppRoutes({
   setActiveTab,
   currentUser,
   isSuperAdmin,
+  canCopyTransaction = true,
+  canOpenQrModal = true,
   // Unclaimed registry props
   fromDate,
   setFromDate,
@@ -97,6 +99,8 @@ export default function AppRoutes({
           copiedTransIds={copiedTransIds}
           formatDrawTime={formatDrawTime}
           onOpenQrModal={onOpenQrModal}
+          canCopyTransaction={canCopyTransaction}
+          canOpenQrModal={canOpenQrModal}
         />
       );
 
@@ -105,14 +109,13 @@ export default function AppRoutes({
         <ReturnedWinnings
           groupedData={returnedGroupedData}
           filteredData={returnedFilteredData}
-          liveData={liveData}
-          isLoadingLive={isLoadingLive}
           formatDrawTime={formatDrawTime}
           currentUser={currentUser}
-          activeDisplayDate={activeDisplayDate}
           onDeleteRecord={onDeleteRecord}
           onDataUpdated={onDataUpdated}
           onOpenQrModal={onOpenQrModal}
+          canCopyTransaction={canCopyTransaction}
+          canOpenQrModal={canOpenQrModal}
           onNavigateToSettlement={onNavigateToSettlement}
         />
       );

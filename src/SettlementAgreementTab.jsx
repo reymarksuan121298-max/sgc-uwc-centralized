@@ -744,7 +744,7 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                   className="w-12 h-12 object-contain rounded" 
                 />
                 <div>
-                  <h1 className="text-xs font-black text-[#002B66] tracking-wide">LUCKY BETPLAY CORPORATION</h1>
+                  <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
                   <p className="text-[9px] text-slate-500 font-semibold">#257 BARLAPS, A.S. FORTUNA STREET, BAKILID, MANDAUE CITY, CEBU 6014</p>
                 </div>
               </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { supabase } from './config/supabaseClient';
 import { getLocalDateString, parseToDateString, formatDrawTime, getTicketTransId } from './utils/formatters';
-import { isSuperAdminRole, isSSRRole, canViewTab } from './utils/permissions';
+import { isSuperAdminRole, isSSRRole, isUnclaimedSpecialistRole, isOperationalNotification, canViewTab } from './utils/permissions';
 import MainLayout from './layouts/MainLayout';
 import AppRoutes from './routes/AppRoutes';
 import Login from './pages/Login/Login';
@@ -44,6 +44,11 @@ export default function App() {
   const [gatewayEndpoints, setGatewayEndpoints] = useState([]);
   const [selectedEndpointFilter, setSelectedEndpointFilter] = useState('ALL');
   const [commissionConfig, setCommissionConfig] = useState(DEFAULT_COMMISSIONS);
+  const [userFeaturesConfig, setUserFeaturesConfig] = useState({
+    default_copy_transaction: false,
+    default_qr_modal: false,
+    users: {}
+  });
 
   // Dashboard Navigation & Filters
   const [activeTab, setActiveTab] = useState(() => {
@@ -111,10 +116,10 @@ export default function App() {
     const title = String(n.title || '').toUpperCase();
     const msg = String(n.message || '').toUpperCase();
     const target = String(n.targetType || '').toUpperCase();
-    return act.includes('VIDEO_CALL') || 
-           title.includes('VIDEO CALL') || 
-           msg.includes('VIDEO CALL') || 
-           target === 'VIDEO_CALL';
+    return act.includes('VIDEO_CALL') ||
+      title.includes('VIDEO CALL') ||
+      msg.includes('VIDEO CALL') ||
+      target === 'VIDEO_CALL';
   };
 
   // System Notifications State (Audit Trail & Activity Logs Only)
@@ -127,7 +132,7 @@ export default function App() {
       const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
       try {
         localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
-      } catch {}
+      } catch { }
       return cleaned;
     } catch {
       return [];
@@ -145,7 +150,7 @@ export default function App() {
         localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
         setNotifications(cleaned);
       }
-    } catch {}
+    } catch { }
   }, [currentUser]);
 
   const appendNotification = useCallback((notif) => {
@@ -213,10 +218,10 @@ export default function App() {
       const targetUser = String(payload.targetUsername || '').toLowerCase().trim();
       const targetId = String(payload.targetId || '').toLowerCase().trim();
       const targetName = String(payload.targetName || '').toLowerCase().trim();
-      return targetUser === myUsername || 
-             targetId === myId || 
-             targetUser === myId ||
-             (targetName && (targetName === myName || targetName === myUsername));
+      return targetUser === myUsername ||
+        targetId === myId ||
+        targetUser === myId ||
+        (targetName && (targetName === myName || targetName === myUsername));
     };
 
     // 1. Universal video signaling broadcast channel
@@ -277,7 +282,7 @@ export default function App() {
               responderUsername: currentUser?.username,
               responderName: currentUser?.full_name || currentUser?.username
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
       });
     }
@@ -317,7 +322,7 @@ export default function App() {
             type: 'broadcast',
             event: 'video_call_reject',
             payload: { responderUsername: currentUser?.username }
-          }).catch(() => {});
+          }).catch(() => { });
         }
       });
     }
@@ -404,8 +409,8 @@ export default function App() {
 
       if (!error && Array.isArray(data)) {
         const unreadCount = data.filter(msg => {
-          const isSender = (currentUserId && msg.sender_id === currentUserId) || 
-                           (msg.sender_name && String(msg.sender_name).trim().toLowerCase() === currentUserName);
+          const isSender = (currentUserId && msg.sender_id === currentUserId) ||
+            (msg.sender_name && String(msg.sender_name).trim().toLowerCase() === currentUserName);
           return !isSender || msg.verification_status === 'PENDING';
         }).length;
         setPendingTicketsChatCount(unreadCount);
@@ -462,6 +467,14 @@ export default function App() {
                 isClaim: defaultEp.isClaim ?? 0
               };
               setGatewayConfig(loadedConfig);
+            }
+          } else if (row.key === 'user_feature_permissions' || row.key === 'user_features_config') {
+            if (parsed && typeof parsed === 'object') {
+              setUserFeaturesConfig({
+                default_copy_transaction: parsed.default_copy_transaction === true,
+                default_qr_modal: parsed.default_qr_modal === true,
+                users: parsed.users || {}
+              });
             }
           } else if (parsed && typeof parsed === 'object' && parsed.baseUrl && !loadedConfig) {
             loadedConfig = parsed;
@@ -552,7 +565,11 @@ export default function App() {
       if (epsToUse && epsToUse.length > 0) {
         const activeEndpoints = epsToUse.filter(e => e.is_active !== false && e.baseUrl);
 
-        if (currentUser?.sub_office && currentUser.sub_office !== 'All') {
+        // Sales Service Representatives (SSR) are restricted to their assigned sub-office
+        // Unclaimed Specialists & Admins have full access to handle all SSR / Sub-Office records
+        const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
+
+        if (isRestrictedBranchSSR) {
           const match = activeEndpoints.find(e => e.sub_office === currentUser.sub_office);
           targetEndpoints = match ? [match] : [activeEndpoints.find(e => e.sub_office === 'All' || e.is_default) || activeEndpoints[0]].filter(Boolean);
         } else {
@@ -761,8 +778,8 @@ export default function App() {
             const senderName = String(payload.new?.sender_name || '').toLowerCase().trim();
 
             const isMe = (myId && (senderId === myId || senderUsername === myId)) ||
-                         (myUsername && (senderId === myUsername || senderUsername === myUsername || senderName === myUsername)) ||
-                         (myName && (senderName === myName || senderId === myName));
+              (myUsername && (senderId === myUsername || senderUsername === myUsername || senderName === myUsername)) ||
+              (myName && (senderName === myName || senderId === myName));
 
             if (!isMe) {
               const sender = payload.new?.sender_name || 'SSR Agent';
@@ -814,6 +831,51 @@ export default function App() {
       .on(
         'postgres_changes',
         {
+          event: '*',
+          schema: 'public',
+          table: 'system_settings'
+        },
+        (payload) => {
+          const row = payload.new || payload.old;
+          if (!row) {
+            loadSystemSettings();
+            return;
+          }
+          if (row.key === 'user_feature_permissions' || row.key === 'user_features_config') {
+            let parsed = row.value;
+            while (typeof parsed === 'string') {
+              try {
+                const next = JSON.parse(parsed);
+                if (next === parsed) break;
+                parsed = next;
+              } catch { break; }
+            }
+            if (parsed && typeof parsed === 'object') {
+              setUserFeaturesConfig({
+                default_copy_transaction: parsed.default_copy_transaction === true,
+                default_qr_modal: parsed.default_qr_modal === true,
+                users: parsed.users || {}
+              });
+            }
+          } else {
+            loadSystemSettings();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'app_users'
+        },
+        () => {
+          loadSystemSettings();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
           event: 'INSERT',
           schema: 'public',
           table: 'audit_logs'
@@ -832,11 +894,26 @@ export default function App() {
 
           // Omit video call logs from push notifications & popup alerts
           if (
-            action.includes('VIDEO_CALL') || 
-            targetType === 'VIDEO_CALL' || 
+            action.includes('VIDEO_CALL') ||
+            targetType === 'VIDEO_CALL' ||
             action === 'VIDEO_CALL_COMPLETED' ||
             action.includes('CALL_LOG')
           ) {
+            return;
+          }
+
+          // Realtime Toast alert when permissions are updated for SSR
+          if (action === 'USER_FEATURE_PERMISSIONS_UPDATED' && !isMe) {
+            const role = String(currentUser?.role || '').toLowerCase();
+            if (role.includes('sales') || role.includes('ssr')) {
+              showToast('🔔 Feature permissions (Copy/QR) updated by Administrator.');
+            }
+          }
+
+          // SSR and Unclaimed Specialist can ONLY view pop notifications & feed for:
+          // Ticket Execution, Returned Winnings, Incident Reports (IR), and Settlement Agreements
+          const isOperationalUser = isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role);
+          if (isOperationalUser && !isOperationalNotification(action, targetType)) {
             return;
           }
           let detailsStr = '';
@@ -895,7 +972,7 @@ export default function App() {
       }
       supabase.removeChannel(channel);
     };
-  }, [currentUser, fetchReturnedFromSupabase, fetchPendingChatCount]);
+  }, [currentUser, fetchReturnedFromSupabase, fetchPendingChatCount, loadSystemSettings]);
 
   const returnedTransIds = useMemo(() => new Set(returnedData.map(i => String(i.transactionId || '').trim().toLowerCase())), [returnedData]);
 
@@ -1100,7 +1177,27 @@ export default function App() {
     }
   };
 
+  // User-level feature capabilities (Copy Transaction & QR Modal) - per SSR account
+  const userFeaturePermissions = useMemo(() => {
+    // Non-SSR roles (Superadmin, Admin, Unclaimed Specialist) retain full access
+    if (!isSSRRole(currentUser?.role)) {
+      return { canCopyTransaction: true, canOpenQrModal: true };
+    }
+    // Sales Service Representative (SSR) accounts:
+    const myKey = String(currentUser?.username || '').toLowerCase().trim();
+    const userOverride = userFeaturesConfig?.users?.[myKey];
+    return {
+      canCopyTransaction: userOverride?.enableCopyTransaction ?? userFeaturesConfig?.default_copy_transaction ?? false,
+      canOpenQrModal: userOverride?.enableQrModal ?? userFeaturesConfig?.default_qr_modal ?? false
+    };
+  }, [currentUser, userFeaturesConfig]);
+
   const handleCopySupervisorImage = async (userKey) => {
+    if (!userFeaturePermissions.canCopyTransaction) {
+      showToast('⚠️ Copy Transaction is disabled for your user account by Administrator.');
+      return;
+    }
+
     const captureNode = document.getElementById(`supervisor-card-${userKey}`);
     if (!captureNode) {
       alert("Could not find table element to capture screenshot.");
@@ -1251,6 +1348,11 @@ export default function App() {
   }
 
   const handleCopyTransId = (transId) => {
+    if (!userFeaturePermissions.canCopyTransaction) {
+      setToastMessage('⚠️ Copy Transaction is disabled for your user account by Administrator.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
     if (!transId) return;
     const strId = String(transId).trim();
     if (strId && strId !== 'N/A') {
@@ -1259,6 +1361,11 @@ export default function App() {
   };
 
   const handleOpenQrModal = (ticket) => {
+    if (!userFeaturePermissions.canOpenQrModal) {
+      setToastMessage('⚠️ QR Modal access is disabled for your user account by Administrator.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
     if (!ticket) return;
     const computedId = getTicketTransId(ticket, 'N/A');
     if (computedId && computedId !== 'N/A') {
@@ -1298,6 +1405,8 @@ export default function App() {
           setActiveTab={handleTabChange}
           currentUser={currentUser}
           isSuperAdmin={isSuperAdmin}
+          canCopyTransaction={userFeaturePermissions.canCopyTransaction}
+          canOpenQrModal={userFeaturePermissions.canOpenQrModal}
           // Unclaimed Registry Props
           fromDate={fromDate}
           setFromDate={setFromDate}
@@ -1322,9 +1431,9 @@ export default function App() {
           copiedSupervisorKeys={copiedSupervisorKeys}
           copiedTransIds={copiedTransIds}
           formatDrawTime={formatDrawTime}
-          onOpenQrModal={handleOpenQrModal}
+          onOpenQrModal={userFeaturePermissions.canOpenQrModal ? handleOpenQrModal : null}
           // Returned Winnings Props
-          returnedGroupedData={groupedData}
+          returnedGroupedData={null}
           returnedFilteredData={returnedData}
           liveData={data}
           isLoadingLive={loading}
@@ -1397,6 +1506,8 @@ export default function App() {
         onConfirm={handleConfirmReturn}
         onOpenQrModal={handleOpenQrModal}
         currentUser={currentUser}
+        canCopyTransaction={userFeaturePermissions.canCopyTransaction}
+        canOpenQrModal={userFeaturePermissions.canOpenQrModal}
       />
 
       {/* Standalone Reusable QR Modal */}

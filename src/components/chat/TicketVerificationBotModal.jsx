@@ -565,7 +565,7 @@ export default function TicketVerificationBotModal({
                         {/* Dotted Perforation Line Footer */}
                         <div className="border-t border-dashed border-slate-300/90 bg-slate-50/70 py-1.5 px-3 text-center">
                           <span className="text-[8.5px] font-mono tracking-widest text-slate-400 uppercase">
-                            LUCKY BETPLAY CORP • AUDIT VERIFICATION SLIP
+                            CENTRALIZED UNCLAIMED WINNINGS • AUDIT VERIFICATION SLIP
                           </span>
                         </div>
 
@@ -649,7 +649,7 @@ export default function TicketVerificationBotModal({
 
           {/* Official Footer Subtitle */}
           <p className="text-[9.5px] text-center text-slate-400 font-medium">
-            Official Verification Bot • Lucky Betplay Corporation (STL Mandaue)
+            Official Verification Bot • CENTRALIZED UNCLAIMED WINNINGS
           </p>
 
         </div>

@@ -9,7 +9,7 @@ import {
   Download, Smartphone
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
-import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole } from '../../utils/permissions';
+import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole, isOperationalNotification } from '../../utils/permissions';
 import { notificationService } from '../../services/notificationService';
 import CreateGroupChatModal from '../chat/CreateGroupChatModal';
 import AgentMascotAvatar from '../chat/AgentMascotAvatar';
@@ -79,8 +79,15 @@ export default function Header({
   };
 
   const cleanNotifications = useMemo(() => {
-    return (notifications || []).filter(n => !isCallNotification(n));
-  }, [notifications]);
+    const isOperationalUser = isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role);
+    return (notifications || []).filter(n => {
+      if (isCallNotification(n)) return false;
+      if (isOperationalUser && n.type === 'audit' && !isOperationalNotification(n.action, n.targetType)) {
+        return false;
+      }
+      return true;
+    });
+  }, [notifications, currentUser]);
 
   const unreadNotificationsCount = useMemo(() => {
     return cleanNotifications.filter(n => !n.read).length;
@@ -1030,7 +1037,7 @@ export default function Header({
                     <Building2 size={12} className="text-[#002B66]" /> Sub-Office
                   </span>
                   <span className="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-md truncate max-w-[140px]">
-                    {currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'All Branches'}
+                    {currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'All'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
@@ -1043,19 +1050,6 @@ export default function Header({
                   </span>
                 </div>
               </div>
-
-              {/* PWA Install Desktop/Mobile App Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsProfileOpen(false);
-                  handleInstallPWA();
-                }}
-                className="w-full bg-[#002B66] hover:bg-blue-900 text-[#FFD700] border border-[#FFD700]/30 font-black py-2 px-3 rounded-xl text-center text-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-xs"
-              >
-                <Download size={13} className="text-[#FFD700]" />
-                <span>INSTALL APP (DESKTOP & MOBILE)</span>
-              </button>
 
               {/* Logout Action Button */}
               {onLogout && (

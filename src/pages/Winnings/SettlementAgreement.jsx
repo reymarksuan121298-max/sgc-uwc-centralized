@@ -11,7 +11,8 @@ import {
   CreditCard, 
   X, 
   ChevronDown, 
-  ChevronUp 
+  ChevronUp,
+  Building2
 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
@@ -150,10 +151,47 @@ const createInstallmentRows = ({
   });
 };
 
-export default function SettlementAgreement({ filteredData = [], onSaveAgreement }) {
+export default function SettlementAgreement({ filteredData = [], onSaveAgreement, initialTicketId = '', currentUser = null }) {
   // Main Tab State for Sub-navigation ('create' or 'list')
   const [activeSubTab, setActiveSubTab] = useState('create');
   const [currentStep, setCurrentStep] = useState(1);
+
+  // Sub-Office Scoping State
+  const [dbSubOffices, setDbSubOffices] = useState([]);
+  const [selectedSubOfficeFilter, setSelectedSubOfficeFilter] = useState(() => {
+    return currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'ALL';
+  });
+
+  useEffect(() => {
+    const fetchSubOffices = async () => {
+      try {
+        const { data } = await supabase.from('sub_offices').select('*').order('name', { ascending: true });
+        if (data) setDbSubOffices(data);
+      } catch (err) {
+        console.warn('Failed to load sub-offices for settlements:', err);
+      }
+    };
+    fetchSubOffices();
+
+    const channel = supabase
+      .channel('settlement_sub_offices_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        fetchSubOffices();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Filtered available tickets based on sub-office scope
+  const availableTickets = filteredData.filter((item) => {
+    if (selectedSubOfficeFilter === 'ALL') return true;
+    const itemOffice = (item.sub_office || item.subOffice || item.branch || '').toLowerCase().trim();
+    const targetOffice = selectedSubOfficeFilter.toLowerCase().trim();
+    return itemOffice === targetOffice || (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all'));
+  });
 
   const [paymentsByAgreement, setPaymentsByAgreement] = useState({});
   const [expandedAgreementId, setExpandedAgreementId] = useState(null);
@@ -167,7 +205,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const [isSavingPayment, setIsSavingPayment] = useState(false);
 
   // States for Editable Form
-  const [selectedTicketId, setSelectedTicketId] = useState('');
+  const [selectedTicketId, setSelectedTicketId] = useState(initialTicketId || '');
   const [agreementDate, setAgreementDate] = useState(new Date().toISOString().split('T')[0]);
   const [reason, setReason] = useState(REASON_TEMPLATES[0].text);
   const [installmentsCount, setInstallmentsCount] = useState(10);
@@ -182,24 +220,27 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     createInstallmentRows({
       count: 10,
       amountPerInstallment: '500',
-      winAmount: parseFloat(filteredData[0]?.winAmount || 5000),
+      winAmount: parseFloat(availableTickets[0]?.winAmount || filteredData[0]?.winAmount || 5000),
       agreementDate: new Date().toISOString().split('T')[0],
       frequency: 'weekly'
     })
   );
 
-  // Find selected ticket from filteredData
-  const selectedTicket = filteredData.find(
+  // Find selected ticket from availableTickets / filteredData
+  const selectedTicket = availableTickets.find(
     (item) => (item.transactionId || item.transId || item.receipt_no) === selectedTicketId
-  ) || filteredData[0] || {
+  ) || availableTickets[0] || filteredData[0] || {
     transactionId: '081628-OIIIRA0CN',
     drawDate: '2026-08-16',
     drawTime: '5:00 PM',
     betNo: '784',
     winAmount: 5000.00,
     username: 'sample_user',
-    fullName: 'Sample Claimant'
+    fullName: 'Sample Claimant',
+    sub_office: 'Mandaue Central'
   };
+
+  const ticketSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || selectedTicket.branch || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
 
   const getSelectedTicketId = (ticket) => ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
   const getWinAmount = (ticket) => parseFloat(ticket?.winAmount || 5000);
@@ -305,10 +346,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const handleSave = () => {
     if (onSaveAgreement) {
       const totalAmountVal = installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0);
+      const chosenSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
       
       onSaveAgreement({
         transactionId: selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no,
-        ticket: selectedTicket,
+        ticket: { ...selectedTicket, sub_office: chosenSubOffice },
+        sub_office: chosenSubOffice,
         agreementDate,
         reason,
         frequency,
@@ -321,7 +364,13 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           supervisor: supervisorName
         },
         isUnderSettlement: true,
-        settlementTerms: JSON.stringify({ reason, frequency, installmentsCount: installments.length, installments }),
+        settlementTerms: JSON.stringify({ 
+          reason, 
+          frequency, 
+          sub_office: chosenSubOffice,
+          installmentsCount: installments.length, 
+          installments 
+        }),
         totalInstallmentAmount: totalAmountVal,
         settlementStatus: 'PENDING'
       });
@@ -350,7 +399,14 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     return item.isUnderSettlement === true || status === 'true' || status === '1' || Boolean(item.settlementTerms || item.settlement_terms);
   };
 
-  const savedAgreementsList = filteredData.filter(isSettlementRecord);
+  // Filtered saved agreements based on selected sub-office
+  const savedAgreementsList = filteredData.filter((item) => {
+    if (!isSettlementRecord(item)) return false;
+    if (selectedSubOfficeFilter === 'ALL') return true;
+    const itemOffice = (item.sub_office || item.subOffice || item.branch || '').toLowerCase().trim();
+    const targetOffice = selectedSubOfficeFilter.toLowerCase().trim();
+    return itemOffice === targetOffice || (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all'));
+  });
   const displayedAgreementIds = savedAgreementsList.map((item) => item.id).filter(Boolean);
   const displayedAgreementIdsKey = displayedAgreementIds.join(',');
 
@@ -486,36 +542,58 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   return (
     <div className="space-y-4 w-full pb-12 print:max-w-none print:pb-0 print:space-y-0">
       
-      {/* SUB-TABS NAVIGATION (Hidden when printing) */}
-      <div className="print:hidden flex items-center gap-2 border-b border-slate-200 pb-3">
-        <button
-          onClick={() => setActiveSubTab('create')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-            activeSubTab === 'create'
-              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <PlusCircle size={16} />
-          <span>Create Agreement</span>
-        </button>
+      {/* SUB-TABS NAVIGATION & SUB-OFFICE FILTER (Hidden when printing) */}
+      <div className="print:hidden flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveSubTab('create')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeSubTab === 'create'
+                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <PlusCircle size={16} />
+            <span>Create Agreement</span>
+          </button>
 
-        <button
-          onClick={() => setActiveSubTab('list')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-            activeSubTab === 'list'
-              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <ListOrdered size={16} />
-          <span>Saved Agreements List</span>
-          {savedAgreementsList.length > 0 && (
-            <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-full text-[10px] font-mono">
-              {savedAgreementsList.length}
-            </span>
-          )}
-        </button>
+          <button
+            onClick={() => setActiveSubTab('list')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeSubTab === 'list'
+                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <ListOrdered size={16} />
+            <span>Saved Agreements List</span>
+            {savedAgreementsList.length > 0 && (
+              <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-full text-[10px] font-mono">
+                {savedAgreementsList.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Sub-Office Filter Dropdown */}
+        {(!currentUser?.sub_office || currentUser.sub_office === 'All') && dbSubOffices.length > 0 && (
+          <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs shadow-2xs">
+            <Building2 size={15} className="text-[#002B66] shrink-0" />
+            <span className="text-[10px] font-black uppercase text-slate-400">Sub-Office Scope:</span>
+            <select
+              value={selectedSubOfficeFilter}
+              onChange={(e) => setSelectedSubOfficeFilter(e.target.value)}
+              className="bg-transparent font-bold text-[#002B66] outline-none cursor-pointer text-xs"
+            >
+              <option value="ALL">All Sub-Offices ({dbSubOffices.length})</option>
+              {dbSubOffices.map((so) => (
+                <option key={so.id || so.name} value={so.name}>
+                  {so.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* CONDITIONAL RENDERING BASED ON ACTIVE SUB-TAB */}
@@ -558,9 +636,13 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 return (
                   <div key={agreementKey} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-slate-300 transition-all">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="bg-blue-50 text-[#002B66] border border-blue-200 font-mono font-bold px-2.5 py-1 rounded-lg text-xs">
                           {item.transactionId}
+                        </span>
+                        <span className="bg-amber-50 text-amber-900 border border-amber-200 font-sans font-bold px-2.5 py-1 rounded-lg text-[10px] uppercase flex items-center gap-1">
+                          <Building2 size={11} className="text-amber-700" />
+                          {item.sub_office || item.subOffice || parsedTerms?.sub_office || 'Mandaue Central'}
                         </span>
                         <span className="text-xs font-bold text-slate-700">
                           Accountable Payer: <span className="text-slate-900">{item.fullName || item.username || 'N/A'}</span>
@@ -753,12 +835,13 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               <div className="flex items-center gap-3">
                 <img 
                   src="/lbp.png" 
-                  alt="Lucky Betplay Logo" 
+                  alt="Centralized Logo" 
                   className="w-12 h-12 object-contain rounded" 
                 />
                 <div>
-                  <h1 className="text-xs font-black text-[#002B66] tracking-wide">LUCKY BETPLAY CORPORATION</h1>
-                  <p className="text-[9px] text-slate-500 font-semibold">#257 BARLAPS, A.S. FORTUNA STREET, BAKILID, MANDAUE CITY, CEBU 6014</p>
+                  <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
+                  <p className="text-[9.5px] text-slate-700 font-bold uppercase tracking-wider">SUB-OFFICE: {ticketSubOffice}</p>
+                  <p className="text-[8.5px] text-slate-400 font-semibold">#257 BARLAPS, A.S. FORTUNA STREET, BAKILID, MANDAUE CITY, CEBU 6014</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">

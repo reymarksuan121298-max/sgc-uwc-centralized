@@ -13,6 +13,8 @@ export default function ConfirmReturnModal({
   isCopied = false,
   onCopyTransId,
   onOpenQrModal,
+  canCopyTransaction = true,
+  canOpenQrModal = true,
   currentUser,
   onClose,
   onConfirm
@@ -127,33 +129,29 @@ export default function ConfirmReturnModal({
                   {targetTransId}
                 </span>
 
-                {/* Copy and QR buttons only available for non-SSR roles */}
-                {!isSSR && (
-                  <>
-                    {/* Copy Button */}
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(targetTransId)}
-                      className="bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md cursor-pointer transition-all active:scale-95 flex items-center gap-1 shadow-2xs"
-                      title="Copy Transaction ID"
-                    >
-                      <Copy size={11} />
-                      <span>{isTransIdCopied ? "Copied" : "Copy"}</span>
-                    </button>
+                {/* Copy and QR buttons rendered dynamically based on permissions */}
+                {canCopyTransaction && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(targetTransId)}
+                    className="bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md cursor-pointer transition-all active:scale-95 flex items-center gap-1 shadow-2xs"
+                    title="Copy Transaction ID"
+                  >
+                    <Copy size={11} />
+                    <span>{isTransIdCopied ? "Copied" : "Copy"}</span>
+                  </button>
+                )}
 
-                    {/* QR Code Button */}
-                    {onOpenQrModal && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenQrModal(ticket)}
-                        className="bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md cursor-pointer transition-all active:scale-95 flex items-center gap-1 shadow-2xs"
-                        title="Open Ticket QR Code"
-                      >
-                        <QrCode size={11} />
-                        <span>QR</span>
-                      </button>
-                    )}
-                  </>
+                {canOpenQrModal && onOpenQrModal && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenQrModal(ticket)}
+                    className="bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md cursor-pointer transition-all active:scale-95 flex items-center gap-1 shadow-2xs"
+                    title="Open Ticket QR Code"
+                  >
+                    <QrCode size={11} />
+                    <span>QR</span>
+                  </button>
                 )}
               </div>
             </div>
