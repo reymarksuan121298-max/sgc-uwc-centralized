@@ -89,6 +89,17 @@ export default function UserManagement({ currentUser }) {
 
   useEffect(() => {
     fetchUsers();
+
+    const channel = supabase
+      .channel('user_mgmt_sub_offices_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        fetchUsers();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const openCreateModal = () => {

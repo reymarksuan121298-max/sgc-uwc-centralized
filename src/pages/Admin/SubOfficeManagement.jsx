@@ -73,6 +73,17 @@ export default function SubOfficeManagement({ currentUser }) {
 
   useEffect(() => {
     loadData();
+
+    const channel = supabase
+      .channel('sub_offices_realtime_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const openCreateModal = () => {

@@ -118,6 +118,17 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
   useEffect(() => {
     loadSettings();
+
+    const channel = supabase
+      .channel('system_config_sub_offices_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        loadSettings();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const totalPercent = parseFloat(adminPercent || 0) + parseFloat(agentPercent || 0) + parseFloat(staffPercent || 0) + parseFloat(collectorPercent || 0);
