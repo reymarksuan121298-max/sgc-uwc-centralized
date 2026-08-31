@@ -28,7 +28,7 @@ export default function ConfirmReturnModal({
   const targetTransId = getTicketTransId(ticket);
   const isTransIdCopied = Boolean(internalCopied || isCopied || (targetTransId && copiedTransIds?.has?.(targetTransId)));
   const isQrOpened = Boolean(targetTransId && openedQrTransIds?.has?.(targetTransId));
-  const isTransferDisabled = !isSSR && (isTransIdCopied || isQrOpened);
+  const isTransferDisabled = (isTransIdCopied || isQrOpened);
 
   const handleCopy = (text) => {
     if (onCopyTransId) {
