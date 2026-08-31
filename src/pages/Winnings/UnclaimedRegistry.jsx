@@ -194,12 +194,13 @@ export default function UnclaimedRegistry({
                         <span className="text-[10px] bg-blue-100 text-[#002B66] px-2 py-0.5 rounded shrink-0">{items.length} items</span>
                         <button
                           type="button"
+                          data-screenshot-exclude="true"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (onCopySupervisorImage) onCopySupervisorImage(userKey);
                           }}
                           disabled={isCapturingImage === userKey}
-                          className="flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                          className="hide-in-screenshot flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
                           title={`Copy ${userKey} table as image`}
                         >
                           {isCapturingImage === userKey ? (

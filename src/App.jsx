@@ -1038,6 +1038,15 @@ export default function App() {
         style: {
           overflow: 'visible',
           maxWidth: 'none'
+        },
+        filter: (node) => {
+          if (node.classList && (node.classList.contains('hide-in-screenshot') || node.classList.contains('no-screenshot'))) {
+            return false;
+          }
+          if (node.getAttribute && node.getAttribute('data-screenshot-exclude') === 'true') {
+            return false;
+          }
+          return true;
         }
       });
 

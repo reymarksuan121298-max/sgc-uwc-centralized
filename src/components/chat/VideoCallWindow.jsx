@@ -8,13 +8,25 @@ import {
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { supabase } from '../../config/supabaseClient';
 
-// Public STUN servers for NAT traversal
+// Public STUN and free TURN servers for 100% reliable NAT traversal across networks
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turns:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelay',
+      credential: 'openrelay'
+    }
   ]
 };
 
@@ -60,6 +72,8 @@ export default function VideoCallWindow({
   const timerRef = useRef(null);
   const audioContextRef = useRef(null);
   const ringtoneOscRef = useRef(null);
+  const hasInitiatedOfferRef = useRef(false);
+  const hasAnsweredOfferRef = useRef(false);
 
   // Play synthetic soft ringtone using Web Audio API
   const playRingtone = useCallback((type = 'outgoing') => {
@@ -172,7 +186,9 @@ export default function VideoCallWindow({
   const initLocalStream = useCallback(async () => {
     try {
       setHasCameraError(null);
-      if (localStreamRef.current) return localStreamRef.current;
+      if (localStreamRef.current && localStreamRef.current.active) {
+        return localStreamRef.current;
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -211,10 +227,18 @@ export default function VideoCallWindow({
     }
   }, [remoteStreamRef.current, callState]);
 
-  // 2. Initialize Peer Connection
-  const createPeerConnection = useCallback((stream) => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
+  // 2. Get or Create Peer Connection (Persistent per call session)
+  const getOrCreatePeerConnection = useCallback((stream) => {
+    if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          const senders = peerConnectionRef.current.getSenders();
+          if (!senders.some(s => s.track && s.track.id === track.id)) {
+            peerConnectionRef.current.addTrack(track, stream);
+          }
+        });
+      }
+      return peerConnectionRef.current;
     }
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -228,12 +252,12 @@ export default function VideoCallWindow({
 
     // Remote track arrived
     pc.ontrack = (event) => {
-      console.log('WebRTC track received:', event.streams);
+      console.log('WebRTC ontrack received remote media:', event.streams);
       if (event.streams && event.streams[0]) {
         remoteStreamRef.current = event.streams[0];
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
-          remoteVideoRef.current.play().catch(() => {});
+          remoteVideoRef.current.play().catch(e => console.warn('Remote play:', e));
         }
       }
     };
@@ -268,16 +292,18 @@ export default function VideoCallWindow({
     return pc;
   }, [realtimeChannel, currentUser, partner]);
 
-  // Start Call as Initiator
+  // Start Call as Initiator (Runs once when calling starts)
   useEffect(() => {
+    if (callState !== 'calling' || hasInitiatedOfferRef.current) return;
+
     let isCancelled = false;
 
     const startOutgoingCall = async () => {
-      if (callState !== 'calling') return;
+      hasInitiatedOfferRef.current = true;
       const stream = await initLocalStream();
       if (isCancelled) return;
 
-      const pc = createPeerConnection(stream);
+      const pc = getOrCreatePeerConnection(stream);
       try {
         const offer = await pc.createOffer({
           offerToReceiveAudio: true,
@@ -324,17 +350,19 @@ export default function VideoCallWindow({
     return () => {
       isCancelled = true;
     };
-  }, [callState, initLocalStream, createPeerConnection, realtimeChannel, currentUser, partner]);
+  }, [callState, initLocalStream, getOrCreatePeerConnection, realtimeChannel, currentUser, partner]);
 
   // Handle Answering When Receiving Offer (Callee Side)
   useEffect(() => {
-    if (callState !== 'connected') return;
+    if (callState !== 'connected' || hasAnsweredOfferRef.current) return;
     const offerData = initialOffer;
     if (!offerData?.sdp) return;
 
+    hasAnsweredOfferRef.current = true;
+
     const answerCall = async () => {
       const stream = await initLocalStream();
-      const pc = createPeerConnection(stream);
+      const pc = getOrCreatePeerConnection(stream);
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offerData.sdp));
@@ -371,7 +399,7 @@ export default function VideoCallWindow({
     };
 
     answerCall();
-  }, [callState, initialOffer, initLocalStream, createPeerConnection, realtimeChannel, currentUser]);
+  }, [callState, initialOffer, initLocalStream, getOrCreatePeerConnection, realtimeChannel, currentUser]);
 
   // Handle Realtime WebRTC Signaling Events
   useEffect(() => {
@@ -432,6 +460,9 @@ export default function VideoCallWindow({
   // Clean up streams & peer connection and persist call log
   const cleanUpCall = useCallback(async () => {
     stopRingtone();
+    hasInitiatedOfferRef.current = false;
+    hasAnsweredOfferRef.current = false;
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -626,12 +657,13 @@ export default function VideoCallWindow({
       {/* MAIN VIDEO AREA */}
       <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden">
         
-        {/* Remote Video (Always mounted in DOM to prevent missing stream attachments) */}
+        {/* Remote Video (Always mounted in DOM and auto-playing to prevent stream disconnects) */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          className={`w-full h-full object-cover bg-slate-950 ${callState === 'connected' ? 'block' : 'hidden'}`}
+          onLoadedMetadata={() => remoteVideoRef.current?.play().catch(() => {})}
+          className={`w-full h-full object-cover bg-slate-950 transition-opacity duration-300 ${callState === 'connected' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}
         />
 
         {/* Ringing & Connecting Screen Placeholder */}
@@ -685,6 +717,7 @@ export default function VideoCallWindow({
             autoPlay
             playsInline
             muted
+            onLoadedMetadata={() => localVideoRef.current?.play().catch(() => {})}
             className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`}
           />
           {isVideoOff && (
