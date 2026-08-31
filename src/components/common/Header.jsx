@@ -65,6 +65,26 @@ export default function Header({
   const [chatCategory, setChatCategory] = useState('all'); // 'all' | 'groups' | 'direct'
   const [latestMessages, setLatestMessages] = useState({});
 
+  const isCallNotification = (n) => {
+    if (!n) return false;
+    const act = String(n.action || '').toUpperCase();
+    const title = String(n.title || '').toUpperCase();
+    const msg = String(n.message || '').toUpperCase();
+    const target = String(n.targetType || '').toUpperCase();
+    return act.includes('VIDEO_CALL') || 
+           title.includes('VIDEO CALL') || 
+           msg.includes('VIDEO CALL') || 
+           target === 'VIDEO_CALL';
+  };
+
+  const cleanNotifications = useMemo(() => {
+    return (notifications || []).filter(n => !isCallNotification(n));
+  }, [notifications]);
+
+  const unreadNotificationsCount = useMemo(() => {
+    return cleanNotifications.filter(n => !n.read).length;
+  }, [cleanNotifications]);
+
   // Track read status per conversation
   const [readTimes, setReadTimes] = useState(() => {
     try {
@@ -276,16 +296,12 @@ export default function Header({
     };
   };
 
-  const unreadNotificationsCount = useMemo(() => {
-    return (notifications || []).filter(n => !n.read).length;
-  }, [notifications]);
-
   const filteredNotifications = useMemo(() => {
-    const list = notifications || [];
+    const list = cleanNotifications || [];
     if (notificationTab === 'chat') return list.filter(n => n.type === 'chat');
     if (notificationTab === 'audit') return list.filter(n => n.type === 'audit');
     return list;
-  }, [notifications, notificationTab]);
+  }, [cleanNotifications, notificationTab]);
 
   // Fetch all active users from database
   const fetchActiveUsers = async () => {
@@ -869,7 +885,7 @@ export default function Header({
 
               {/* Notification Items List */}
               <div className="p-3 space-y-2.5 overflow-y-auto max-h-[440px]">
-                {(!notifications || notifications.length === 0) ? (
+                {(!cleanNotifications || cleanNotifications.length === 0) ? (
                   <div className="py-12 px-4 text-center space-y-2">
                     <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
                       <BellOff size={20} />
@@ -880,7 +896,7 @@ export default function Header({
                     </p>
                   </div>
                 ) : (
-                  notifications.map((notif) => {
+                  cleanNotifications.map((notif) => {
                     const isUnread = !notif.read;
                     const { title, icon, badgeBg } = getNotificationVisuals(notif);
 

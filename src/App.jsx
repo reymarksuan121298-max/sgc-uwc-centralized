@@ -105,22 +105,54 @@ export default function App() {
     }, 6000);
   }, []);
 
+  const isCallNotification = (n) => {
+    if (!n) return false;
+    const act = String(n.action || '').toUpperCase();
+    const title = String(n.title || '').toUpperCase();
+    const msg = String(n.message || '').toUpperCase();
+    const target = String(n.targetType || '').toUpperCase();
+    return act.includes('VIDEO_CALL') || 
+           title.includes('VIDEO CALL') || 
+           msg.includes('VIDEO CALL') || 
+           target === 'VIDEO_CALL';
+  };
+
   // System Notifications State (Audit Trail & Activity Logs Only)
   const [notifications, setNotifications] = useState(() => {
     try {
       const userKey = currentUser?.id || currentUser?.username || 'default';
       const saved = localStorage.getItem(`stl_notifications_${userKey}`);
-      return saved ? JSON.parse(saved).filter(n => n.type !== 'chat') : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
+      try {
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
+      } catch {}
+      return cleaned;
     } catch {
       return [];
     }
   });
 
+  // Auto-clean any stored notifications containing call logs
+  useEffect(() => {
+    try {
+      const userKey = currentUser?.id || currentUser?.username || 'default';
+      const saved = localStorage.getItem(`stl_notifications_${userKey}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
+        setNotifications(cleaned);
+      }
+    } catch {}
+  }, [currentUser]);
+
   const appendNotification = useCallback((notif) => {
-    if (!notif) return;
+    if (!notif || isCallNotification(notif)) return;
     const userKey = currentUser?.id || currentUser?.username || 'default';
     setNotifications((prev) => {
-      const filtered = prev.filter(n => n.id !== notif.id);
+      const filtered = prev.filter(n => n.id !== notif.id && !isCallNotification(n));
       const updated = [notif, ...filtered].slice(0, 60);
       try {
         localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(updated));
