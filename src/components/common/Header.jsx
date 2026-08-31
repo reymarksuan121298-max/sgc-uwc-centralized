@@ -553,17 +553,6 @@ export default function Header({
           <span className="hidden sm:inline">{loading ? 'Syncing...' : 'SYNC LEDGER'}</span>
         </button>
 
-        {/* PWA INSTALL APP BUTTON */}
-        <button
-          type="button"
-          onClick={handleInstallPWA}
-          className="flex items-center gap-1.5 sm:gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-black tracking-wider uppercase transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 border border-emerald-500/50"
-          title="Install SGC Progressive Web App on your PC or Mobile"
-        >
-          <Download size={13} className="text-[#FFD700]" />
-          <span className="hidden md:inline">INSTALL APP</span>
-        </button>
-
 
         {/* WEB MESSENGER ACTIVE USERS & CLAIM VERIFICATION WIDGET */}
         <div className="relative" ref={messengerRef}>
