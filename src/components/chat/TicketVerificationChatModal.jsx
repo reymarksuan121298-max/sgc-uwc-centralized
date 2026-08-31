@@ -124,6 +124,13 @@ export default function TicketVerificationChatModal({
     if (selectedContact) {
       setActiveContact(selectedContact);
       setChatCategory(selectedContact.isGroup ? 'groups' : 'direct');
+      if (selectedContact.autoStartCall) {
+        setIsVideoCallOpen(true);
+        setVideoCallState('connected');
+        if (selectedContact.initialCallOffer) {
+          setIncomingCallData(selectedContact.initialCallOffer);
+        }
+      }
     } else if (!activeContact) {
       // Default to general group channel if no contact provided
       setActiveContact({
@@ -1324,9 +1331,10 @@ export default function TicketVerificationChatModal({
       <VideoCallWindow
         isOpen={isVideoCallOpen}
         callState={videoCallState}
-        partner={incomingCallData ? { name: incomingCallData.callerName, sub_office: incomingCallData.callerSubOffice } : activeContact}
+        partner={incomingCallData ? { name: incomingCallData.callerName, username: incomingCallData.callerUsername, sub_office: incomingCallData.callerSubOffice } : activeContact}
         currentUser={currentUser}
         realtimeChannel={realtimeChannelRef.current}
+        initialOffer={incomingCallData || selectedContact?.initialCallOffer}
         onEndCall={handleEndCall}
         onAcceptCall={handleAcceptCall}
         onRejectCall={handleRejectCall}

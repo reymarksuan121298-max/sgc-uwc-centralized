@@ -35,6 +35,7 @@ export default function VideoCallWindow({
   partner,
   currentUser,
   realtimeChannel,
+  initialOffer = null,
   onEndCall,
   onAcceptCall,
   onRejectCall,
@@ -190,16 +191,32 @@ export default function VideoCallWindow({
 
     // ICE Candidate generation
     pc.onicecandidate = (event) => {
-      if (event.candidate && realtimeChannel) {
-        sendSafeBroadcast(realtimeChannel, 'video_ice_candidate', {
+      if (event.candidate) {
+        const icePayload = {
           senderId: currentUser?.id || currentUser?.username,
           candidate: event.candidate
-        });
+        };
+        if (realtimeChannel) {
+          sendSafeBroadcast(realtimeChannel, 'video_ice_candidate', icePayload);
+        }
+        const targetUsername = String(partner?.username || partner?.id || '').toLowerCase().trim();
+        if (targetUsername) {
+          const directInboxChannel = supabase.channel(`user_inbox_${targetUsername}`);
+          directInboxChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              directInboxChannel.send({
+                type: 'broadcast',
+                event: 'video_ice_candidate',
+                payload: icePayload
+              }).catch(() => {});
+            }
+          });
+        }
       }
     };
 
     return pc;
-  }, [realtimeChannel, currentUser]);
+  }, [realtimeChannel, currentUser, partner]);
 
   // Start Call as Initiator
   useEffect(() => {
@@ -218,12 +235,33 @@ export default function VideoCallWindow({
         });
         await pc.setLocalDescription(offer);
 
+        const targetUsername = String(partner?.username || partner?.id || '').toLowerCase().trim();
+        const callPayload = {
+          callerId: currentUser?.id || currentUser?.username,
+          callerUsername: currentUser?.username,
+          callerName: currentUser?.full_name || currentUser?.username,
+          callerRole: currentUser?.role || 'Staff',
+          callerSubOffice: currentUser?.sub_office || 'Mandaue Central',
+          targetUsername: targetUsername,
+          sdp: offer
+        };
+
+        // 1. Shared direct room broadcast
         if (realtimeChannel) {
-          sendSafeBroadcast(realtimeChannel, 'video_call_offer', {
-            callerId: currentUser?.id || currentUser?.username,
-            callerName: currentUser?.full_name || currentUser?.username,
-            callerSubOffice: currentUser?.sub_office,
-            sdp: offer
+          sendSafeBroadcast(realtimeChannel, 'video_call_offer', callPayload);
+        }
+
+        // 2. Direct broadcast to recipient's personal inbound channel
+        if (targetUsername) {
+          const directInboxChannel = supabase.channel(`user_inbox_${targetUsername}`);
+          directInboxChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              directInboxChannel.send({
+                type: 'broadcast',
+                event: 'video_call_offer',
+                payload: callPayload
+              }).catch(() => {});
+            }
           });
         }
       } catch (err) {
@@ -236,16 +274,60 @@ export default function VideoCallWindow({
     return () => {
       isCancelled = true;
     };
-  }, [callState, initLocalStream, createPeerConnection, realtimeChannel, currentUser]);
+  }, [callState, initLocalStream, createPeerConnection, realtimeChannel, currentUser, partner]);
+
+  // Handle Answering When Receiving Offer (Callee Side)
+  useEffect(() => {
+    if (callState !== 'connected') return;
+    const offerData = initialOffer;
+    if (!offerData?.sdp) return;
+
+    const answerCall = async () => {
+      const stream = await initLocalStream();
+      const pc = createPeerConnection(stream);
+
+      try {
+        if (pc.signalingState !== 'stable') {
+          await pc.setRemoteDescription(new RTCSessionDescription(offerData.sdp));
+        } else {
+          await pc.setRemoteDescription(new RTCSessionDescription(offerData.sdp));
+        }
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        const answerPayload = {
+          responderId: currentUser?.id || currentUser?.username,
+          responderUsername: currentUser?.username,
+          sdp: answer
+        };
+
+        if (realtimeChannel) {
+          sendSafeBroadcast(realtimeChannel, 'video_call_answer', answerPayload);
+        }
+
+        if (offerData.callerUsername) {
+          const callerInbox = supabase.channel(`user_inbox_${String(offerData.callerUsername).toLowerCase().trim()}`);
+          callerInbox.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              callerInbox.send({
+                type: 'broadcast',
+                event: 'video_call_answer',
+                payload: answerPayload
+              }).catch(() => {});
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Failed to create WebRTC answer:', err);
+      }
+    };
+
+    answerCall();
+  }, [callState, initialOffer, initLocalStream, createPeerConnection, realtimeChannel, currentUser]);
 
   // Handle Realtime WebRTC Signaling Events
   useEffect(() => {
     if (!realtimeChannel) return;
-
-    const onOffer = async ({ payload }) => {
-      if (!payload || payload.callerId === (currentUser?.id || currentUser?.username)) return;
-      // Stored for acceptance
-    };
 
     const onAnswer = async ({ payload }) => {
       if (!payload || !peerConnectionRef.current) return;
@@ -274,7 +356,11 @@ export default function VideoCallWindow({
       if (onEndCall) onEndCall(false);
     };
 
-    // Subscribed via parent chat modal channel listener
+    realtimeChannel
+      .on('broadcast', { event: 'video_call_answer' }, onAnswer)
+      .on('broadcast', { event: 'video_ice_candidate' }, onIce)
+      .on('broadcast', { event: 'video_call_end' }, onEnd);
+
     return () => {};
   }, [realtimeChannel, currentUser, onEndCall]);
 
