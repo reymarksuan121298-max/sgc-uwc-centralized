@@ -591,6 +591,7 @@ export default function TicketVerificationChatModal({
     const newMsg = {
       id: crypto.randomUUID(),
       sender_id: currentUser?.id || currentUser?.username || 'user-1',
+      sender_username: currentUser?.username || currentUser?.id || 'user',
       sender_name: currentUser?.full_name || currentUser?.username || officerName,
       sender_role: formatRoleName(currentUser?.role) || 'Sales Service Representative',
       sub_office: currentUser?.sub_office || officerSubOffice,

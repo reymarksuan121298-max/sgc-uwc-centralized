@@ -752,10 +752,17 @@ export default function App() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const currentUserName = (currentUser?.full_name || currentUser?.username || '').trim().toLowerCase();
-            const currentUserId = currentUser?.id;
-            const isMe = (currentUserId && payload.new?.sender_id === currentUserId) ||
-                         (payload.new?.sender_name && String(payload.new.sender_name).trim().toLowerCase() === currentUserName);
+            const myId = String(currentUser?.id || '').toLowerCase().trim();
+            const myUsername = String(currentUser?.username || '').toLowerCase().trim();
+            const myName = String(currentUser?.full_name || currentUser?.fullName || '').toLowerCase().trim();
+
+            const senderId = String(payload.new?.sender_id || '').toLowerCase().trim();
+            const senderUsername = String(payload.new?.sender_username || '').toLowerCase().trim();
+            const senderName = String(payload.new?.sender_name || '').toLowerCase().trim();
+
+            const isMe = (myId && (senderId === myId || senderUsername === myId)) ||
+                         (myUsername && (senderId === myUsername || senderUsername === myUsername || senderName === myUsername)) ||
+                         (myName && (senderName === myName || senderId === myName));
 
             if (!isMe) {
               const sender = payload.new?.sender_name || 'SSR Agent';
@@ -764,7 +771,7 @@ export default function App() {
               const subOffice = payload.new?.sub_office || '';
               const senderId = payload.new?.sender_id || null;
 
-              // Dispatch Web Push / Browser notification + audio chime for chats
+              // Dispatch Web Push / Browser notification + audio chime only for incoming messages from other users
               notificationService.sendChatNotification({
                 senderName: sender,
                 senderId,
