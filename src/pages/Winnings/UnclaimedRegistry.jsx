@@ -58,14 +58,13 @@ export default function UnclaimedRegistry({
   const getRowMeta = (item, index, userKey) => {
     const transId = getTicketTransId(item, `REC-${index + 1}`);
     const isOverdue = isIncidentReportEligible(item);
-    const isImageCopied = Boolean(copiedSupervisorKeys?.has(userKey) || copiedTransIds?.has(transId));
     return {
       transId,
       displayAccountName: item.fullName || item.outlet || item.username || 'N/A',
       betNo: item.betNo || item.CombiNo || item.SoldOutCombiNo || 'N/A',
       betCode: item.betCode || (item.rambolito ? 'RS3' : 'TS3'),
       drawFormatted: formatDrawTime(item.drawTime || item.draw, item.drawDate || item.created_at),
-      showWarningBadge: isOverdue || isImageCopied,
+      showWarningBadge: isOverdue,
       ageDays: getTicketAgeInDays(item),
       betAmount: parseFloat(item.betAmount ?? item.amount ?? item.gross ?? 0),
       winAmount: parseFloat(item.winAmount ?? 0)
@@ -266,11 +265,7 @@ export default function UnclaimedRegistry({
                                             });
                                           }}
                                           className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
-                                          title={
-                                            meta.showWarningBadge && meta.ageDays > 0
-                                              ? `Unclaimed for ${meta.ageDays} days. Click to issue incident report.`
-                                              : `Table image copied to clipboard. Click to issue incident report or review.`
-                                          }
+                                          title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
                                           aria-label="Issue incident report"
                                         >
                                           <AlertTriangle size={12} className="shrink-0" />
@@ -330,11 +325,7 @@ export default function UnclaimedRegistry({
                                         });
                                       }}
                                       className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
-                                      title={
-                                        meta.showWarningBadge && meta.ageDays > 0
-                                          ? `Unclaimed for ${meta.ageDays} days. Click to issue incident report.`
-                                          : `Table image copied to clipboard. Click to issue incident report or review.`
-                                      }
+                                      title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
                                       aria-label="Issue incident report"
                                     >
                                       <AlertTriangle size={12} className="shrink-0" />
