@@ -311,7 +311,10 @@ export default function VideoCallWindow({
         });
         await pc.setLocalDescription(offer);
 
-        const targetUsername = String(partner?.username || partner?.id || '').toLowerCase().trim();
+        const targetUsername = String(partner?.username || '').toLowerCase().trim();
+        const targetId = String(partner?.id || '').toLowerCase().trim();
+        const targetName = String(partner?.name || partner?.full_name || '').toLowerCase().trim();
+
         const callPayload = {
           callerId: currentUser?.id || currentUser?.username,
           callerUsername: currentUser?.username,
@@ -319,15 +322,29 @@ export default function VideoCallWindow({
           callerRole: currentUser?.role || 'Staff',
           callerSubOffice: currentUser?.sub_office || 'Mandaue Central',
           targetUsername: targetUsername,
+          targetId: targetId,
+          targetName: targetName,
           sdp: offer
         };
 
-        // 1. Shared direct room broadcast
+        // 1. Universal video signaling channel (instant app-wide delivery)
+        const globalCallChannel = supabase.channel('global_video_signaling_room');
+        globalCallChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            globalCallChannel.send({
+              type: 'broadcast',
+              event: 'video_call_offer',
+              payload: callPayload
+            }).catch(() => {});
+          }
+        });
+
+        // 2. Shared direct room broadcast
         if (realtimeChannel) {
           sendSafeBroadcast(realtimeChannel, 'video_call_offer', callPayload);
         }
 
-        // 2. Direct broadcast to recipient's personal inbound channel
+        // 3. Direct broadcast to recipient's personal inbound channel
         if (targetUsername) {
           const directInboxChannel = supabase.channel(`user_inbox_${targetUsername}`);
           directInboxChannel.subscribe((status) => {

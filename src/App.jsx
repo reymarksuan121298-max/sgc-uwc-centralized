@@ -171,7 +171,44 @@ export default function App() {
   useEffect(() => {
     if (!currentUser?.username) return;
 
-    const myInboxChannelName = `user_inbox_${String(currentUser.username).toLowerCase().trim()}`;
+    const myUsername = String(currentUser.username).toLowerCase().trim();
+    const myId = String(currentUser.id || '').toLowerCase().trim();
+    const myName = String(currentUser.full_name || currentUser.fullName || '').toLowerCase().trim();
+    const myInboxChannelName = `user_inbox_${myUsername}`;
+
+    const checkIsForMe = (payload) => {
+      if (!payload || payload.callerUsername === currentUser.username) return false;
+      const targetUser = String(payload.targetUsername || '').toLowerCase().trim();
+      const targetId = String(payload.targetId || '').toLowerCase().trim();
+      const targetName = String(payload.targetName || '').toLowerCase().trim();
+      return targetUser === myUsername || 
+             targetId === myId || 
+             targetUser === myId ||
+             (targetName && (targetName === myName || targetName === myUsername));
+    };
+
+    // 1. Universal video signaling broadcast channel
+    const globalCallChannel = supabase.channel('global_video_signaling_room', {
+      config: { broadcast: { self: false } }
+    })
+      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
+        if (checkIsForMe(payload)) {
+          setGlobalIncomingCall(payload);
+        }
+      })
+      .on('broadcast', { event: 'video_call_end' }, ({ payload }) => {
+        if (!payload || checkIsForMe(payload)) {
+          setGlobalIncomingCall(null);
+        }
+      })
+      .on('broadcast', { event: 'video_call_reject' }, ({ payload }) => {
+        if (!payload || checkIsForMe(payload)) {
+          setGlobalIncomingCall(null);
+        }
+      })
+      .subscribe();
+
+    // 2. Personal inbox direct fallback channel
     const inboxChannel = supabase.channel(myInboxChannelName, {
       config: { broadcast: { self: false } }
     })
@@ -189,6 +226,7 @@ export default function App() {
       .subscribe();
 
     return () => {
+      supabase.removeChannel(globalCallChannel);
       supabase.removeChannel(inboxChannel);
     };
   }, [currentUser]);
