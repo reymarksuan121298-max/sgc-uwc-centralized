@@ -963,7 +963,7 @@ export default function Header({
 
           {/* COLLAPSIBLE PROFILE DROPDOWN MENU */}
           {isProfileOpen && (
-            <div className="fixed left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-full sm:mt-2 sm:w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3.5">
+            <div className="fixed left-4 right-4 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3.5">
               
               {/* Profile Header */}
               <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
