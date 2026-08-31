@@ -223,7 +223,7 @@ export default function UnclaimedRegistry({
                     </div>
 
                     {/* Desktop Table */}
-                    <div className="hidden md:block w-full overflow-x-auto">
+                    <div className="hidden md:block w-full overflow-x-auto no-scrollbar">
                       <table className="w-full min-w-[750px] text-left border-collapse bg-white">
                         <thead>
                           <tr className="bg-[#002B66] text-white text-[10px] font-black uppercase tracking-wider">

@@ -13,7 +13,8 @@ const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
   ]
 };
 
@@ -53,7 +54,9 @@ export default function VideoCallWindow({
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const peerConnectionRef = useRef(null);
+  const iceQueueRef = useRef([]);
   const timerRef = useRef(null);
   const audioContextRef = useRef(null);
   const ringtoneOscRef = useRef(null);
@@ -71,7 +74,6 @@ export default function VideoCallWindow({
       osc.frequency.value = type === 'outgoing' ? 440 : 880;
       gain.gain.setValueAtTime(0.08, ctx.currentTime);
 
-      // Pulse ringtone
       let isBeep = true;
       const ringInterval = setInterval(() => {
         if (!audioContextRef.current) {
@@ -112,7 +114,7 @@ export default function VideoCallWindow({
     }
   }, []);
 
-  // Call duration counter
+  // Call duration counter & ringtone management
   useEffect(() => {
     if (callState === 'connected') {
       stopRingtone();
@@ -140,6 +142,32 @@ export default function VideoCallWindow({
     return `${m}:${s}`;
   };
 
+  // Safe ICE Candidate queuing until Remote Description is set
+  const addOrQueueIceCandidate = async (pc, candidate) => {
+    if (!pc || !candidate) return;
+    if (pc.remoteDescription && pc.remoteDescription.type) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('addIceCandidate notice:', e);
+      }
+    } else {
+      iceQueueRef.current.push(candidate);
+    }
+  };
+
+  const processQueuedIceCandidates = async (pc) => {
+    if (!pc || !pc.remoteDescription) return;
+    while (iceQueueRef.current.length > 0) {
+      const candidate = iceQueueRef.current.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('queued addIceCandidate notice:', e);
+      }
+    }
+  };
+
   // 1. Initialize Local Media Stream
   const initLocalStream = useCallback(async () => {
     try {
@@ -158,6 +186,7 @@ export default function VideoCallWindow({
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
       }
       return stream;
     } catch (err) {
@@ -166,6 +195,21 @@ export default function VideoCallWindow({
       return null;
     }
   }, []);
+
+  // Sync streams to video elements continuously
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [localStreamRef.current, callState]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+  }, [remoteStreamRef.current, callState]);
 
   // 2. Initialize Peer Connection
   const createPeerConnection = useCallback((stream) => {
@@ -184,8 +228,13 @@ export default function VideoCallWindow({
 
     // Remote track arrived
     pc.ontrack = (event) => {
-      if (remoteVideoRef.current && event.streams && event.streams[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+      console.log('WebRTC track received:', event.streams);
+      if (event.streams && event.streams[0]) {
+        remoteStreamRef.current = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+          remoteVideoRef.current.play().catch(() => {});
+        }
       }
     };
 
@@ -194,6 +243,7 @@ export default function VideoCallWindow({
       if (event.candidate) {
         const icePayload = {
           senderId: currentUser?.id || currentUser?.username,
+          senderUsername: currentUser?.username,
           candidate: event.candidate
         };
         if (realtimeChannel) {
@@ -287,11 +337,9 @@ export default function VideoCallWindow({
       const pc = createPeerConnection(stream);
 
       try {
-        if (pc.signalingState !== 'stable') {
-          await pc.setRemoteDescription(new RTCSessionDescription(offerData.sdp));
-        } else {
-          await pc.setRemoteDescription(new RTCSessionDescription(offerData.sdp));
-        }
+        await pc.setRemoteDescription(new RTCSessionDescription(offerData.sdp));
+        await processQueuedIceCandidates(pc);
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -327,13 +375,17 @@ export default function VideoCallWindow({
 
   // Handle Realtime WebRTC Signaling Events
   useEffect(() => {
-    if (!realtimeChannel) return;
+    const onAccept = () => {
+      stopRingtone();
+    };
 
     const onAnswer = async ({ payload }) => {
       if (!payload || !peerConnectionRef.current) return;
+      stopRingtone();
       try {
         if (peerConnectionRef.current.signalingState === 'have-local-offer') {
           await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          await processQueuedIceCandidates(peerConnectionRef.current);
         }
       } catch (err) {
         console.error('Failed to set remote answer:', err);
@@ -341,13 +393,9 @@ export default function VideoCallWindow({
     };
 
     const onIce = async ({ payload }) => {
-      if (!payload || !peerConnectionRef.current || payload.senderId === (currentUser?.id || currentUser?.username)) return;
-      try {
-        if (payload.candidate) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
-        }
-      } catch (err) {
-        console.warn('Failed to add ICE candidate:', err);
+      if (!payload || payload.senderUsername === currentUser?.username) return;
+      if (peerConnectionRef.current && payload.candidate) {
+        await addOrQueueIceCandidate(peerConnectionRef.current, payload.candidate);
       }
     };
 
@@ -356,13 +404,30 @@ export default function VideoCallWindow({
       if (onEndCall) onEndCall(false);
     };
 
-    realtimeChannel
-      .on('broadcast', { event: 'video_call_answer' }, onAnswer)
-      .on('broadcast', { event: 'video_ice_candidate' }, onIce)
-      .on('broadcast', { event: 'video_call_end' }, onEnd);
+    if (realtimeChannel) {
+      realtimeChannel
+        .on('broadcast', { event: 'video_call_accept' }, onAccept)
+        .on('broadcast', { event: 'video_call_answer' }, onAnswer)
+        .on('broadcast', { event: 'video_ice_candidate' }, onIce)
+        .on('broadcast', { event: 'video_call_end' }, onEnd);
+    }
 
-    return () => {};
-  }, [realtimeChannel, currentUser, onEndCall]);
+    // Also listen on personal inbox for direct fallback signaling
+    let myInboxChannel = null;
+    if (currentUser?.username) {
+      myInboxChannel = supabase.channel(`user_inbox_${String(currentUser.username).toLowerCase().trim()}`);
+      myInboxChannel
+        .on('broadcast', { event: 'video_call_accept' }, onAccept)
+        .on('broadcast', { event: 'video_call_answer' }, onAnswer)
+        .on('broadcast', { event: 'video_ice_candidate' }, onIce)
+        .on('broadcast', { event: 'video_call_end' }, onEnd)
+        .subscribe();
+    }
+
+    return () => {
+      if (myInboxChannel) supabase.removeChannel(myInboxChannel);
+    };
+  }, [realtimeChannel, currentUser, onEndCall, stopRingtone]);
 
   // Clean up streams & peer connection and persist call log
   const cleanUpCall = useCallback(async () => {
@@ -375,6 +440,7 @@ export default function VideoCallWindow({
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
+    remoteStreamRef.current = null;
 
     // Persist call log to Supabase audit_logs
     if (callDuration > 0 || callState === 'connected') {
@@ -426,7 +492,6 @@ export default function VideoCallWindow({
   // Toggle Screen Share
   const handleToggleScreenShare = async () => {
     if (isScreenSharing) {
-      // Revert to camera stream
       const cameraStream = await initLocalStream();
       if (cameraStream && peerConnectionRef.current) {
         const videoTrack = cameraStream.getVideoTracks()[0];
@@ -561,15 +626,16 @@ export default function VideoCallWindow({
       {/* MAIN VIDEO AREA */}
       <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden">
         
-        {/* Remote Video (Main Display) */}
-        {callState === 'connected' ? (
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full h-full object-cover bg-slate-950"
-          />
-        ) : (
+        {/* Remote Video (Always mounted in DOM to prevent missing stream attachments) */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className={`w-full h-full object-cover bg-slate-950 ${callState === 'connected' ? 'block' : 'hidden'}`}
+        />
+
+        {/* Ringing & Connecting Screen Placeholder */}
+        {callState !== 'connected' && (
           <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 animate-in fade-in">
             <div className="relative">
               <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-[#002B66] to-[#0084FF] border-4 border-[#FFD700] text-white flex items-center justify-center font-black text-2xl font-mono shadow-2xl">

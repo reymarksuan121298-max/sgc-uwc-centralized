@@ -396,6 +396,9 @@ export default function TicketVerificationChatModal({
       .on('broadcast', { event: 'video_call_accept' }, () => {
         setVideoCallState('connected');
       })
+      .on('broadcast', { event: 'video_call_answer' }, () => {
+        setVideoCallState('connected');
+      })
       .on('broadcast', { event: 'video_call_reject' }, () => {
         setIsVideoCallOpen(false);
         setVideoCallState('idle');

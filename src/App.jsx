@@ -196,6 +196,22 @@ export default function App() {
   const handleAcceptGlobalCall = useCallback((callInfo) => {
     if (!callInfo) return;
 
+    if (callInfo.callerUsername) {
+      const callerInbox = supabase.channel(`user_inbox_${String(callInfo.callerUsername).toLowerCase().trim()}`);
+      callerInbox.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          callerInbox.send({
+            type: 'broadcast',
+            event: 'video_call_accept',
+            payload: {
+              responderUsername: currentUser?.username,
+              responderName: currentUser?.full_name || currentUser?.username
+            }
+          }).catch(() => {});
+        }
+      });
+    }
+
     const callerContact = {
       id: callInfo.callerId || callInfo.callerUsername,
       username: callInfo.callerUsername,
@@ -220,7 +236,7 @@ export default function App() {
     });
 
     setGlobalIncomingCall(null);
-  }, []);
+  }, [currentUser]);
 
   const handleDeclineGlobalCall = useCallback((callInfo) => {
     if (callInfo?.callerUsername) {
@@ -1006,10 +1022,29 @@ export default function App() {
 
     setIsCapturingImage(userKey);
     try {
+      // Find all overflow containers inside the capture node
+      const overflowEls = captureNode.querySelectorAll('.overflow-x-auto, .overflow-y-auto, [class*="overflow"]');
+      const savedStyles = [];
+      overflowEls.forEach((el) => {
+        savedStyles.push({ el, overflow: el.style.overflow, overflowX: el.style.overflowX });
+        el.style.overflow = 'visible';
+        el.style.overflowX = 'visible';
+      });
+
       const dataUrl = await toPng(captureNode, {
         cacheBust: true,
         pixelRatio: 2,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        style: {
+          overflow: 'visible',
+          maxWidth: 'none'
+        }
+      });
+
+      // Restore overflow styles
+      savedStyles.forEach(({ el, overflow, overflowX }) => {
+        el.style.overflow = overflow;
+        el.style.overflowX = overflowX;
       });
 
       const response = await fetch(dataUrl);
