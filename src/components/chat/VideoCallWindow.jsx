@@ -786,35 +786,35 @@ export default function VideoCallWindow({
   return (
     <div className={`fixed z-[10000] transition-all duration-300 ${
       isExpanded 
-        ? 'inset-2 sm:inset-10 bg-slate-950/95 backdrop-blur-2xl rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.6)] border border-slate-700/60 overflow-hidden flex flex-col' 
-        : 'inset-x-2 bottom-3 sm:bottom-20 sm:right-8 sm:inset-x-auto sm:w-[420px] h-[82vh] sm:h-[520px] max-h-[92vh] bg-slate-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/80 overflow-hidden flex flex-col'
+        ? 'inset-0 sm:inset-6 lg:inset-10 bg-slate-950/98 backdrop-blur-2xl rounded-none sm:rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.8)] border border-slate-700/60 overflow-hidden flex flex-col' 
+        : 'inset-x-2 bottom-2 top-auto sm:inset-auto sm:bottom-6 sm:right-6 sm:w-[420px] h-[84vh] sm:h-[560px] max-h-[94vh] bg-slate-900/98 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-700/80 overflow-hidden flex flex-col'
     }`}>
       
-      {/* TOP BAR */}
-      <div className="bg-slate-950/80 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-full bg-[#FFD700] text-[#002B66] flex items-center justify-center font-black text-xs font-mono shadow-xs shrink-0">
-            <Video size={16} />
+      {/* TOP HEADER BAR */}
+      <div className="bg-slate-950/90 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#FFD700] text-[#002B66] flex items-center justify-center font-black text-xs font-mono shadow-xs shrink-0">
+            <Video size={15} />
           </div>
           <div className="min-w-0">
-            <h4 className="text-xs font-extrabold text-white truncate leading-tight flex items-center gap-1.5">
+            <h4 className="text-xs sm:text-sm font-extrabold text-white truncate leading-tight flex items-center gap-1.5">
               <span>{partnerName}</span>
               {callState === 'connected' && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block shrink-0" />
               )}
             </h4>
-            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
-              <span className="flex items-center gap-1 text-slate-300">
-                <Building2 size={10} /> {partnerSubOffice}
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] text-slate-400 font-mono mt-0.5 truncate">
+              <span className="flex items-center gap-1 text-slate-300 truncate">
+                <Building2 size={10} className="shrink-0" /> {partnerSubOffice}
               </span>
               <span>•</span>
               <span className={callState === 'connected' ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                {callState === 'connected' ? formatTime(callDuration) : callState === 'calling' ? 'Calling...' : 'Incoming Video Call...'}
+                {callState === 'connected' ? formatTime(callDuration) : callState === 'calling' ? 'Calling...' : 'Incoming...'}
               </span>
               {callState === 'connected' && (
                 <>
                   <span>•</span>
-                  <span className="flex items-center gap-0.5 text-[9px] text-blue-400 bg-blue-950/70 px-1.5 py-0.5 rounded border border-blue-800/50">
+                  <span className="hidden sm:inline-flex items-center gap-0.5 text-[9px] text-blue-400 bg-blue-950/70 px-1.5 py-0.5 rounded border border-blue-800/50">
                     <Globe2 size={9} />
                     <span>Global HD</span>
                   </span>
@@ -847,7 +847,7 @@ export default function VideoCallWindow({
         </div>
       </div>
 
-      {/* MAIN VIDEO AREA */}
+      {/* MAIN VIDEO CANVAS AREA */}
       <div 
         onClick={() => {
           if (remoteVideoRef.current) {
@@ -882,7 +882,7 @@ export default function VideoCallWindow({
         {callState !== 'connected' && (
           <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 animate-in fade-in">
             <div className="relative">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-[#002B66] to-[#0084FF] border-4 border-[#FFD700] text-white flex items-center justify-center font-black text-2xl font-mono shadow-2xl">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-[#002B66] to-[#0084FF] border-4 border-[#FFD700] text-white flex items-center justify-center font-black text-xl sm:text-2xl font-mono shadow-2xl">
                 {partnerName.slice(0, 2).toUpperCase()}
               </div>
               <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center text-white">
@@ -891,7 +891,7 @@ export default function VideoCallWindow({
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-base font-black text-white">{partnerName}</h3>
+              <h3 className="text-sm sm:text-base font-black text-white">{partnerName}</h3>
               <p className="text-xs text-slate-400">{partnerSubOffice}</p>
               <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-amber-400 font-bold mt-2">
                 <RefreshCw size={12} className="animate-spin" />
@@ -921,39 +921,40 @@ export default function VideoCallWindow({
         )}
 
         {/* Picture-in-Picture Self Camera Preview */}
-        <div className={`absolute top-3 right-3 rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700/80 bg-slate-900 transition-all ${
-          isExpanded ? 'w-48 h-32' : 'w-28 h-20'
+        <div className={`absolute top-3 right-3 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700/80 bg-slate-900 transition-all ${
+          isExpanded ? 'w-36 h-24 sm:w-48 sm:h-32' : 'w-24 h-18 sm:w-28 sm:h-20'
         }`}>
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
+            webkit-playsinline="true"
             muted
             onLoadedMetadata={() => localVideoRef.current?.play().catch(() => {})}
             className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`}
           />
           {isVideoOff && (
             <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400 text-[9px] font-bold gap-1">
-              <VideoOff size={16} />
+              <VideoOff size={14} />
               <span>Camera Off</span>
             </div>
           )}
-          <span className="absolute bottom-1 left-1.5 text-[8px] font-black font-mono text-white/90 bg-black/60 px-1.5 py-0.5 rounded-md backdrop-blur-xs">
+          <span className="absolute bottom-1 left-1.5 text-[8px] font-black font-mono text-white/90 bg-black/60 px-1 py-0.5 rounded-md backdrop-blur-xs">
             YOU
           </span>
         </div>
 
         {/* Live Ticket OCR Scan Result Overlay Banner */}
         {scanResult?.transactionId && (
-          <div className="absolute top-3 left-3 max-w-xs bg-slate-900/90 backdrop-blur-md border border-emerald-500/60 rounded-2xl p-2.5 shadow-2xl animate-in slide-in-from-top-2 text-left space-y-1">
+          <div className="absolute top-3 left-3 max-w-[200px] sm:max-w-xs bg-slate-900/90 backdrop-blur-md border border-emerald-500/60 rounded-2xl p-2 sm:p-2.5 shadow-2xl animate-in slide-in-from-top-2 text-left space-y-1">
             <div className="flex items-center justify-between text-emerald-400 text-[10px] font-black uppercase">
-              <span className="flex items-center gap-1"><CheckCircle2 size={12} /> Scanned Live from Video</span>
-              <button onClick={() => setScanResult(null)} className="text-slate-400 hover:text-white cursor-pointer">×</button>
+              <span className="flex items-center gap-1"><CheckCircle2 size={12} /> Scanned Live</span>
+              <button onClick={() => setScanResult(null)} className="text-slate-400 hover:text-white cursor-pointer font-bold px-1">×</button>
             </div>
-            <p className="font-mono text-xs font-black text-white bg-slate-800 px-2 py-1 rounded border border-slate-700">
+            <p className="font-mono text-[11px] sm:text-xs font-black text-white bg-slate-800 px-1.5 py-0.5 sm:py-1 rounded border border-slate-700 truncate">
               {scanResult.transactionId}
             </p>
-            <div className="text-[10px] text-slate-300 grid grid-cols-2 gap-1 pt-0.5 font-mono">
+            <div className="text-[9px] sm:text-[10px] text-slate-300 grid grid-cols-2 gap-1 pt-0.5 font-mono">
               <span>Bet: ₱{Number(scanResult.totalBet || 0).toFixed(2)}</span>
               <span>Draw: {scanResult.draw || 'N/A'}</span>
             </div>
@@ -964,7 +965,7 @@ export default function VideoCallWindow({
         {networkQuality === 'reconnecting' && callState === 'connected' && (
           <div className="absolute bottom-16 inset-x-4 bg-amber-900/90 border border-amber-500 text-white rounded-2xl p-2 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
             <RefreshCw size={14} className="animate-spin text-amber-300" />
-            <span>Re-optimizing global connection...</span>
+            <span>Re-optimizing connection...</span>
           </div>
         )}
 
@@ -977,59 +978,59 @@ export default function VideoCallWindow({
         )}
       </div>
 
-      {/* BOTTOM FLOATING CALL CONTROLS BAR */}
-      <div className="bg-slate-950/90 border-t border-slate-800 px-4 py-3 flex items-center justify-center gap-2.5 shrink-0">
+      {/* BOTTOM RESPONSIVE CALL CONTROLS BAR */}
+      <div className="bg-slate-950/95 border-t border-slate-800 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-center gap-1.5 sm:gap-2.5 shrink-0 overflow-x-auto">
         
         {/* Toggle Mute Microphone */}
         <button
           type="button"
           onClick={handleToggleMic}
-          className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${
+          className={`p-2.5 sm:p-3 rounded-full transition-all cursor-pointer shadow-md shrink-0 ${
             isMuted 
               ? 'bg-rose-600/90 hover:bg-rose-500 text-white ring-2 ring-rose-400' 
               : 'bg-slate-800 hover:bg-slate-700 text-white'
           }`}
           title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
         >
-          {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+          {isMuted ? <MicOff size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Mic size={16} className="sm:w-[18px] sm:h-[18px]" />}
         </button>
 
         {/* Toggle Camera Video */}
         <button
           type="button"
           onClick={handleToggleVideo}
-          className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${
+          className={`p-2.5 sm:p-3 rounded-full transition-all cursor-pointer shadow-md shrink-0 ${
             isVideoOff 
               ? 'bg-rose-600/90 hover:bg-rose-500 text-white ring-2 ring-rose-400' 
               : 'bg-slate-800 hover:bg-slate-700 text-white'
           }`}
           title={isVideoOff ? 'Turn camera on' : 'Turn camera off'}
         >
-          {isVideoOff ? <VideoOff size={18} /> : <Video size={18} />}
+          {isVideoOff ? <VideoOff size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Video size={16} className="sm:w-[18px] sm:h-[18px]" />}
         </button>
 
         {/* Flip Front / Back Camera (Mobile Support) */}
         <button
           type="button"
           onClick={handleSwitchCamera}
-          className="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-full transition-all cursor-pointer shadow-md"
+          className="p-2.5 sm:p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-full transition-all cursor-pointer shadow-md shrink-0 active:rotate-180 duration-300"
           title="Flip camera (Front / Back)"
         >
-          <RotateCcw size={18} />
+          <RotateCcw size={16} className="sm:w-[18px] sm:h-[18px]" />
         </button>
 
         {/* Screen Share / Ticket Verification Mode */}
         <button
           type="button"
           onClick={handleToggleScreenShare}
-          className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${
+          className={`p-2.5 sm:p-3 rounded-full transition-all cursor-pointer shadow-md shrink-0 ${
             isScreenSharing 
               ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-2 ring-emerald-400' 
               : 'bg-slate-800 hover:bg-slate-700 text-white'
           }`}
           title={isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen (Live Ticket Inspection)'}
         >
-          <Monitor size={18} />
+          <Monitor size={16} className="sm:w-[18px] sm:h-[18px]" />
         </button>
 
         {/* Instant OCR Frame Scanner */}
@@ -1037,10 +1038,10 @@ export default function VideoCallWindow({
           type="button"
           onClick={handleSnapshotOcr}
           disabled={isScanningFrame || callState !== 'connected'}
-          className="p-3 bg-[#0084FF] hover:bg-blue-600 text-white rounded-full transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-1"
+          className="p-2.5 sm:p-3 bg-[#0084FF] hover:bg-blue-600 text-white rounded-full transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-1 shrink-0 active:scale-95"
           title="Scan Ticket QR/Barcode directly from live video feed"
         >
-          {isScanningFrame ? <RefreshCw size={18} className="animate-spin" /> : <Scan size={18} />}
+          {isScanningFrame ? <RefreshCw size={16} className="animate-spin sm:w-[18px] sm:h-[18px]" /> : <Scan size={16} className="sm:w-[18px] sm:h-[18px]" />}
         </button>
 
         {/* End Call Button */}
@@ -1050,10 +1051,10 @@ export default function VideoCallWindow({
             cleanUpCall();
             if (onEndCall) onEndCall(true);
           }}
-          className="p-3 bg-rose-600 hover:bg-rose-500 text-white rounded-full transition-all cursor-pointer shadow-lg shadow-rose-900/60 active:scale-95 ml-2"
+          className="p-2.5 sm:p-3 bg-rose-600 hover:bg-rose-500 text-white rounded-full transition-all cursor-pointer shadow-lg shadow-rose-900/60 active:scale-95 shrink-0 ml-1 sm:ml-2"
           title="End Call"
         >
-          <PhoneOff size={18} />
+          <PhoneOff size={16} className="sm:w-[18px] sm:h-[18px]" />
         </button>
 
       </div>
