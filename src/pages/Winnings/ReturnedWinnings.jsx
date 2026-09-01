@@ -11,17 +11,14 @@ import { winningsService } from '../../services/winningsService';
 import AttachWeeklyProofModal from '../../components/receipts/AttachWeeklyProofModal';
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
-import { superClean, getTicketTransId } from '../../utils/formatters';
+import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
 
 export default function ReturnedWinnings({
   groupedData = {},
   filteredData = [],
-  liveData: liveWinningsData = [],
-  isLoadingLive: isLoadingLiveData = false,
   formatDrawTime,
   currentUser,
-  activeDisplayDate,
   onDeleteRecord,
   onDataUpdated,
   onOpenQrModal,
@@ -45,53 +42,14 @@ export default function ReturnedWinnings({
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
 
-  // Fast Lookup Map for O(1) Trans ID Verification
-  const { activeSourceTransIds, activeSourceComposites, hasLoadedSourceData } = useMemo(() => {
-    const transIds = new Set();
-    const composites = new Set();
-    const isAvailable = Array.isArray(liveWinningsData) && liveWinningsData.length > 0;
-
-    if (isAvailable) {
-      liveWinningsData.forEach(item => {
-        [
-          item.transactionId, item.transId, item.transaction_id, item.receipt_no,
-          item.ticket_no, item.trans_id, item.TransID, item.ref_no, item.ticketNo,
-          item.ticket_number, item.id, item.sourceId
-        ].forEach(id => id && transIds.add(superClean(id)));
-
-        const betNo = superClean(item.betNo || item.bet_no || item.number || '');
-        const winAmt = parseFloat(item.winAmount ?? item.win_amount ?? 0);
-        if (betNo && winAmt > 0) composites.add(`${betNo}_${winAmt}`);
-      });
-    }
-
-    return {
-      activeSourceTransIds: transIds,
-      activeSourceComposites: composites,
-      hasLoadedSourceData: isAvailable
-    };
-  }, [liveWinningsData]);
-
-  const checkIsInSourceRecords = (item, transId) => {
-    // Check explicit unclaimed flag
-    if ([item.is_claimed, item.isClaimed, item.isClaime, item.isClaim].some(v => v === 0 || v === '0' || v === false || v === 'false') || Boolean(item.isClaime0)) {
-      return true;
-    }
-    // Check explicit claimed flag
-    if ([item.is_claimed, item.isClaimed, item.isClaime, item.isClaim].some(v => v === 1 || v === '1' || v === true || v === 'true')) {
-      return false;
-    }
-
-    if (isLoadingLiveData || !hasLoadedSourceData) return true;
-
-    const cleanTrans = superClean(transId);
-    const cleanBet = superClean(item.betNo || item.bet_no || '');
-    const winAmt = parseFloat(item.winAmount ?? item.win_amount ?? 0);
-
-    return activeSourceTransIds.has(cleanTrans) ||
-      (item.id && activeSourceTransIds.has(superClean(item.id))) ||
-      (item.sourceId && activeSourceTransIds.has(superClean(item.sourceId))) ||
-      activeSourceComposites.has(`${cleanBet}_${winAmt}`);
+  const checkIsExplicitlyClaimed = (item) => {
+    return [
+      item.isClaime,
+      item.isClaim,
+      item.is_claime,
+      item.is_claimed,
+      item.isClaimed
+    ].some(v => v === 1 || v === '1' || v === true || v === 'true');
   };
 
   // Pending Deletion Requests
@@ -252,34 +210,20 @@ export default function ReturnedWinnings({
     return (filteredData || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
   }, [filteredData]);
 
-  const displayDate = useMemo(() => {
-    if (activeDisplayDate) return activeDisplayDate;
-    const now = new Date();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const yyyy = now.getFullYear();
-    return `${mm}/${dd}/${yyyy}`;
-  }, [activeDisplayDate]);
-
-  // Compute clean SRN
+  // Compute clean Remittance Serial Number dynamically from active unremitted tickets (e.g. MAN-260901-892301)
   const batchSerialNumber = useMemo(() => {
-    const ticketWithSrn = (filteredData || []).find(item => item.batch_serial_no || (item.transactionId && String(item.transactionId).startsWith('SRN-')));
-    if (ticketWithSrn?.batch_serial_no) return ticketWithSrn.batch_serial_no;
-    if (ticketWithSrn?.transactionId && String(ticketWithSrn.transactionId).startsWith('SRN-')) return ticketWithSrn.transactionId;
+    const subOffice = currentUser?.sub_office && currentUser.sub_office !== 'All'
+      ? currentUser.sub_office
+      : (unremittedDepositItems[0]?.sub_office || filteredData[0]?.sub_office || 'Mandaue Central');
 
     if (unremittedDepositItems.length > 0) {
       const firstTicket = unremittedDepositItems[0];
-      const transId = firstTicket.batch_serial_no || firstTicket.transactionId || firstTicket.transId || firstTicket.receipt_no;
-      if (transId && String(transId).startsWith('SRN-')) return transId;
-      if (transId) return `SRN-${transId}`;
+      const transId = firstTicket.transactionId || firstTicket.transId || firstTicket.receipt_no;
+      return generateRemittanceSerial(subOffice, transId);
     }
 
-    const d = activeDisplayDate ? new Date(activeDisplayDate) : new Date();
-    const datePart = !isNaN(d.getTime()) 
-      ? d.toISOString().slice(2, 10).replace(/-/g, '')
-      : new Date().toISOString().slice(2, 10).replace(/-/g, '');
-    return `SRN-${datePart}-RW01`;
-  }, [filteredData, unremittedDepositItems, activeDisplayDate]);
+    return generateRemittanceSerial(subOffice, '892301');
+  }, [unremittedDepositItems, filteredData, currentUser]);
 
   return (
     <div className="w-full space-y-4">
@@ -293,17 +237,16 @@ export default function ReturnedWinnings({
 
       {/* TOP HEADER & FILTER BAR (With Top Navy Accent) */}
       <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-blue-200/80 border-t-4 border-t-[#002B66] shadow-xs flex flex-wrap items-center justify-between gap-3 sm:gap-4">
-        
+
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => setActiveFilterTab('ALL')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeFilterTab === 'ALL'
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'ALL'
                 ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
                 : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
-            }`}
+              }`}
           >
             All Returned ({filteredData.length})
           </button>
@@ -311,11 +254,10 @@ export default function ReturnedWinnings({
           <button
             type="button"
             onClick={() => setActiveFilterTab('UNREMITTED')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeFilterTab === 'UNREMITTED'
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'UNREMITTED'
                 ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
                 : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
-            }`}
+              }`}
           >
             Unremitted ({unremittedTotalTickets.length})
           </button>
@@ -323,13 +265,12 @@ export default function ReturnedWinnings({
           <button
             type="button"
             onClick={() => setActiveFilterTab('REQUESTS')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeFilterTab === 'REQUESTS'
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'REQUESTS'
                 ? 'bg-amber-600 text-white shadow-sm'
                 : pendingDeletionRequests.length > 0
                   ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black animate-pulse'
                   : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
-            }`}
+              }`}
           >
             <AlertTriangle size={14} className={pendingDeletionRequests.length > 0 ? 'text-amber-700' : ''} />
             <span>{canApprove ? 'Approve Requests' : 'Deletion Requests'} ({pendingDeletionRequests.length})</span>
@@ -412,9 +353,6 @@ export default function ReturnedWinnings({
             <h3 className="font-extrabold text-[#002B66] text-xs uppercase tracking-wider truncate">
               Returned Winnings Summary
             </h3>
-            <span className="text-[10px] font-bold bg-[#002B66] text-[#FFD700] px-2 py-0.5 rounded font-mono shadow-2xs shrink-0">
-              {displayDate}
-            </span>
             <span className="text-[10px] font-bold bg-[#002B66] text-[#FFD700] px-2 py-0.5 rounded font-mono shadow-2xs shrink-0 flex items-center gap-1">
               <span className="text-[9px] text-[#FFD700]/75 uppercase">SRN</span>
               <span>{batchSerialNumber}</span>
@@ -462,8 +400,7 @@ export default function ReturnedWinnings({
 
                       {items.map((item, i) => {
                         const transId = item.transactionId || `REC-${i + 1}`;
-                        const isStillInSourceRecords = checkIsInSourceRecords(item, transId);
-                        const isClaimedInSourceSystem = !isStillInSourceRecords;
+                        const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
                         const isUnderSettlement = Boolean(item.isUnderSettlement);
                         const recordTimestamp = item.updated_at || item.created_at;
                         const isRemitted = Boolean(item.receipt_status && item.receipt_status !== 'NO_RECEIPT');
@@ -593,8 +530,7 @@ export default function ReturnedWinnings({
 
                   {items.map((item, i) => {
                     const transId = item.transactionId || `REC-${i + 1}`;
-                    const isStillInSourceRecords = checkIsInSourceRecords(item, transId);
-                    const isClaimedInSourceSystem = !isStillInSourceRecords;
+                    const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
                     const isUnderSettlement = Boolean(item.isUnderSettlement);
                     const recordTimestamp = item.updated_at || item.created_at;
                     const isRemitted = Boolean(item.receipt_status && item.receipt_status !== 'NO_RECEIPT');

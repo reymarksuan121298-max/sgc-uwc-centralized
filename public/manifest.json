@@ -1,0 +1,50 @@
+{
+  "name": "SGC - Unclaimed Winnings Centralized Portal",
+  "short_name": "SGC Portal",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#001D47",
+  "theme_color": "#002B66",
+  "orientation": "any",
+  "scope": "/",
+  "description": "Centralized Unclaimed Winnings, Ticket Verification Desk, WebRTC Video Chat & Audit Trail Management Portal",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/lbp.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/lbp.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/stl.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Unclaimed Registry",
+      "short_name": "Registry",
+      "description": "View real-time unclaimed winnings registry",
+      "url": "/?tab=unclaimed",
+      "icons": [{ "src": "/lbp.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ticket Verification Chat",
+      "short_name": "SSR Desk",
+      "description": "Open live ticket verification and SSR chat",
+      "url": "/?tab=chat",
+      "icons": [{ "src": "/lbp.png", "sizes": "192x192" }]
+    }
+  ]
+}

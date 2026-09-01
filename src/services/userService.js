@@ -12,6 +12,7 @@ export const userService = {
   },
 
   async createUser(userData, actorUser) {
+    const finalSubOffice = (userData.subOffice === 'All' || !userData.subOffice) ? null : userData.subOffice;
     const { data, error } = await supabase
       .from('app_users')
       .insert([{
@@ -19,7 +20,7 @@ export const userService = {
         password: userData.password,
         full_name: userData.fullName.trim() || null,
         role: userData.role,
-        sub_office: userData.subOffice,
+        sub_office: finalSubOffice,
         is_active: userData.isActive !== undefined ? userData.isActive : true,
         created_at: new Date().toISOString()
       }])
@@ -34,7 +35,7 @@ export const userService = {
       action: 'USER_CREATED',
       target_type: 'USER',
       target_id: userData.username,
-      sub_office: userData.subOffice,
+      sub_office: finalSubOffice || 'All Branches',
       details: { role: userData.role, is_active: userData.isActive }
     }]);
 
@@ -42,10 +43,11 @@ export const userService = {
   },
 
   async updateUser(userId, userData, actorUser) {
+    const finalSubOffice = (userData.subOffice === 'All' || !userData.subOffice) ? null : userData.subOffice;
     const updatePayload = {
       full_name: userData.fullName.trim() || null,
       role: userData.role,
-      sub_office: userData.subOffice,
+      sub_office: finalSubOffice,
       is_active: userData.isActive,
       updated_at: new Date().toISOString()
     };

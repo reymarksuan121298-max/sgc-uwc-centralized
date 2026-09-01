@@ -21,5 +21,5 @@ export const getTicketAgeInDays = (ticket, currentDate = new Date()) => {
 
 export const isIncidentReportEligible = (ticket) => {
   const ageInDays = getTicketAgeInDays(ticket);
-  return ageInDays !== null && ageInDays >= 3;
+  return ageInDays !== null && ageInDays > 3;
 };

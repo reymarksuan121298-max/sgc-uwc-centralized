@@ -50,3 +50,46 @@ export const canViewTab = (userRole, tabId) => {
   const allowedTabs = ['collections', 'pending', 'unclaimed', 'returned', 'receipts', 'settlement', 'verification', 'remittance_verification'];
   return allowedTabs.includes(tabId);
 };
+
+export const isOperationalNotification = (action = '', targetType = '') => {
+  const a = String(action || '').toUpperCase();
+  const t = String(targetType || '').toUpperCase();
+  
+  // Exclude Admin User / Sub-Office / System Config activities
+  if (
+    a.startsWith('USER_') || 
+    t === 'USER' || 
+    a.startsWith('SUB_OFFICE_') || 
+    t === 'SUB_OFFICE' || 
+    a.includes('SETTINGS') || 
+    a.includes('CONFIG') ||
+    a.includes('MAINTENANCE')
+  ) {
+    return false;
+  }
+
+  // Allow: Returned Winnings, Incident Reports (IR), Settlement Agreement, Claims, Execution, Receipts, Verification
+  return (
+    a.includes('RETURN') ||
+    a.includes('CLAIM') ||
+    a.includes('INCIDENT') ||
+    a.includes('IR_') ||
+    a.includes('SETTLEMENT') ||
+    a.includes('AGREEMENT') ||
+    a.includes('PAYMENT') ||
+    a.includes('VERIF') ||
+    a.includes('RECEIPT') ||
+    a.includes('REMIT') ||
+    a.includes('TICKET') ||
+    a.includes('EXECUTE') ||
+    a.includes('TICKET_EXECUTE') ||
+    t.includes('RETURN') ||
+    t.includes('CLAIM') ||
+    t.includes('INCIDENT') ||
+    t.includes('IR') ||
+    t.includes('SETTLEMENT') ||
+    t.includes('AGREEMENT') ||
+    t.includes('TICKET') ||
+    t.includes('RECEIPT')
+  );
+};

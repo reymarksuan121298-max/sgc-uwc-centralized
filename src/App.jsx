@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { supabase } from './config/supabaseClient';
 import { getLocalDateString, parseToDateString, formatDrawTime, getTicketTransId } from './utils/formatters';
-import { isSuperAdminRole, isSSRRole, canViewTab } from './utils/permissions';
+import { isSuperAdminRole, isSSRRole, isUnclaimedSpecialistRole, isOperationalNotification, canViewTab } from './utils/permissions';
 import MainLayout from './layouts/MainLayout';
 import AppRoutes from './routes/AppRoutes';
 import Login from './pages/Login/Login';
@@ -11,6 +11,7 @@ import TicketQrModal from './components/winnings/TicketQrModal';
 import TicketVerificationChatModal from './components/chat/TicketVerificationChatModal';
 import TicketVerificationBotModal from './components/chat/TicketVerificationBotModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
+import IncomingCallBanner from './components/chat/IncomingCallBanner';
 import { notificationService } from './services/notificationService';
 import { MessageSquare, Sparkles, Bot } from 'lucide-react';
 
@@ -43,6 +44,11 @@ export default function App() {
   const [gatewayEndpoints, setGatewayEndpoints] = useState([]);
   const [selectedEndpointFilter, setSelectedEndpointFilter] = useState('ALL');
   const [commissionConfig, setCommissionConfig] = useState(DEFAULT_COMMISSIONS);
+  const [userFeaturesConfig, setUserFeaturesConfig] = useState({
+    default_copy_transaction: false,
+    default_qr_modal: false,
+    users: {}
+  });
 
   // Dashboard Navigation & Filters
   const [activeTab, setActiveTab] = useState(() => {
@@ -91,6 +97,7 @@ export default function App() {
 
   // In-App Heads-Up Notification Banner Popup State (Mobile & Desktop)
   const [activeNotificationPopup, setActiveNotificationPopup] = useState(null);
+  const [globalIncomingCall, setGlobalIncomingCall] = useState(null);
   const activePopupTimerRef = useRef(null);
 
   const triggerNotificationPopup = useCallback((notif) => {
@@ -103,22 +110,54 @@ export default function App() {
     }, 6000);
   }, []);
 
-  // System Notifications State (Chat & Audit Trail)
+  const isCallNotification = (n) => {
+    if (!n) return false;
+    const act = String(n.action || '').toUpperCase();
+    const title = String(n.title || '').toUpperCase();
+    const msg = String(n.message || '').toUpperCase();
+    const target = String(n.targetType || '').toUpperCase();
+    return act.includes('VIDEO_CALL') ||
+      title.includes('VIDEO CALL') ||
+      msg.includes('VIDEO CALL') ||
+      target === 'VIDEO_CALL';
+  };
+
+  // System Notifications State (Audit Trail & Activity Logs Only)
   const [notifications, setNotifications] = useState(() => {
     try {
       const userKey = currentUser?.id || currentUser?.username || 'default';
       const saved = localStorage.getItem(`stl_notifications_${userKey}`);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
+      try {
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
+      } catch { }
+      return cleaned;
     } catch {
       return [];
     }
   });
 
+  // Auto-clean any stored notifications containing call logs
+  useEffect(() => {
+    try {
+      const userKey = currentUser?.id || currentUser?.username || 'default';
+      const saved = localStorage.getItem(`stl_notifications_${userKey}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
+        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
+        setNotifications(cleaned);
+      }
+    } catch { }
+  }, [currentUser]);
+
   const appendNotification = useCallback((notif) => {
-    if (!notif) return;
+    if (!notif || isCallNotification(notif)) return;
     const userKey = currentUser?.id || currentUser?.username || 'default';
     setNotifications((prev) => {
-      const filtered = prev.filter(n => n.id !== notif.id);
+      const filtered = prev.filter(n => n.id !== notif.id && !isCallNotification(n));
       const updated = [notif, ...filtered].slice(0, 60);
       try {
         localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(updated));
@@ -163,6 +202,131 @@ export default function App() {
     } catch (e) {
       console.warn(e);
     }
+  }, [currentUser]);
+
+  // Global Realtime Direct Inbound Channel for Incoming Calls & Urgent Alerts
+  useEffect(() => {
+    if (!currentUser?.username) return;
+
+    const myUsername = String(currentUser.username).toLowerCase().trim();
+    const myId = String(currentUser.id || '').toLowerCase().trim();
+    const myName = String(currentUser.full_name || currentUser.fullName || '').toLowerCase().trim();
+    const myInboxChannelName = `user_inbox_${myUsername}`;
+
+    const checkIsForMe = (payload) => {
+      if (!payload || payload.callerUsername === currentUser.username) return false;
+      const targetUser = String(payload.targetUsername || '').toLowerCase().trim();
+      const targetId = String(payload.targetId || '').toLowerCase().trim();
+      const targetName = String(payload.targetName || '').toLowerCase().trim();
+      return targetUser === myUsername ||
+        targetId === myId ||
+        targetUser === myId ||
+        (targetName && (targetName === myName || targetName === myUsername));
+    };
+
+    // 1. Universal video signaling broadcast channel
+    const globalCallChannel = supabase.channel('global_video_signaling_room', {
+      config: { broadcast: { self: false } }
+    })
+      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
+        if (checkIsForMe(payload)) {
+          setGlobalIncomingCall(payload);
+        }
+      })
+      .on('broadcast', { event: 'video_call_end' }, ({ payload }) => {
+        if (!payload || checkIsForMe(payload)) {
+          setGlobalIncomingCall(null);
+        }
+      })
+      .on('broadcast', { event: 'video_call_reject' }, ({ payload }) => {
+        if (!payload || checkIsForMe(payload)) {
+          setGlobalIncomingCall(null);
+        }
+      })
+      .subscribe();
+
+    // 2. Personal inbox direct fallback channel
+    const inboxChannel = supabase.channel(myInboxChannelName, {
+      config: { broadcast: { self: false } }
+    })
+      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
+        if (payload && payload.callerUsername !== currentUser.username) {
+          setGlobalIncomingCall(payload);
+        }
+      })
+      .on('broadcast', { event: 'video_call_end' }, () => {
+        setGlobalIncomingCall(null);
+      })
+      .on('broadcast', { event: 'video_call_reject' }, () => {
+        setGlobalIncomingCall(null);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(globalCallChannel);
+      supabase.removeChannel(inboxChannel);
+    };
+  }, [currentUser]);
+
+  const handleAcceptGlobalCall = useCallback((callInfo) => {
+    if (!callInfo) return;
+
+    if (callInfo.callerUsername) {
+      const callerInbox = supabase.channel(`user_inbox_${String(callInfo.callerUsername).toLowerCase().trim()}`);
+      callerInbox.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          callerInbox.send({
+            type: 'broadcast',
+            event: 'video_call_accept',
+            payload: {
+              responderUsername: currentUser?.username,
+              responderName: currentUser?.full_name || currentUser?.username
+            }
+          }).catch(() => { });
+        }
+      });
+    }
+
+    const callerContact = {
+      id: callInfo.callerId || callInfo.callerUsername,
+      username: callInfo.callerUsername,
+      name: callInfo.callerName,
+      full_name: callInfo.callerName,
+      sub_office: callInfo.callerSubOffice,
+      role: callInfo.callerRole,
+      autoStartCall: true,
+      initialCallOffer: callInfo
+    };
+
+    setOpenChats((prev) => {
+      const contactKey = callerContact.username || callerContact.id;
+      if (prev.some((c) => (c.username || c.id) === contactKey)) {
+        return prev.map((c) =>
+          (c.username || c.id) === contactKey
+            ? { ...c, autoStartCall: true, initialCallOffer: callInfo }
+            : c
+        );
+      }
+      return [callerContact, ...prev];
+    });
+
+    setGlobalIncomingCall(null);
+  }, [currentUser]);
+
+  const handleDeclineGlobalCall = useCallback((callInfo) => {
+    if (callInfo?.callerUsername) {
+      const callerInbox = supabase.channel(`user_inbox_${String(callInfo.callerUsername).toLowerCase().trim()}`);
+      callerInbox.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          callerInbox.send({
+            type: 'broadcast',
+            event: 'video_call_reject',
+            payload: { responderUsername: currentUser?.username }
+          }).catch(() => { });
+        }
+      });
+    }
+    setGlobalIncomingCall(null);
   }, [currentUser]);
 
   const isSuperAdmin = isSuperAdminRole(currentUser?.role);
@@ -245,8 +409,8 @@ export default function App() {
 
       if (!error && Array.isArray(data)) {
         const unreadCount = data.filter(msg => {
-          const isSender = (currentUserId && msg.sender_id === currentUserId) || 
-                           (msg.sender_name && String(msg.sender_name).trim().toLowerCase() === currentUserName);
+          const isSender = (currentUserId && msg.sender_id === currentUserId) ||
+            (msg.sender_name && String(msg.sender_name).trim().toLowerCase() === currentUserName);
           return !isSender || msg.verification_status === 'PENDING';
         }).length;
         setPendingTicketsChatCount(unreadCount);
@@ -303,6 +467,14 @@ export default function App() {
                 isClaim: defaultEp.isClaim ?? 0
               };
               setGatewayConfig(loadedConfig);
+            }
+          } else if (row.key === 'user_feature_permissions' || row.key === 'user_features_config') {
+            if (parsed && typeof parsed === 'object') {
+              setUserFeaturesConfig({
+                default_copy_transaction: parsed.default_copy_transaction === true,
+                default_qr_modal: parsed.default_qr_modal === true,
+                users: parsed.users || {}
+              });
             }
           } else if (parsed && typeof parsed === 'object' && parsed.baseUrl && !loadedConfig) {
             loadedConfig = parsed;
@@ -393,7 +565,11 @@ export default function App() {
       if (epsToUse && epsToUse.length > 0) {
         const activeEndpoints = epsToUse.filter(e => e.is_active !== false && e.baseUrl);
 
-        if (currentUser?.sub_office && currentUser.sub_office !== 'All') {
+        // Sales Service Representatives (SSR) are restricted to their assigned sub-office
+        // Unclaimed Specialists & Admins have full access to handle all SSR / Sub-Office records
+        const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
+
+        if (isRestrictedBranchSSR) {
           const match = activeEndpoints.find(e => e.sub_office === currentUser.sub_office);
           targetEndpoints = match ? [match] : [activeEndpoints.find(e => e.sub_office === 'All' || e.is_default) || activeEndpoints[0]].filter(Boolean);
         } else {
@@ -502,6 +678,34 @@ export default function App() {
     return () => { isMounted = false; };
   }, [currentUser]);
 
+  // Service Worker and Notification Action Listener initialization
+  useEffect(() => {
+    notificationService.initServiceWorker();
+    const unsub = notificationService.onNotificationAction((payload) => {
+      if (payload.type === 'CHAT_MESSAGE') {
+        if (payload.roomId) {
+          handleOpenTicketChat({
+            id: payload.roomId,
+            name: payload.senderName || 'SSR',
+            sub_office: payload.subOffice || '',
+            isGroup: String(payload.roomId).startsWith('group-')
+          });
+        } else {
+          handleOpenTicketChat({
+            id: payload.senderId || payload.senderName,
+            username: payload.senderName,
+            full_name: payload.senderName,
+            sub_office: payload.subOffice || ''
+          });
+        }
+      } else if (payload.type === 'AUDIT_LOG') {
+        setActiveTab('audit_logs');
+      }
+    });
+
+    return () => unsub();
+  }, [handleOpenTicketChat, setActiveTab]);
+
   // Re-fetch on filter changes
   useEffect(() => {
     if (!currentUser) return;
@@ -565,10 +769,17 @@ export default function App() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const currentUserName = (currentUser?.full_name || currentUser?.username || '').trim().toLowerCase();
-            const currentUserId = currentUser?.id;
-            const isMe = (currentUserId && payload.new?.sender_id === currentUserId) ||
-                         (payload.new?.sender_name && String(payload.new.sender_name).trim().toLowerCase() === currentUserName);
+            const myId = String(currentUser?.id || '').toLowerCase().trim();
+            const myUsername = String(currentUser?.username || '').toLowerCase().trim();
+            const myName = String(currentUser?.full_name || currentUser?.fullName || '').toLowerCase().trim();
+
+            const senderId = String(payload.new?.sender_id || '').toLowerCase().trim();
+            const senderUsername = String(payload.new?.sender_username || '').toLowerCase().trim();
+            const senderName = String(payload.new?.sender_name || '').toLowerCase().trim();
+
+            const isMe = (myId && (senderId === myId || senderUsername === myId)) ||
+              (myUsername && (senderId === myUsername || senderUsername === myUsername || senderName === myUsername)) ||
+              (myName && (senderName === myName || senderId === myName));
 
             if (!isMe) {
               const sender = payload.new?.sender_name || 'SSR Agent';
@@ -576,53 +787,38 @@ export default function App() {
               const roomId = payload.new?.room_id || null;
               const subOffice = payload.new?.sub_office || '';
               const senderId = payload.new?.sender_id || null;
-              const notifId = payload.new?.id ? `chat-${payload.new.id}` : `chat-${Date.now()}`;
 
-              const chatNotif = {
-                id: notifId,
-                type: 'chat',
-                title: sender,
-                senderName: sender,
-                senderId,
-                roomId,
-                subOffice,
-                message: msgSnippet,
-                timestamp: payload.new?.created_at || new Date().toISOString(),
-                read: false
-              };
-
-              // 1. Append to notification center feed
-              appendNotification(chatNotif);
-
-              // 2. Trigger in-app floating banner popup (Mobile & Desktop)
-              triggerNotificationPopup(chatNotif);
-
-              // 3. Dispatch Web Push / Browser notification + audio chime
-              notificationService.sendChatNotification({
-                senderName: sender,
-                senderId,
-                roomId,
-                subOffice,
-                message: msgSnippet,
-                currentUserId: currentUser?.id || currentUser?.username,
-                onClick: () => {
-                  if (roomId) {
-                    handleOpenTicketChat({
-                      id: roomId,
-                      name: sender,
-                      sub_office: subOffice,
-                      isGroup: String(roomId).startsWith('group-')
-                    });
-                  } else {
-                    handleOpenTicketChat({
-                      id: senderId || sender,
-                      username: sender,
-                      full_name: sender,
-                      sub_office: subOffice
-                    });
+              // Dispatch Web Push / Browser notification + audio chime only for incoming messages from other users
+              if (!isSSRRole(currentUser?.role)) {
+                notificationService.sendChatNotification({
+                  senderName: sender,
+                  senderId,
+                  roomId,
+                  subOffice,
+                  message: msgSnippet,
+                  currentUserId: currentUser?.id || currentUser?.username,
+                  onClick: () => {
+                    if (roomId) {
+                      handleOpenTicketChat({
+                        id: roomId,
+                        name: sender,
+                        sub_office: subOffice,
+                        isGroup: String(roomId).startsWith('group-')
+                      });
+                    } else {
+                      handleOpenTicketChat({
+                        id: senderId || sender,
+                        username: sender,
+                        full_name: sender,
+                        sub_office: subOffice
+                      });
+                    }
                   }
-                }
-              });
+                });
+              } else {
+                // On SSR side, play local audio chime only (no system web push popup)
+                notificationService.playTone('chat', currentUser?.id || currentUser?.username);
+              }
 
               if (openChats.length > 0) {
                 const userKey = currentUser?.id || currentUser?.username || 'user';
@@ -630,12 +826,56 @@ export default function App() {
                 setPendingTicketsChatCount(0);
               } else {
                 setPendingTicketsChatCount(prev => prev + 1);
-                showToast(`💬 ${sender}: "${msgSnippet.slice(0, 45)}${msgSnippet.length > 45 ? '...' : ''}"`);
               }
             }
           } else {
             fetchPendingChatCount();
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_settings'
+        },
+        (payload) => {
+          const row = payload.new || payload.old;
+          if (!row) {
+            loadSystemSettings();
+            return;
+          }
+          if (row.key === 'user_feature_permissions' || row.key === 'user_features_config') {
+            let parsed = row.value;
+            while (typeof parsed === 'string') {
+              try {
+                const next = JSON.parse(parsed);
+                if (next === parsed) break;
+                parsed = next;
+              } catch { break; }
+            }
+            if (parsed && typeof parsed === 'object') {
+              setUserFeaturesConfig({
+                default_copy_transaction: parsed.default_copy_transaction === true,
+                default_qr_modal: parsed.default_qr_modal === true,
+                users: parsed.users || {}
+              });
+            }
+          } else {
+            loadSystemSettings();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'app_users'
+        },
+        () => {
+          loadSystemSettings();
         }
       )
       .on(
@@ -656,6 +896,31 @@ export default function App() {
           const targetId = payload.new.target_id || '';
           const subOffice = payload.new.sub_office || '';
           const actorRole = payload.new.actor_role || '';
+
+          // Omit video call logs from push notifications & popup alerts
+          if (
+            action.includes('VIDEO_CALL') ||
+            targetType === 'VIDEO_CALL' ||
+            action === 'VIDEO_CALL_COMPLETED' ||
+            action.includes('CALL_LOG')
+          ) {
+            return;
+          }
+
+          // Realtime Toast alert when permissions are updated for SSR
+          if (action === 'USER_FEATURE_PERMISSIONS_UPDATED' && !isMe) {
+            const role = String(currentUser?.role || '').toLowerCase();
+            if (role.includes('sales') || role.includes('ssr')) {
+              showToast('🔔 Feature permissions (Copy/QR) updated by Administrator.');
+            }
+          }
+
+          // SSR and Unclaimed Specialist can ONLY view pop notifications & feed for:
+          // Ticket Execution, Returned Winnings, Incident Reports (IR), and Settlement Agreements
+          const isOperationalUser = isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role);
+          if (isOperationalUser && !isOperationalNotification(action, targetType)) {
+            return;
+          }
           let detailsStr = '';
           if (payload.new.details) {
             try {
@@ -686,8 +951,8 @@ export default function App() {
           // 1. Append to notification center feed
           appendNotification(auditNotif);
 
-          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self)
-          if (!isMe) {
+          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self and not SSR)
+          if (!isMe && !isSSRRole(currentUser?.role)) {
             triggerNotificationPopup(auditNotif);
             notificationService.sendAuditNotification({
               actorUsername: actorName,
@@ -712,7 +977,7 @@ export default function App() {
       }
       supabase.removeChannel(channel);
     };
-  }, [currentUser, fetchReturnedFromSupabase, fetchPendingChatCount]);
+  }, [currentUser, fetchReturnedFromSupabase, fetchPendingChatCount, loadSystemSettings]);
 
   const returnedTransIds = useMemo(() => new Set(returnedData.map(i => String(i.transactionId || '').trim().toLowerCase())), [returnedData]);
 
@@ -888,13 +1153,24 @@ export default function App() {
 
   const handleSaveAgreement = async (payload) => {
     try {
+      // Write all settlement data directly onto the returned_winnings row.
+      // No separate settlement_agreements table is used.
       const { error } = await supabase
         .from('returned_winnings')
         .update({
-          isUnderSettlement: payload.isUnderSettlement,
-          settlementTerms: payload.settlementTerms,
+          isUnderSettlement: true,
+          settlementTerms: {
+            agreementDate: payload.agreementDate,
+            reason: payload.reason,
+            frequency: payload.frequency,
+            sub_office: payload.ticket?.sub_office || payload.sub_office || 'Mandaue Central',
+            installmentsCount: payload.installmentsCount,
+            installments: payload.installments,
+            signatories: payload.signatories || null
+          },
           totalInstallmentAmount: payload.totalInstallmentAmount,
-          settlementStatus: payload.settlementStatus
+          settlementStatus: 'PENDING',
+          updated_at: new Date().toISOString()
         })
         .eq('transactionId', payload.transactionId);
 
@@ -917,7 +1193,28 @@ export default function App() {
     }
   };
 
+
+  // User-level feature capabilities (Copy Transaction & QR Modal) - per SSR account
+  const userFeaturePermissions = useMemo(() => {
+    // Non-SSR roles (Superadmin, Admin, Unclaimed Specialist) retain full access
+    if (!isSSRRole(currentUser?.role)) {
+      return { canCopyTransaction: true, canOpenQrModal: true };
+    }
+    // Sales Service Representative (SSR) accounts:
+    const myKey = String(currentUser?.username || '').toLowerCase().trim();
+    const userOverride = userFeaturesConfig?.users?.[myKey];
+    return {
+      canCopyTransaction: userOverride?.enableCopyTransaction ?? userFeaturesConfig?.default_copy_transaction ?? false,
+      canOpenQrModal: userOverride?.enableQrModal ?? userFeaturesConfig?.default_qr_modal ?? false
+    };
+  }, [currentUser, userFeaturesConfig]);
+
   const handleCopySupervisorImage = async (userKey) => {
+    if (!userFeaturePermissions.canCopyTransaction) {
+      showToast('⚠️ Copy Transaction is disabled for your user account by Administrator.');
+      return;
+    }
+
     const captureNode = document.getElementById(`supervisor-card-${userKey}`);
     if (!captureNode) {
       alert("Could not find table element to capture screenshot.");
@@ -926,10 +1223,38 @@ export default function App() {
 
     setIsCapturingImage(userKey);
     try {
+      // Find all overflow containers inside the capture node
+      const overflowEls = captureNode.querySelectorAll('.overflow-x-auto, .overflow-y-auto, [class*="overflow"]');
+      const savedStyles = [];
+      overflowEls.forEach((el) => {
+        savedStyles.push({ el, overflow: el.style.overflow, overflowX: el.style.overflowX });
+        el.style.overflow = 'visible';
+        el.style.overflowX = 'visible';
+      });
+
       const dataUrl = await toPng(captureNode, {
         cacheBust: true,
         pixelRatio: 2,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        style: {
+          overflow: 'visible',
+          maxWidth: 'none'
+        },
+        filter: (node) => {
+          if (node.classList && (node.classList.contains('hide-in-screenshot') || node.classList.contains('no-screenshot'))) {
+            return false;
+          }
+          if (node.getAttribute && node.getAttribute('data-screenshot-exclude') === 'true') {
+            return false;
+          }
+          return true;
+        }
+      });
+
+      // Restore overflow styles
+      savedStyles.forEach(({ el, overflow, overflowX }) => {
+        el.style.overflow = overflow;
+        el.style.overflowX = overflowX;
       });
 
       const response = await fetch(dataUrl);
@@ -1040,6 +1365,11 @@ export default function App() {
   }
 
   const handleCopyTransId = (transId) => {
+    if (!userFeaturePermissions.canCopyTransaction) {
+      setToastMessage('⚠️ Copy Transaction is disabled for your user account by Administrator.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
     if (!transId) return;
     const strId = String(transId).trim();
     if (strId && strId !== 'N/A') {
@@ -1048,6 +1378,11 @@ export default function App() {
   };
 
   const handleOpenQrModal = (ticket) => {
+    if (!userFeaturePermissions.canOpenQrModal) {
+      setToastMessage('⚠️ QR Modal access is disabled for your user account by Administrator.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
     if (!ticket) return;
     const computedId = getTicketTransId(ticket, 'N/A');
     if (computedId && computedId !== 'N/A') {
@@ -1087,6 +1422,8 @@ export default function App() {
           setActiveTab={handleTabChange}
           currentUser={currentUser}
           isSuperAdmin={isSuperAdmin}
+          canCopyTransaction={userFeaturePermissions.canCopyTransaction}
+          canOpenQrModal={userFeaturePermissions.canOpenQrModal}
           // Unclaimed Registry Props
           fromDate={fromDate}
           setFromDate={setFromDate}
@@ -1111,9 +1448,9 @@ export default function App() {
           copiedSupervisorKeys={copiedSupervisorKeys}
           copiedTransIds={copiedTransIds}
           formatDrawTime={formatDrawTime}
-          onOpenQrModal={handleOpenQrModal}
+          onOpenQrModal={userFeaturePermissions.canOpenQrModal ? handleOpenQrModal : null}
           // Returned Winnings Props
-          returnedGroupedData={groupedData}
+          returnedGroupedData={null}
           returnedFilteredData={returnedData}
           liveData={data}
           isLoadingLive={loading}
@@ -1125,6 +1462,13 @@ export default function App() {
           onSyncLedger={fetchReturnedFromSupabase}
         />
       </MainLayout>
+
+      {/* Global Real-time Incoming Video Call Banner Alert */}
+      <IncomingCallBanner
+        incomingCall={globalIncomingCall}
+        onAccept={handleAcceptGlobalCall}
+        onDecline={handleDeclineGlobalCall}
+      />
 
       {/* Floating Docked Multi-Chat Messenger Windows (Side-by-Side) */}
       <div className="fixed bottom-0 right-3 sm:right-6 z-[9999] flex flex-row-reverse items-end gap-3 pointer-events-none max-w-[calc(100vw-24px)] overflow-x-auto pb-0">
@@ -1158,19 +1502,9 @@ export default function App() {
         onNavigateToSettlement={handleNavigateToSettlement}
       />
 
-      {/* Floating Agent Maria Verifier Bot Launcher */}
+      {/* Floating Draggable Agent Maria Verifier Bot Launcher */}
       {!isBotOpen && openChats.length === 0 && currentUser && (
-        <button
-          type="button"
-          onClick={() => setIsBotOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex flex-col items-center group cursor-pointer hover:scale-105 active:scale-95 transition-transform animate-in fade-in"
-          title="Open Agent Maria Verifier Bot"
-        >
-          <AgentMascotAvatar size="lg" showStatus={true} />
-          <span className="mt-1 bg-[#FFD700] text-[#002B66] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md shadow-lg tracking-wider border border-[#002B66]/20">
-            VERIFIER BOT
-          </span>
-        </button>
+        <DraggableBotLauncher onClick={() => setIsBotOpen(true)} />
       )}
 
       {/* Standalone Reusable Confirmation Modal */}
@@ -1189,6 +1523,8 @@ export default function App() {
         onConfirm={handleConfirmReturn}
         onOpenQrModal={handleOpenQrModal}
         currentUser={currentUser}
+        canCopyTransaction={userFeaturePermissions.canCopyTransaction}
+        canOpenQrModal={userFeaturePermissions.canOpenQrModal}
       />
 
       {/* Standalone Reusable QR Modal */}
@@ -1203,5 +1539,106 @@ export default function App() {
         onCopyTransId={handleCopyTransId}
       />
     </>
+  );
+}
+
+// Draggable Floating Verifier Bot Launcher Component
+function DraggableBotLauncher({ onClick }) {
+  const [pos, setPos] = useState({ x: null, y: null });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef(null);
+  const dragDataRef = useRef({ startX: 0, startY: 0, initX: 0, initY: 0, moved: false });
+
+  const handlePointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (clientX === undefined || clientY === undefined) return;
+
+    const el = dragRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+
+    dragDataRef.current = {
+      startX: clientX,
+      startY: clientY,
+      initX: rect.left,
+      initY: rect.top,
+      moved: false
+    };
+
+    const handlePointerMove = (moveEvent) => {
+      const curX = moveEvent.clientX ?? moveEvent.touches?.[0]?.clientX;
+      const curY = moveEvent.clientY ?? moveEvent.touches?.[0]?.clientY;
+      if (curX === undefined || curY === undefined) return;
+
+      const deltaX = curX - dragDataRef.current.startX;
+      const deltaY = curY - dragDataRef.current.startY;
+
+      if (Math.hypot(deltaX, deltaY) > 5) {
+        dragDataRef.current.moved = true;
+        setIsDragging(true);
+      }
+
+      if (dragDataRef.current.moved) {
+        const maxX = window.innerWidth - rect.width - 10;
+        const maxY = window.innerHeight - rect.height - 10;
+        const newX = Math.max(10, Math.min(maxX, dragDataRef.current.initX + deltaX));
+        const newY = Math.max(10, Math.min(maxY, dragDataRef.current.initY + deltaY));
+        setPos({ x: newX, y: newY });
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+      setTimeout(() => setIsDragging(false), 50);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+  };
+
+  const handleClick = (e) => {
+    if (dragDataRef.current.moved || isDragging) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onClick();
+  };
+
+  const style = pos.x !== null && pos.y !== null ? {
+    left: `${pos.x}px`,
+    top: `${pos.y}px`,
+    bottom: 'auto',
+    right: 'auto',
+    position: 'fixed'
+  } : {};
+
+  return (
+    <div
+      ref={dragRef}
+      onMouseDown={handlePointerDown}
+      onTouchStart={handlePointerDown}
+      style={style}
+      className={`fixed ${pos.x === null ? 'bottom-6 right-6' : ''} z-40 flex flex-col items-center select-none cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 transition-transform animate-in fade-in touch-none`}
+      title="Drag anywhere or click to open Agent Maria Verifier Bot"
+    >
+      <button
+        type="button"
+        onClick={handleClick}
+        className="flex flex-col items-center group pointer-events-auto"
+      >
+        <AgentMascotAvatar size="lg" showStatus={true} />
+        <span className="mt-1 bg-[#FFD700] text-[#002B66] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md shadow-lg tracking-wider border border-[#002B66]/20 shadow-blue-950/20">
+          VERIFIER BOT
+        </span>
+      </button>
+    </div>
   );
 }

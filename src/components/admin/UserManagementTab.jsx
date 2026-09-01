@@ -88,6 +88,17 @@ export default function UserManagementTab({ currentUser }) {
 
   useEffect(() => {
     fetchUsers();
+
+    const channel = supabase
+      .channel('user_mgmt_tab_sub_offices_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        fetchUsers();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const openCreateModal = () => {
@@ -125,6 +136,13 @@ export default function UserManagementTab({ currentUser }) {
     setErrorMessage('');
 
     try {
+      // Sanitize sub_office for PostgreSQL foreign key constraint:
+      // If 'All', empty, or not in database, store as NULL
+      const matchingOffice = (subOffices || []).find(so => typeof so === 'string' ? so.toLowerCase().trim() === String(subOffice).toLowerCase().trim() : (so?.name || '').toLowerCase().trim() === String(subOffice).toLowerCase().trim());
+      const finalSubOffice = (subOffice === 'All' || !matchingOffice) 
+        ? null 
+        : (typeof matchingOffice === 'string' ? matchingOffice : matchingOffice.name);
+
       if (editingUser) {
         // Update user
         const { error } = await supabase
@@ -133,7 +151,7 @@ export default function UserManagementTab({ currentUser }) {
             password: password.trim(),
             full_name: fullName.trim() || null,
             role,
-            sub_office: subOffice,
+            sub_office: finalSubOffice,
             is_active: isActive,
             updated_at: new Date().toISOString()
           })
@@ -147,7 +165,7 @@ export default function UserManagementTab({ currentUser }) {
           action: 'USER_UPDATED',
           target_type: 'USER',
           target_id: username.trim(),
-          sub_office: subOffice,
+          sub_office: finalSubOffice || 'All Branches',
           details: { role, is_active: isActive }
         }]);
 
@@ -161,7 +179,7 @@ export default function UserManagementTab({ currentUser }) {
             password: password.trim(),
             full_name: fullName.trim() || null,
             role,
-            sub_office: subOffice,
+            sub_office: finalSubOffice,
             is_active: isActive
           }]);
 
@@ -173,7 +191,7 @@ export default function UserManagementTab({ currentUser }) {
           action: 'USER_CREATED',
           target_type: 'USER',
           target_id: username.trim().toLowerCase(),
-          sub_office: subOffice,
+          sub_office: finalSubOffice || 'All Branches',
           details: { role }
         }]);
 
@@ -189,6 +207,8 @@ export default function UserManagementTab({ currentUser }) {
     }
   };
 
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const toggleUserStatus = async (user) => {
     const newStatus = !user.is_active;
     try {
@@ -201,6 +221,47 @@ export default function UserManagementTab({ currentUser }) {
       await fetchUsers();
     } catch (err) {
       alert(`Error updating user status: ${err.message}`);
+    }
+  };
+
+  const executeDeleteUser = async () => {
+    if (!deletingUser) return;
+    if (deletingUser.username === currentUser?.username) {
+      alert('You cannot delete your own active session account!');
+      setDeletingUser(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      let query = supabase.from('app_users').delete();
+      if (deletingUser.id) {
+        query = query.eq('id', deletingUser.id);
+      } else {
+        query = query.eq('username', deletingUser.username);
+      }
+      const { error } = await query;
+      if (error) throw error;
+
+      try {
+        await supabase.from('audit_logs').insert([{
+          actor_username: currentUser?.username || 'admin',
+          actor_role: currentUser?.role || 'Super Admin',
+          action: 'USER_DELETED',
+          target_type: 'USER',
+          target_id: deletingUser.username,
+          sub_office: deletingUser.sub_office || 'All Branches',
+          details: { role: deletingUser.role, full_name: deletingUser.full_name }
+        }]);
+      } catch {}
+
+      showToast(`User account @${deletingUser.username} permanently deleted.`);
+      setDeletingUser(null);
+      await fetchUsers();
+    } catch (err) {
+      alert(`Failed to delete user: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -347,13 +408,25 @@ export default function UserManagementTab({ currentUser }) {
                       {u.last_login_at ? new Date(u.last_login_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Never'}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => openEditModal(u)}
-                        className="inline-flex items-center gap-1 bg-slate-100 hover:bg-[#002B66] text-slate-700 hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                      >
-                        <Edit2 size={12} />
-                        <span>Edit / Reset</span>
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          onClick={() => openEditModal(u)}
+                          className="inline-flex items-center gap-1 bg-slate-100 hover:bg-[#002B66] text-slate-700 hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          title="Edit user details or reset password"
+                        >
+                          <Edit2 size={12} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => setDeletingUser(u)}
+                          disabled={u.username === currentUser?.username}
+                          className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={u.username === currentUser?.username ? "You cannot delete your own active account" : "Delete user account"}
+                        >
+                          <Trash2 size={12} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -485,6 +558,51 @@ export default function UserManagementTab({ currentUser }) {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-rose-600 rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-rose-600 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-white">
+                <Trash2 size={18} className="text-[#FFD700]" />
+                <span>Confirm User Deletion</span>
+              </div>
+              <button onClick={() => setDeletingUser(null)} className="text-rose-200 hover:text-white cursor-pointer font-bold">✕</button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs text-slate-700">
+              <p className="font-semibold text-slate-800">
+                Are you sure you want to permanently delete user account <strong className="font-mono text-rose-700">@{deletingUser.username}</strong> ({deletingUser.full_name || 'No Name'})?
+              </p>
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-800 space-y-1">
+                <p className="font-bold">⚠️ Warning: Irreversible Action</p>
+                <p>This will revoke all access for this user and remove their database credentials immediately.</p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeletingUser(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={executeDeleteUser}
+                  disabled={isDeleting}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-lg shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Trash2 size={13} />
+                  <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

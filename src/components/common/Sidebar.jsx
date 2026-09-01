@@ -85,8 +85,8 @@ export default function Sidebar({
                 <Landmark size={20} className="stroke-[2.5]" />
               </div>
               <div className="min-w-0 flex-1">
-                <h1 className="text-xs font-extrabold tracking-wider text-white uppercase leading-snug break-words">Lucky Betplay Corp.</h1>
-                <span className="text-[9px] text-[#FFD700] font-bold uppercase tracking-widest block mt-0.5">Centralized Operations</span>
+                <h1 className="text-xs font-extrabold tracking-wider text-white uppercase leading-snug break-words">CENTRALIZED</h1>
+                <span className="text-[9px] text-[#FFD700] font-bold uppercase tracking-widest block mt-0.5">Unclaimed Winnings</span>
               </div>
             </div>
             <button 
@@ -157,7 +157,7 @@ export default function Sidebar({
                   {formatRoleName(currentUser?.role) || 'Unclaimed Specialist'}
                 </span>
                 <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-blue-900/80 text-blue-200 border border-blue-800/80 truncate max-w-[120px]">
-                  {currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'Mandaue Central'}
+                  {currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'All'}
                 </span>
               </div>
             </div>

@@ -261,63 +261,7 @@ VALUES
 ON CONFLICT (key) DO UPDATE 
 SET value = EXCLUDED.value;
 
--- ==============================================================================
--- 11. RESTORE COMPLETE RETURNED WINNINGS RECORDS (`returned_winnings`)
--- ==============================================================================
-INSERT INTO public.returned_winnings (
-    "transactionId", "apiId", username, "fullName", location, outlet, supervisor, sub_office,
-    "betCode", rambolito, "betNo", "betAmount", "winAmount", "paidAmount", "return_amount_out",
-    receipt_status, admin_commission, agent_commission, staff_commission, collector_commission,
-    "drawTime", "drawDate", created_at, updated_at
-)
-VALUES
-    -- Tipolo Sub-Office Records
-    ('TX-2026-TIP-001', 'API-9901', 'sub_tipolo', 'Tipolo Central Outlet', 'Tipolo Main Road', 'Tipolo Booth A', 'Supervisor Marco', 'Tipolo',
-     'RS3', 0, '4-8-2', 20.00, 9000.00, 0.00, 9000.00, 'NO_RECEIPT', 4500.00, 2700.00, 900.00, 900.00, '2:00 PM', '2026-08-27', timezone('utc'::text, now() - INTERVAL '1 day'), timezone('utc'::text, now() - INTERVAL '1 day')),
 
-    ('TX-2026-TIP-002', 'API-9902', 'sub_tipolo', 'Tipolo Highway Outlet', 'Tipolo Highway', 'Tipolo Booth B', 'Supervisor Marco', 'Tipolo',
-     'RS3', 0, '1-7-9', 10.00, 4500.00, 0.00, 4500.00, 'NO_RECEIPT', 2250.00, 1350.00, 450.00, 450.00, '5:00 PM', '2026-08-27', timezone('utc'::text, now() - INTERVAL '1 day'), timezone('utc'::text, now() - INTERVAL '1 day')),
-
-    ('TX-2026-TIP-003', 'API-9903', 'sub_tipolo', 'Tipolo Plaza Outlet', 'Tipolo Plaza', 'Tipolo Booth C', 'Supervisor Marco', 'Tipolo',
-     'RS3', 0, '3-3-8', 30.00, 13500.00, 0.00, 13500.00, 'NO_RECEIPT', 6750.00, 4050.00, 1350.00, 1350.00, '9:00 PM', '2026-08-26', timezone('utc'::text, now() - INTERVAL '2 days'), timezone('utc'::text, now() - INTERVAL '2 days')),
-
-    -- Canduman Sub-Office Records
-    ('TX-2026-CAN-001', 'API-9904', 'sub_canduman', 'Canduman Market Outlet', 'Canduman Public Market', 'Canduman Station 1', 'Supervisor Elena', 'Canduman',
-     'RS3', 0, '8-2-0', 20.00, 9000.00, 0.00, 9000.00, 'NO_RECEIPT', 4500.00, 2700.00, 900.00, 900.00, '2:00 PM', '2026-08-27', timezone('utc'::text, now() - INTERVAL '1 day'), timezone('utc'::text, now() - INTERVAL '1 day')),
-
-    ('TX-2026-CAN-002', 'API-9905', 'sub_canduman', 'Canduman Crossing Outlet', 'Canduman Crossing', 'Canduman Station 2', 'Supervisor Elena', 'Canduman',
-     'RS3', 0, '5-9-1', 40.00, 18000.00, 0.00, 18000.00, 'NO_RECEIPT', 9000.00, 5400.00, 1800.00, 1800.00, '5:00 PM', '2026-08-26', timezone('utc'::text, now() - INTERVAL '2 days'), timezone('utc'::text, now() - INTERVAL '2 days')),
-
-    -- Ibabao-Estancia Sub-Office Records
-    ('TX-2026-IBA-001', 'API-9906', 'sub_ibabao', 'Ibabao Centro Outlet', 'Ibabao Centro', 'Ibabao Booth 1', 'Supervisor Dante', 'Ibabao-Estancia',
-     'RS3', 0, '2-4-6', 15.00, 6750.00, 0.00, 6750.00, 'NO_RECEIPT', 3375.00, 2025.00, 675.00, 675.00, '9:00 PM', '2026-08-27', timezone('utc'::text, now() - INTERVAL '1 day'), timezone('utc'::text, now() - INTERVAL '1 day')),
-
-    ('TX-2026-IBA-002', 'API-9907', 'sub_ibabao', 'Estancia North Outlet', 'Estancia North', 'Estancia Booth 2', 'Supervisor Dante', 'Ibabao-Estancia',
-     'RS3', 0, '7-0-3', 10.00, 4500.00, 0.00, 4500.00, 'NO_RECEIPT', 2250.00, 1350.00, 450.00, 450.00, '2:00 PM', '2026-08-28', timezone('utc'::text, now()), timezone('utc'::text, now())),
-
-    -- Pagsabungan Sub-Office Records
-    ('TX-2026-PAG-001', 'API-9908', 'sub_pagsabungan', 'Pagsabungan Junction', 'Pagsabungan Junction', 'Pagsabungan Station', 'Supervisor Rosa', 'Pagsabungan',
-     'RS3', 0, '9-1-5', 25.00, 11250.00, 0.00, 11250.00, 'NO_RECEIPT', 5625.00, 3375.00, 1125.00, 1125.00, '5:00 PM', '2026-08-28', timezone('utc'::text, now()), timezone('utc'::text, now())),
-
-    ('TX-2026-PAG-002', 'API-9909', 'sub_pagsabungan', 'Pagsabungan High School Outlet', 'Pagsabungan Near School', 'Pagsabungan Kiosk', 'Supervisor Rosa', 'Pagsabungan',
-     'RS3', 0, '6-2-4', 10.00, 4500.00, 0.00, 4500.00, 'NO_RECEIPT', 2250.00, 1350.00, 450.00, 450.00, '9:00 PM', '2026-08-27', timezone('utc'::text, now() - INTERVAL '1 day'), timezone('utc'::text, now() - INTERVAL '1 day')),
-
-    -- Centro Mandaue Main Records
-    ('TX-2026-CTR-001', 'API-9910', 'admin', 'Mandaue City Hall Plaza', 'Centro Mandaue', 'Central Hub 1', 'Supervisor Admin', 'Centro',
-     'RS3', 0, '0-5-8', 50.00, 22500.00, 0.00, 22500.00, 'NO_RECEIPT', 11250.00, 6750.00, 2250.00, 2250.00, '2:00 PM', '2026-08-28', timezone('utc'::text, now()), timezone('utc'::text, now())),
-
-    ('TX-2026-CTR-002', 'API-9911', 'staff', 'Mandaue Public Market Hub', 'Centro Market', 'Central Hub 2', 'Supervisor Admin', 'Centro',
-     'RS3', 0, '3-1-9', 20.00, 9000.00, 0.00, 9000.00, 'NO_RECEIPT', 4500.00, 2700.00, 900.00, 900.00, '5:00 PM', '2026-08-28', timezone('utc'::text, now()), timezone('utc'::text, now()))
-
-ON CONFLICT ("transactionId") DO UPDATE 
-SET 
-    receipt_status = 'NO_RECEIPT',
-    "return_amount_out" = EXCLUDED."winAmount",
-    admin_commission = EXCLUDED.admin_commission,
-    agent_commission = EXCLUDED.agent_commission,
-    staff_commission = EXCLUDED.staff_commission,
-    collector_commission = EXCLUDED.collector_commission,
-    updated_at = timezone('utc'::text, now());
 
 -- ==============================================================================
 -- 12. UTILITY: RESET ALL RETURNED WINNINGS TO UNREMITTED STATUS (OPTIONAL RUN)
@@ -489,6 +433,50 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
+
+-- ==============================================================================
+-- 16. VIDEO CALLING & LIVE OCR AUDIT TRAIL (`video_call_logs`)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.video_call_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    caller_id TEXT,
+    caller_name TEXT NOT NULL,
+    caller_role TEXT NOT NULL DEFAULT 'SSR',
+    caller_sub_office TEXT DEFAULT 'Mandaue Central',
+    recipient_id TEXT,
+    recipient_name TEXT,
+    room_id TEXT,
+    call_type TEXT NOT NULL DEFAULT 'VIDEO', -- 'VIDEO' | 'AUDIO' | 'SCREEN_SHARE'
+    status TEXT NOT NULL DEFAULT 'COMPLETED', -- 'COMPLETED' | 'MISSED' | 'REJECTED' | 'CANCELLED'
+    duration_seconds INTEGER DEFAULT 0,
+    scanned_ticket_id TEXT,
+    notes TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    ended_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.video_call_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access to video_call_logs for anon/authenticated" ON public.video_call_logs;
+CREATE POLICY "Allow all access to video_call_logs for anon/authenticated" 
+ON public.video_call_logs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_vcl_caller_id ON public.video_call_logs(caller_id);
+CREATE INDEX IF NOT EXISTS idx_vcl_recipient_id ON public.video_call_logs(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_vcl_room_id ON public.video_call_logs(room_id);
+CREATE INDEX IF NOT EXISTS idx_vcl_created_at ON public.video_call_logs(created_at DESC);
+
+ALTER TABLE public.video_call_logs REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.video_call_logs;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
+
 
 
 

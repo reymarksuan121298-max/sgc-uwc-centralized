@@ -5,10 +5,11 @@ import {
   Users, Building2, ShieldCheck, UserCheck, Circle,
   ChevronDown, LogOut, User, Shield, Plus,
   Volume2, VolumeX, ShieldAlert, CheckCheck, Trash2,
-  Sliders, BellOff, Info, Check
+  Sliders, BellOff, Info, Check, FileText, AlertTriangle,
+  Download, Smartphone
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
-import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole } from '../../utils/permissions';
+import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole, isOperationalNotification } from '../../utils/permissions';
 import { notificationService } from '../../services/notificationService';
 import CreateGroupChatModal from '../chat/CreateGroupChatModal';
 import AgentMascotAvatar from '../chat/AgentMascotAvatar';
@@ -64,6 +65,33 @@ export default function Header({
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [chatCategory, setChatCategory] = useState('all'); // 'all' | 'groups' | 'direct'
   const [latestMessages, setLatestMessages] = useState({});
+
+  const isCallNotification = (n) => {
+    if (!n) return false;
+    const act = String(n.action || '').toUpperCase();
+    const title = String(n.title || '').toUpperCase();
+    const msg = String(n.message || '').toUpperCase();
+    const target = String(n.targetType || '').toUpperCase();
+    return act.includes('VIDEO_CALL') || 
+           title.includes('VIDEO CALL') || 
+           msg.includes('VIDEO CALL') || 
+           target === 'VIDEO_CALL';
+  };
+
+  const cleanNotifications = useMemo(() => {
+    const isOperationalUser = isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role);
+    return (notifications || []).filter(n => {
+      if (isCallNotification(n)) return false;
+      if (isOperationalUser && n.type === 'audit' && !isOperationalNotification(n.action, n.targetType)) {
+        return false;
+      }
+      return true;
+    });
+  }, [notifications, currentUser]);
+
+  const unreadNotificationsCount = useMemo(() => {
+    return cleanNotifications.filter(n => !n.read).length;
+  }, [cleanNotifications]);
 
   // Track read status per conversation
   const [readTimes, setReadTimes] = useState(() => {
@@ -161,6 +189,40 @@ export default function Header({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
+  // PWA Install Prompt State & Handling
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Check if already installed as standalone PWA
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setIsInstallable(false);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) {
+      alert('To install SGC Portal on your device:\n\n• Android/Chrome: Tap (⋮) in the top-right and select "Install app" or "Add to Home screen".\n• iPhone/iPad (Safari): Tap the Share button (⎋) and select "Add to Home Screen".\n• Desktop Chrome/Edge: Click the Install icon in your browser URL address bar.');
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstallable(false);
+    }
+    setDeferredPrompt(null);
+  };
+
   const userKey = currentUser?.id || currentUser?.username || 'default';
 
   // Request browser web push notification permission
@@ -223,16 +285,65 @@ export default function Header({
     }
   };
 
-  const unreadNotificationsCount = useMemo(() => {
-    return (notifications || []).filter(n => !n.read).length;
-  }, [notifications]);
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Just now';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMinutes = Math.floor((now - date) / (1000 * 60));
+    if (diffMinutes < 1) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 30) return `${diffDays}d ago`;
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const getNotificationVisuals = (notif) => {
+    if (notif.type === 'chat') {
+      return {
+        title: notif.title || `New Message from ${notif.senderName || 'SSR'}`,
+        icon: <MessageSquare size={19} className="stroke-[2.2]" />,
+        badgeBg: 'bg-blue-100 text-blue-600'
+      };
+    }
+
+    const action = String(notif.action || '').toUpperCase();
+    if (action.includes('VERIFIED') || action.includes('PAID') || action.includes('CLAIM')) {
+      return {
+        title: 'Ticket Claim Verified & Paid',
+        icon: <CheckCircle2 size={19} className="stroke-[2.2]" />,
+        badgeBg: 'bg-emerald-100 text-emerald-600'
+      };
+    }
+    if (action.includes('SETTLEMENT') || action.includes('AGREEMENT') || action.includes('RECEIPT') || action.includes('UPLOAD')) {
+      return {
+        title: (action.includes('SETTLEMENT') || action.includes('AGREEMENT')) ? 'New Settlement Agreement' : 'New Remittance Receipt',
+        icon: <FileText size={19} className="stroke-[2.2]" />,
+        badgeBg: 'bg-blue-100 text-blue-600'
+      };
+    }
+    if (action.includes('ALERT') || action.includes('DELETE') || action.includes('AGE') || action.includes('REJECT') || action.includes('WARNING')) {
+      return {
+        title: notif.title || (action.includes('AGE') ? '30-Day Ticket Age Alert' : 'System Alert & Action'),
+        icon: <AlertTriangle size={19} className="stroke-[2.2]" />,
+        badgeBg: 'bg-amber-100 text-amber-700'
+      };
+    }
+
+    return {
+      title: notif.title || (action ? action.replace(/_/g, ' ') : 'System Activity Log'),
+      icon: <ShieldAlert size={19} className="stroke-[2.2]" />,
+      badgeBg: 'bg-purple-100 text-purple-700'
+    };
+  };
 
   const filteredNotifications = useMemo(() => {
-    const list = notifications || [];
+    const list = cleanNotifications || [];
     if (notificationTab === 'chat') return list.filter(n => n.type === 'chat');
     if (notificationTab === 'audit') return list.filter(n => n.type === 'audit');
     return list;
-  }, [notifications, notificationTab]);
+  }, [cleanNotifications, notificationTab]);
 
   // Fetch all active users from database
   const fetchActiveUsers = async () => {
@@ -454,8 +565,11 @@ export default function Header({
         <div className="relative" ref={messengerRef}>
           <button
             type="button"
-            onClick={() => {
-              setIsMiniWidgetOpen(!isMiniWidgetOpen);
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMiniWidgetOpen(prev => !prev);
+              setIsNotificationOpen(false);
+              setIsProfileOpen(false);
               if (pendingTicketsChatCount > 0 && currentUser) {
                 const userKey = currentUser.id || currentUser.username || 'user';
                 localStorage.setItem(`stl_chat_last_read_${userKey}`, new Date().toISOString());
@@ -480,7 +594,7 @@ export default function Header({
 
           {/* MESSENGER ACTIVE USERS DROPDOWN */}
           {isMiniWidgetOpen && (
-            <div className="absolute right-0 top-full mt-2 w-84 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3">
+            <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3 max-h-[82vh] overflow-y-auto">
               
               {/* Header Bar */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
@@ -741,7 +855,12 @@ export default function Header({
         <div className="relative" ref={notificationRef}>
           <button
             type="button"
-            onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsNotificationOpen(prev => !prev);
+              setIsMiniWidgetOpen(false);
+              setIsProfileOpen(false);
+            }}
             className={`p-2 rounded-full transition-all cursor-pointer relative border ${
               isNotificationOpen
                 ? 'bg-blue-50/90 text-[#002B66] border-[#002B66]/30 ring-2 ring-[#002B66]/15'
@@ -757,263 +876,120 @@ export default function Header({
             )}
           </button>
 
-          {/* NOTIFICATION CENTER DROPDOWN / MOBILE POPUP PANEL */}
+          {/* NOTIFICATION CENTER DROPDOWN PANEL (Matches UI Mockup) */}
           {isNotificationOpen && (
-            <>
-              {/* Mobile Backdrop Overlay */}
-              <div 
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10001] sm:hidden animate-in fade-in duration-150"
-                onClick={() => setIsNotificationOpen(false)}
-              />
-
-              <div className="fixed inset-x-2.5 top-14 bottom-6 sm:bottom-auto sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 max-h-[85vh] sm:max-h-[540px] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col">
+            <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[380px] bg-white border border-slate-100 rounded-3xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col max-h-[82vh] sm:max-h-[520px]">
               
-              {/* Header */}
-              <div className="p-3.5 bg-gradient-to-r from-[#001D47] to-[#002B66] text-white flex items-center justify-between shrink-0">
+              {/* Clean Mockup Header */}
+              <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100/90 bg-white shrink-0">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-[#FFD700]">
-                    <Bell size={15} />
-                  </div>
-                  <div>
-                    <h4 className="font-black text-xs tracking-tight uppercase flex items-center gap-1.5">
-                      <span>Notifications</span>
-                      {unreadNotificationsCount > 0 && (
-                        <span className="bg-[#FFD700] text-[#002B66] text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
-                          {unreadNotificationsCount} new
-                        </span>
-                      )}
-                    </h4>
-                    <p className="text-[10px] text-blue-200/80 font-medium">Real-time chat & audit log feed</p>
-                  </div>
+                  <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
+                    Notifications
+                  </h3>
+                  {!isSSR && permissionStatus === 'granted' && (
+                    <span className="bg-emerald-50 text-emerald-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Push On
+                    </span>
+                  )}
                 </div>
-
-                <div className="flex items-center gap-1">
-                  {/* Sound Toggle */}
-                  <button
-                    type="button"
-                    onClick={handleToggleSound}
-                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                      notifSettings.sound ? 'text-[#FFD700] hover:bg-white/10' : 'text-slate-400 hover:bg-white/10'
-                    }`}
-                    title={notifSettings.sound ? 'Notification Chimes: ON (Click to Mute)' : 'Notification Chimes: MUTED (Click to Enable)'}
-                  >
-                    {notifSettings.sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
-                  </button>
-
-                  {/* Mark All As Read */}
-                  {unreadNotificationsCount > 0 && onMarkAllNotificationsRead && (
+                <div className="flex items-center gap-2">
+                  {onMarkAllNotificationsRead && (
                     <button
                       type="button"
                       onClick={onMarkAllNotificationsRead}
-                      className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
-                      title="Mark all as read"
+                      className="text-xs font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                     >
-                      <CheckCheck size={15} />
+                      Mark all as read
                     </button>
                   )}
-
-                  {/* Clear All */}
-                  {(notifications || []).length > 0 && onClearNotifications && (
-                    <button
-                      type="button"
-                      onClick={onClearNotifications}
-                      className="p-1.5 text-blue-200 hover:text-rose-300 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
-                      title="Clear notification history"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  )}
-
-                  {/* Close */}
-                  <button
-                    type="button"
-                    onClick={() => setIsNotificationOpen(false)}
-                    className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer ml-0.5"
-                  >
-                    <X size={15} />
-                  </button>
                 </div>
               </div>
 
-              {/* Web Push Permission Banner */}
-              {permissionStatus !== 'granted' && (
-                <div className="bg-amber-50 border-b border-amber-200/80 p-2.5 px-3 flex items-center justify-between gap-2 shrink-0">
+              {/* Web Push Permission Banner (Hidden on SSR Side) */}
+              {!isSSR && permissionStatus !== 'granted' && (
+                <div className="bg-blue-50/90 border-b border-blue-100 p-2.5 px-4 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                    <p className="text-[11px] text-amber-900 font-semibold truncate">
-                      Enable Web Push for background alerts
+                    <div className="w-2 h-2 rounded-full bg-[#0084FF] animate-ping shrink-0" />
+                    <p className="text-[11px] text-[#002B66] font-bold truncate">
+                      Enable Web Push for background desktop alerts
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={handleRequestPermission}
-                    className="bg-[#002B66] text-[#FFD700] hover:bg-[#001D47] font-black text-[10px] uppercase px-2.5 py-1 rounded-md shadow-2xs shrink-0 cursor-pointer transition-all active:scale-95"
+                    className="bg-[#002B66] text-[#FFD700] hover:bg-blue-900 font-black text-[10px] uppercase px-3 py-1 rounded-lg shadow-2xs shrink-0 cursor-pointer transition-all active:scale-95"
                   >
-                    Allow
+                    Enable
                   </button>
                 </div>
               )}
 
-              {/* Category Filter Tabs */}
-              <div className="flex border-b border-slate-100 bg-slate-50/70 p-1 gap-1 text-[11px] font-bold shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setNotificationTab('all')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                    notificationTab === 'all'
-                      ? 'bg-white text-[#002B66] shadow-2xs font-extrabold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  All ({(notifications || []).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNotificationTab('chat')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                    notificationTab === 'chat'
-                      ? 'bg-white text-blue-700 shadow-2xs font-extrabold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <MessageSquare size={12} />
-                  <span>Chats ({((notifications || []).filter(n => n.type === 'chat')).length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNotificationTab('audit')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                    notificationTab === 'audit'
-                      ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Shield size={12} />
-                  <span>Audit ({((notifications || []).filter(n => n.type === 'audit')).length})</span>
-                </button>
-              </div>
-
-              {/* Notification List Scroll Area */}
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 min-h-[160px] max-h-[320px]">
-                {filteredNotifications.length === 0 ? (
-                  <div className="py-10 px-4 text-center space-y-2">
+              {/* Notification Items List */}
+              <div className="p-3 space-y-2.5 overflow-y-auto max-h-[440px]">
+                {(!cleanNotifications || cleanNotifications.length === 0) ? (
+                  <div className="py-12 px-4 text-center space-y-2">
                     <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
-                      <BellOff size={22} />
+                      <BellOff size={20} />
                     </div>
                     <h5 className="font-bold text-slate-700 text-xs">No notifications yet</h5>
                     <p className="text-[11px] text-slate-400 max-w-[220px] mx-auto">
-                      Incoming chat messages and audit trail activities will appear here in real-time.
+                      System activity logs, settlement agreements, and verifications will appear here.
                     </p>
                   </div>
                 ) : (
-                  filteredNotifications.map((notif) => {
+                  cleanNotifications.map((notif) => {
                     const isUnread = !notif.read;
-                    const isChat = notif.type === 'chat';
+                    const { title, icon, badgeBg } = getNotificationVisuals(notif);
 
                     return (
                       <div
                         key={notif.id || notif.timestamp}
                         onClick={() => handleClickNotificationItem(notif)}
-                        className={`p-3 hover:bg-slate-50 transition-colors cursor-pointer flex items-start gap-2.5 group ${
-                          isUnread ? 'bg-blue-50/40 border-l-3 border-[#002B66]' : ''
-                        }`}
+                        className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-slate-100/80 transition-all flex items-start gap-3.5 cursor-pointer relative border border-slate-100/80 group"
                       >
-                        {/* Icon / Avatar */}
-                        <div className="shrink-0 mt-0.5">
-                          {isChat ? (
-                            <div className="w-8 h-8 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center font-black text-xs font-mono shadow-2xs">
-                              {(notif.senderName || 'U')[0].toUpperCase()}
-                            </div>
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 border border-purple-200 flex items-center justify-center shadow-2xs">
-                              <ShieldAlert size={15} />
-                            </div>
-                          )}
+                        {/* Left Circular Badge */}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-2xs ${badgeBg}`}>
+                          {icon}
                         </div>
 
-                        {/* Text Details */}
-                        <div className="flex-1 min-w-0 space-y-0.5">
-                          <div className="flex items-center justify-between gap-1">
-                            <h5 className="font-extrabold text-slate-900 text-xs truncate">
-                              {notif.title || (isChat ? notif.senderName : notif.action)}
-                            </h5>
-                            <span className="text-[10px] text-slate-400 font-mono shrink-0">
-                              {formatMsgTime(notif.timestamp)}
-                            </span>
-                          </div>
-
-                          <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+                        {/* Middle Text Details */}
+                        <div className="flex-1 min-w-0 pr-2">
+                          <h4 className="font-black text-slate-900 text-xs sm:text-[13px] leading-snug">
+                            {title}
+                          </h4>
+                          <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5 break-words">
                             {notif.message || notif.details || ''}
                           </p>
-
-                          <div className="flex items-center gap-1.5 pt-0.5 text-[9px] font-mono">
-                            {notif.subOffice && (
-                              <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold">
-                                {notif.subOffice}
-                              </span>
-                            )}
-                            {notif.action && (
-                              <span className="bg-purple-50 text-purple-700 border border-purple-200/60 px-1.5 py-0.2 rounded font-bold uppercase">
-                                {notif.action.replace(/_/g, ' ')}
-                              </span>
-                            )}
-                            {isUnread && (
-                              <span className="text-[#002B66] font-black text-[9px] ml-auto">
-                                • Unread
-                              </span>
-                            )}
-                          </div>
+                          <span className="text-[11px] text-slate-400 font-semibold mt-1 block">
+                            {formatTimeAgo(notif.timestamp)}
+                          </span>
                         </div>
 
-                        {/* Action Arrow on Hover */}
-                        <div className="shrink-0 text-slate-300 group-hover:text-[#002B66] transition-colors self-center">
-                          <ArrowRight size={14} />
-                        </div>
+                        {/* Blue Unread Dot on Top Right */}
+                        {isUnread && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#0066FF] shrink-0 mt-1 shadow-2xs animate-pulse" />
+                        )}
                       </div>
                     );
                   })
                 )}
               </div>
 
-              {/* Notification Center Footer Settings */}
-              <div className="bg-slate-50 border-t border-slate-100 p-2.5 px-3 flex items-center justify-between text-[10px] font-semibold text-slate-500 shrink-0">
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1 cursor-pointer hover:text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={notifSettings.chatNotifications}
-                      onChange={handleToggleChatNotifs}
-                      className="rounded text-[#002B66] focus:ring-0 cursor-pointer w-3 h-3"
-                    />
-                    <span>Chat Alerts</span>
-                  </label>
-
-                  <label className="flex items-center gap-1 cursor-pointer hover:text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={notifSettings.auditNotifications}
-                      onChange={handleToggleAuditNotifs}
-                      className="rounded text-[#002B66] focus:ring-0 cursor-pointer w-3 h-3"
-                    />
-                    <span>Audit Alerts</span>
-                  </label>
-                </div>
-
-                <span className="font-mono text-[9px] text-slate-400">
-                  {permissionStatus === 'granted' ? '🟢 Push Active' : '⚪ Push Inactive'}
-                </span>
-              </div>
-
             </div>
-          </>
-        )}
+          )}
         </div>
 
         {/* COLLAPSIBLE USER PROFILE */}
         <div className="relative pl-1 border-l border-slate-200" ref={profileRef}>
           <button
             type="button"
-            onClick={() => setIsProfileOpen(!isProfileOpen)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsProfileOpen(prev => !prev);
+              setIsNotificationOpen(false);
+              setIsMiniWidgetOpen(false);
+            }}
             className={`flex items-center gap-1 p-1 rounded-xl transition-all cursor-pointer ${
               isProfileOpen 
                 ? 'bg-blue-50/80 ring-2 ring-[#002B66]/20' 
@@ -1029,7 +1005,7 @@ export default function Header({
 
           {/* COLLAPSIBLE PROFILE DROPDOWN MENU */}
           {isProfileOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3.5">
+            <div className="fixed left-4 right-4 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 text-xs z-[10002] animate-in fade-in zoom-in-95 space-y-3.5">
               
               {/* Profile Header */}
               <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
@@ -1061,7 +1037,7 @@ export default function Header({
                     <Building2 size={12} className="text-[#002B66]" /> Sub-Office
                   </span>
                   <span className="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-md truncate max-w-[140px]">
-                    {currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'All Branches'}
+                    {currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'All'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">

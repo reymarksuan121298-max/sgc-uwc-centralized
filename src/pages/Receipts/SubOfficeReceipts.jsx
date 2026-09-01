@@ -7,6 +7,7 @@ import { supabase } from '../../config/supabaseClient';
 
 export default function SubOfficeReceipts({ currentUser }) {
   const [receipts, setReceipts] = useState([]);
+  const [usersMap, setUsersMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PENDING', 'VERIFIED', 'REJECTED'
@@ -26,15 +27,29 @@ export default function SubOfficeReceipts({ currentUser }) {
         query = query.eq('sub_office', currentUser.sub_office);
       }
 
-      const { data, error } = await query;
-      if (error) {
-        if (error.code !== 'PGRST205') {
-          console.warn('Sub-office receipts fetch notice:', error.message);
+      const [receiptsRes, usersRes] = await Promise.all([
+        query,
+        supabase.from('app_users').select('username, full_name')
+      ]);
+
+      if (usersRes.data) {
+        const uMap = {};
+        usersRes.data.forEach(u => {
+          if (u.username) {
+            uMap[u.username.toLowerCase().trim()] = u.full_name;
+          }
+        });
+        setUsersMap(uMap);
+      }
+
+      if (receiptsRes.error) {
+        if (receiptsRes.error.code !== 'PGRST205') {
+          console.warn('Sub-office receipts fetch notice:', receiptsRes.error.message);
         }
         setReceipts([]);
         return;
       }
-      setReceipts(data || []);
+      setReceipts(receiptsRes.data || []);
     } catch (err) {
       setReceipts([]);
     } finally {
@@ -46,24 +61,38 @@ export default function SubOfficeReceipts({ currentUser }) {
     fetchReceipts();
   }, [currentUser]);
 
+  const getOfficerName = (item) => {
+    if (!item) return 'N/A';
+    const usernameKey = String(item.uploaded_by_user || '').toLowerCase().trim();
+    if (usersMap[usernameKey]) {
+      return usersMap[usernameKey];
+    }
+    if (item.sender_name && item.sender_name.trim() && item.sender_name !== 'System Administrator') {
+      return item.sender_name.trim();
+    }
+    return item.uploaded_by_user || 'N/A';
+  };
+
   const filteredReceipts = useMemo(() => {
     return receipts.filter((r) => {
       const matchStatus = statusFilter === 'ALL' || r.verification_status === statusFilter;
       const matchChannel = channelFilter === 'ALL' || r.payment_channel === channelFilter;
       
       const q = searchQuery.toLowerCase().trim();
+      const officer = getOfficerName(r).toLowerCase();
       const matchSearch = !q || (
         (r.batch_serial_no || '').toLowerCase().includes(q) ||
         (r.transactionId || '').toLowerCase().includes(q) ||
         (r.reference_number || '').toLowerCase().includes(q) ||
         (r.sub_office || '').toLowerCase().includes(q) ||
         (r.sender_name || '').toLowerCase().includes(q) ||
-        (r.uploaded_by_user || '').toLowerCase().includes(q)
+        (r.uploaded_by_user || '').toLowerCase().includes(q) ||
+        officer.includes(q)
       );
 
       return matchStatus && matchChannel && matchSearch;
     });
-  }, [receipts, statusFilter, channelFilter, searchQuery]);
+  }, [receipts, statusFilter, channelFilter, searchQuery, usersMap]);
 
   const totals = useMemo(() => {
     return filteredReceipts.reduce((acc, r) => {
@@ -78,7 +107,7 @@ export default function SubOfficeReceipts({ currentUser }) {
 
   const exportCSV = () => {
     if (!filteredReceipts.length) return alert('No receipts to export.');
-    const headers = ['SRN / Trans ID', 'Sub-Office', 'Channel', 'Ref No.', 'Amount', 'Date', 'Status', 'Uploaded By', 'Verified By'];
+    const headers = ['SRN / Trans ID', 'Sub-Office', 'Channel', 'Ref No.', 'Amount', 'Date', 'Status', 'Officer Full Name', 'Uploaded By', 'Verified By'];
     const rows = filteredReceipts.map(r => [
       `"${r.batch_serial_no || r.transactionId || r.reference_number || 'N/A'}"`,
       `"${r.sub_office}"`,
@@ -87,6 +116,7 @@ export default function SubOfficeReceipts({ currentUser }) {
       parseFloat(r.remittance_amount || 0).toFixed(2),
       `"${r.receipt_date}"`,
       `"${r.verification_status}"`,
+      `"${getOfficerName(r)}"`,
       `"${r.uploaded_by_user}"`,
       `"${r.verified_by || 'N/A'}"`
     ]);
@@ -103,8 +133,9 @@ export default function SubOfficeReceipts({ currentUser }) {
   const getChannelIcon = (channel) => {
     switch (channel) {
       case 'GCASH': return <Smartphone size={14} className="text-blue-600 shrink-0" />;
-      case 'CEBUANA': return <Building2 size={14} className="text-amber-600 shrink-0" />;
-      case 'BANK_TRANSFER': return <Landmark size={14} className="text-emerald-600 shrink-0" />;
+      case 'CEBUANA': return <Building2 size={14} className="text-rose-600 shrink-0" />;
+      case 'BANK_DEPOSIT': return <Landmark size={14} className="text-emerald-600 shrink-0" />;
+      case 'BANK_TRANSFER': return <Landmark size={14} className="text-teal-600 shrink-0" />;
       default: return <FileText size={14} className="text-purple-600 shrink-0" />;
     }
   };
@@ -185,6 +216,7 @@ export default function SubOfficeReceipts({ currentUser }) {
             <option value="ALL">All Channels</option>
             <option value="GCASH">GCash</option>
             <option value="CEBUANA">Cebuana Lhuillier</option>
+            <option value="BANK_DEPOSIT">Bank Deposit</option>
             <option value="BANK_TRANSFER">Bank Transfer</option>
             <option value="CASH_PALAWAN">Cash / Palawan</option>
           </select>
@@ -278,8 +310,10 @@ export default function SubOfficeReceipts({ currentUser }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 text-slate-600">
-                      <span className="font-semibold">{item.receipt_date}</span>
-                      <span className="block text-[10px] text-slate-400">By: {item.uploaded_by_user}</span>
+                      <span className="font-semibold text-slate-800 block">{item.receipt_date}</span>
+                      <span className="block text-xs font-bold text-slate-700 mt-0.5" title={getOfficerName(item)}>
+                        By: {getOfficerName(item)}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {item.receipt_image_url ? (
@@ -309,7 +343,7 @@ export default function SubOfficeReceipts({ currentUser }) {
             <div className="bg-[#002B66] text-white px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-xs">
                 <Receipt size={16} className="text-[#FFD700]" />
-                <span>Receipt Proof — {selectedReceipt.transactionId}</span>
+                <span>Receipt Proof — {selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'Proof'}</span>
               </div>
               <button onClick={() => setSelectedReceipt(null)} className="text-slate-300 hover:text-white cursor-pointer">
                 ✕
@@ -317,31 +351,12 @@ export default function SubOfficeReceipts({ currentUser }) {
             </div>
             
             <div className="p-4 space-y-3">
-              <div className="bg-slate-50 rounded-xl p-2 border border-slate-200 flex items-center justify-center max-h-[60vh] overflow-auto">
+              <div className="bg-slate-50 rounded-xl p-2 border border-slate-200 flex items-center justify-center max-h-[70vh] overflow-auto">
                 <img 
                   src={selectedReceipt.receipt_image_url} 
                   alt="Official Remittance Receipt" 
-                  className="rounded-lg object-contain max-h-[50vh] w-full"
+                  className="rounded-lg object-contain max-h-[65vh] w-full"
                 />
-              </div>
-
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-mono grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 uppercase block">Ref Number</span>
-                  <span className="font-bold text-[#002B66]">{selectedReceipt.reference_number}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 uppercase block">Remittance Amount</span>
-                  <span className="font-extrabold text-emerald-700">₱{parseFloat(selectedReceipt.remittance_amount || 0).toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 uppercase block">Sub-Office / Channel</span>
-                  <span className="font-semibold text-slate-800">{selectedReceipt.sub_office} • {selectedReceipt.payment_channel}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 uppercase block">Status</span>
-                  <span className="font-bold uppercase text-amber-700">{selectedReceipt.verification_status}</span>
-                </div>
               </div>
 
               {selectedReceipt.notes && (

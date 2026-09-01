@@ -176,10 +176,10 @@ export default function Login({ onLoginSuccess }) {
                 <Sparkles size={11} className="text-[#FFD700]" /> Enterprise Portal
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider drop-shadow-md">
-                Lucky Betplay Corp.
+                CENTRALIZED
               </h1>
               <p className="text-xs text-slate-300/90 font-medium">
-                Centralized Sub-Office Operations & Ledger
+                Unclaimed Winnings & Sub-Office Portal
               </p>
             </div>
 

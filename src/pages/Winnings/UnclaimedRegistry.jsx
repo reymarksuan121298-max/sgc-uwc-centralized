@@ -8,7 +8,7 @@ import IncidentReportModal from '../../components/winnings/IncidentReportModal';
 import { isIncidentReportEligible, getTicketAgeInDays } from '../../utils/ticketAge';
 import { getTicketTransId } from '../../utils/formatters';
 import CustomDatePicker from '../../components/common/CustomDatePicker';
-import { isSSRRole } from '../../utils/permissions';
+import { isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 
 export default function UnclaimedRegistry({
   currentUser,
@@ -37,7 +37,9 @@ export default function UnclaimedRegistry({
   copiedTransIds = new Set(),
   openedQrTransIds = new Set(),
   formatDrawTime,
-  onOpenQrModal
+  onOpenQrModal,
+  canCopyTransaction = true,
+  canOpenQrModal = true
 }) {
   const [incidentReportTicket, setIncidentReportTicket] = useState(null);
   const [localSearch, setLocalSearch] = useState(searchQuery || '');
@@ -58,14 +60,13 @@ export default function UnclaimedRegistry({
   const getRowMeta = (item, index, userKey) => {
     const transId = getTicketTransId(item, `REC-${index + 1}`);
     const isOverdue = isIncidentReportEligible(item);
-    const isImageCopied = Boolean(copiedSupervisorKeys?.has(userKey) || copiedTransIds?.has(transId));
     return {
       transId,
       displayAccountName: item.fullName || item.outlet || item.username || 'N/A',
       betNo: item.betNo || item.CombiNo || item.SoldOutCombiNo || 'N/A',
       betCode: item.betCode || (item.rambolito ? 'RS3' : 'TS3'),
       drawFormatted: formatDrawTime(item.drawTime || item.draw, item.drawDate || item.created_at),
-      showWarningBadge: isOverdue || isImageCopied,
+      showWarningBadge: isOverdue,
       ageDays: getTicketAgeInDays(item),
       betAmount: parseFloat(item.betAmount ?? item.amount ?? item.gross ?? 0),
       winAmount: parseFloat(item.winAmount ?? 0)
@@ -96,8 +97,8 @@ export default function UnclaimedRegistry({
               />
             </div>
 
-            {/* Sub-Office Selector (Hidden for SSR and branch-locked accounts) */}
-            {!isSSRRole(currentUser?.role) && (isSuperAdmin || !currentUser?.sub_office || currentUser?.sub_office === 'All') && activeEndpoints.length > 0 && (
+            {/* Sub-Office Selector (Visible for Unclaimed Specialists, Superadmin, and Centralized Admins to handle all SSRs) */}
+            {(!isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role)) && activeEndpoints.length > 0 && (
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700">
                 <Building2 size={15} className="text-[#002B66] shrink-0" />
                 <span className="text-[10px] font-black uppercase text-slate-400">Sub-Office</span>
@@ -106,7 +107,7 @@ export default function UnclaimedRegistry({
                   onChange={(e) => setSelectedEndpointFilter(e.target.value)}
                   className="bg-transparent font-bold text-[#002B66] outline-none cursor-pointer max-w-[220px] truncate"
                 >
-                  <option value="ALL">All Sub-Offices</option>
+                  <option value="ALL">All Sub-Offices ({activeEndpoints.length})</option>
                   {activeEndpoints.map(ep => (
                     <option key={ep.id} value={ep.id}>
                       {ep.sub_office && ep.sub_office !== 'All' ? ep.sub_office : ep.name}
@@ -193,38 +194,41 @@ export default function UnclaimedRegistry({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] bg-blue-100 text-[#002B66] px-2 py-0.5 rounded shrink-0">{items.length} items</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onCopySupervisorImage) onCopySupervisorImage(userKey);
-                          }}
-                          disabled={isCapturingImage === userKey}
-                          className="flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
-                          title={`Copy ${userKey} table as image`}
-                        >
-                          {isCapturingImage === userKey ? (
-                            <>
-                              <RefreshCw size={12} className="animate-spin" />
-                              <span>Capturing...</span>
-                            </>
-                          ) : copiedSupervisorKey === userKey ? (
-                            <>
-                              <Check size={12} className="text-emerald-400" />
-                              <span>Image Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <ImageIcon size={12} />
-                              <span>Copy Image</span>
-                            </>
-                          )}
-                        </button>
+                        {canCopyTransaction && (
+                          <button
+                            type="button"
+                            data-screenshot-exclude="true"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onCopySupervisorImage) onCopySupervisorImage(userKey);
+                            }}
+                            disabled={isCapturingImage === userKey}
+                            className="hide-in-screenshot flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-[10px] font-black px-2.5 py-1 rounded-md shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                            title={`Copy ${userKey} table as image`}
+                          >
+                            {isCapturingImage === userKey ? (
+                              <>
+                                <RefreshCw size={12} className="animate-spin" />
+                                <span>Capturing...</span>
+                              </>
+                            ) : copiedSupervisorKey === userKey ? (
+                              <>
+                                <Check size={12} className="text-emerald-400" />
+                                <span>Image Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <ImageIcon size={12} />
+                                <span>Copy Image</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
 
                     {/* Desktop Table */}
-                    <div className="hidden md:block w-full overflow-x-auto">
+                    <div className="hidden md:block w-full overflow-x-auto no-scrollbar">
                       <table className="w-full min-w-[750px] text-left border-collapse bg-white">
                         <thead>
                           <tr className="bg-[#002B66] text-white text-[10px] font-black uppercase tracking-wider">
@@ -266,11 +270,7 @@ export default function UnclaimedRegistry({
                                             });
                                           }}
                                           className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
-                                          title={
-                                            meta.showWarningBadge && meta.ageDays > 0
-                                              ? `Unclaimed for ${meta.ageDays} days. Click to issue incident report.`
-                                              : `Table image copied to clipboard. Click to issue incident report or review.`
-                                          }
+                                          title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
                                           aria-label="Issue incident report"
                                         >
                                           <AlertTriangle size={12} className="shrink-0" />
@@ -330,11 +330,7 @@ export default function UnclaimedRegistry({
                                         });
                                       }}
                                       className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
-                                      title={
-                                        meta.showWarningBadge && meta.ageDays > 0
-                                          ? `Unclaimed for ${meta.ageDays} days. Click to issue incident report.`
-                                          : `Table image copied to clipboard. Click to issue incident report or review.`
-                                      }
+                                      title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
                                       aria-label="Issue incident report"
                                     >
                                       <AlertTriangle size={12} className="shrink-0" />

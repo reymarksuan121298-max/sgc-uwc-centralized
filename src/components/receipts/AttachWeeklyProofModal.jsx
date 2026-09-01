@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
 import { scanReceiptProof } from '../../utils/receiptOcr';
+import { generateRemittanceSerial, getSubOfficeAbbreviation } from '../../utils/formatters';
 
 // Fast Date Formatter (cached, avoids heavy toLocaleString overhead on every render)
 const fastFormatTimestamp = (timestampStr) => {
@@ -28,27 +29,54 @@ const fastFormatTimestamp = (timestampStr) => {
   }
 };
 
+// Helper key generators for robust identification
+const getItemKey = (t) => String(t.id || t.transactionId || t.transId || '');
+
 // 1. ISOLATED MEMOIZED TICKETS TABLE (Will NEVER re-render when user types in reference number / amount / sender info)
 const BatchTicketsTable = memo(function BatchTicketsTable({
   items,
+  selectedKeys,
+  onToggleSelect,
+  onToggleSelectAll,
+  selectedWinTotal,
   totalWin,
   modalTableSearch,
   onSearchChange,
   formatDrawTime
 }) {
+  const masterCheckboxRef = React.useRef(null);
+  const isAllSelected = items.length > 0 && items.every(i => selectedKeys.has(getItemKey(i)));
+  const isSomeSelected = items.some(i => selectedKeys.has(getItemKey(i))) && !isAllSelected;
+
+  useEffect(() => {
+    if (masterCheckboxRef.current) {
+      masterCheckboxRef.current.indeterminate = isSomeSelected;
+    }
+  }, [isSomeSelected]);
+
+  const selectedInViewCount = items.filter(i => selectedKeys.has(getItemKey(i))).length;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
       <div className="bg-slate-100/90 px-3.5 py-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={15} className="text-[#002B66] shrink-0" />
           <span className="font-extrabold text-[11px] text-[#002B66] uppercase tracking-wider truncate">
-            Included Returned Winnings ({items.length} Tickets)
+            Included Returned Winnings ({selectedInViewCount} of {items.length} Selected)
           </span>
         </div>
         
-        {/* Live Search inside Modal */}
+        {/* Live Search & Quick Toggle inside Modal */}
         <div className="flex items-center gap-2">
-          <div className="relative min-w-[170px]">
+          <button
+            type="button"
+            onClick={onToggleSelectAll}
+            className="text-[10px] font-bold text-[#002B66] hover:text-blue-800 bg-white hover:bg-blue-50 border border-slate-300 px-2 py-0.5 rounded cursor-pointer transition-colors shrink-0"
+            title="Toggle selection for all tickets"
+          >
+            {isAllSelected ? 'Deselect All' : 'Select All'}
+          </button>
+          <div className="relative min-w-[150px] sm:min-w-[170px]">
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -58,8 +86,8 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
               className="w-full bg-white border border-slate-300 pl-7 pr-2 py-1 rounded-md text-[10px] font-medium text-slate-800 outline-none focus:border-[#002B66]"
             />
           </div>
-          <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
-            ₱{Number(totalWin || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0" title="Selected tickets total liability">
+            ₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </span>
         </div>
       </div>
@@ -68,6 +96,16 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
         <table className="w-full text-left border-collapse text-[11px]">
           <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] sticky top-0 border-b border-slate-200 shadow-2xs z-10">
             <tr>
+              <th className="px-2.5 py-1.5 border-r border-slate-200 text-center w-8">
+                <input
+                  ref={masterCheckboxRef}
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={onToggleSelectAll}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+                  title={isAllSelected ? "Deselect all tickets" : "Select all tickets"}
+                />
+              </th>
               <th className="px-3 py-1.5 border-r border-slate-200">#</th>
               <th className="px-3 py-1.5 border-r border-slate-200">Trans ID</th>
               <th className="px-3 py-1.5 border-r border-slate-200">Outlet / Teller</th>
@@ -81,25 +119,51 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
             {!items.length ? (
               <tr>
-                <td colSpan={8} className="p-5 text-center text-slate-400 font-bold uppercase text-xs">
+                <td colSpan={9} className="p-5 text-center text-slate-400 font-bold uppercase text-xs">
                   {modalTableSearch ? 'No tickets matched your search query.' : 'No returned winning tickets found in this batch.'}
                 </td>
               </tr>
             ) : (
               items.map((t, idx) => {
+                const key = getItemKey(t) || `REC-${idx + 1}`;
                 const transId = t.transactionId || t.transId || `REC-${idx + 1}`;
                 const recordTimestamp = t.updated_at || t.created_at;
+                const isSelected = selectedKeys.has(key);
+
                 return (
-                  <tr key={t.id || transId || idx} className="hover:bg-blue-50/50 transition-colors odd:bg-white even:bg-slate-50/40">
+                  <tr 
+                    key={key} 
+                    className={`transition-colors cursor-pointer select-none ${
+                      isSelected 
+                        ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800' 
+                        : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
+                    }`}
+                    onClick={() => onToggleSelect(key)}
+                  >
+                    <td 
+                      className="px-2.5 py-1.5 border-r border-slate-100 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelect(key)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+                      />
+                    </td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-bold text-[#002B66]">{transId}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 uppercase font-semibold text-slate-800 truncate max-w-[140px]">{t.fullName || t.outlet || t.username || 'N/A'}</td>
+                    <td className={`px-3 py-1.5 border-r border-slate-100 font-mono font-bold ${isSelected ? 'text-[#002B66]' : 'text-slate-500'}`}>
+                      {transId}
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 uppercase font-semibold truncate max-w-[140px]">{t.fullName || t.outlet || t.username || 'N/A'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">{formatDrawTime ? formatDrawTime(t.drawTime || t.drawDate || t.created_at) : 'N/A'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-slate-800">
                       {t.betNo || 'N/A'} <span className="bg-slate-100 text-slate-600 text-[9px] px-1 py-0.5 rounded font-medium">({t.betCode || 'RS3'})</span>
                     </td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono text-slate-800">₱{parseFloat(t.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono font-extrabold text-emerald-700">₱{parseFloat(t.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono font-extrabold ${isSelected ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      ₱{parseFloat(t.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
                     <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">{fastFormatTimestamp(recordTimestamp)}</td>
                   </tr>
                 );
@@ -108,14 +172,14 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
           </tbody>
           <tfoot className="bg-slate-100 font-bold border-t border-slate-200 text-[10px] sticky bottom-0">
             <tr>
-              <td colSpan={5} className="px-3 py-1.5 text-right uppercase text-slate-600">Batch Subtotal:</td>
+              <td colSpan={6} className="px-3 py-1.5 text-right uppercase text-slate-600">Selected Subtotal:</td>
               <td className="px-3 py-1.5 text-right font-mono text-slate-900 border-r border-slate-200">
-                ₱{items.reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-right font-mono font-extrabold text-emerald-800 border-r border-slate-200">
-                ₱{Number(totalWin || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{Number(selectedWinTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
-              <td className="px-3 py-1.5 text-center font-mono text-slate-500">{items.length} Tickets</td>
+              <td className="px-3 py-1.5 text-center font-mono text-slate-500">{selectedInViewCount} of {items.length} Selected</td>
             </tr>
           </tfoot>
         </table>
@@ -149,6 +213,7 @@ function AttachWeeklyProofModal({
   const [isScanningOcr, setIsScanningOcr] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrDetectionNote, setOcrDetectionNote] = useState('');
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
 
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
 
@@ -165,7 +230,7 @@ function AttachWeeklyProofModal({
     };
   }, [batchSerialNumber, filteredData]);
 
-  // Sync initial state on modal open
+  // Sync initial state on modal open (select all unremitted tickets by default)
   useEffect(() => {
     if (isOpen) {
       setFormError('');
@@ -178,10 +243,76 @@ function AttachWeeklyProofModal({
       setSenderName(currentUser?.full_name || '');
 
       const unremitted = filteredData.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
+      const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
+      setSelectedKeys(initialKeys);
+
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
       setCustomRemittanceAmount(targetAmount.toFixed(2));
     }
   }, [isOpen, filteredData, currentUser]);
+
+  // Selected tickets calculation
+  const selectedItems = useMemo(() => {
+    if (!targetBatch?.items) return [];
+    return targetBatch.items.filter(t => selectedKeys.has(getItemKey(t)));
+  }, [targetBatch.items, selectedKeys]);
+
+  const selectedWinTotal = useMemo(() => {
+    return selectedItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
+  }, [selectedItems]);
+
+  const selectedCount = selectedItems.length;
+
+  // Toggle single ticket selection
+  const handleToggleSelect = useCallback((key) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle select all visible / batch tickets
+  const handleToggleSelectAll = useCallback(() => {
+    if (!targetBatch?.items) return;
+    setSelectedKeys(prev => {
+      const visibleKeys = targetBatch.items.map(t => getItemKey(t));
+      const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => prev.has(k));
+      if (allSelected) {
+        return new Set();
+      } else {
+        return new Set(visibleKeys);
+      }
+    });
+  }, [targetBatch]);
+
+  // Dynamically compute Remittance Serial Number based on sub-office (e.g. MANDAUE -> MAN) and actual current date + 6-digit code
+  const effectiveBatchSrn = useMemo(() => {
+    const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
+      ? currentUser.sub_office
+      : (selectedItems[0]?.sub_office || targetBatch?.items[0]?.sub_office || 'Mandaue Central');
+    const dateObj = new Date(); // Actual current date
+
+    if (!selectedItems || selectedItems.length === 0) {
+      return generateRemittanceSerial(subOfficeName, '892301', dateObj);
+    }
+
+    // 1. Single specific ticket selected -> generate format [SUB-OFFICE]-[YYMMDD]-[6-DIGIT CODE] (e.g. MAN-260901-892301)
+    if (selectedItems.length === 1) {
+      const single = selectedItems[0];
+      const transId = single.transactionId || single.transId || single.id;
+      return generateRemittanceSerial(subOfficeName, transId, dateObj);
+    }
+
+    // 2. Multiple tickets selected -> derive 6-digit sequence from first selected ticket
+    const firstSelected = selectedItems[0];
+    const firstTransId = firstSelected?.transactionId || firstSelected?.transId || firstSelected?.id;
+    return generateRemittanceSerial(subOfficeName, firstTransId, dateObj);
+  }, [selectedItems, targetBatch, currentUser]);
 
   // Fast filtered tickets list
   const filteredTickets = useMemo(() => {
@@ -236,10 +367,15 @@ function AttachWeeklyProofModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const effectiveReferenceNumber = (referenceNumber.trim() || batchSerialNumber || `SRN-BATCH-${Date.now().toString().slice(-6)}`).toUpperCase();
+    if (selectedCount === 0) {
+      setFormError('Please select at least one Trans ID ticket to attach remittance proof.');
+      return;
+    }
+
+    const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn).toUpperCase();
     const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
       ? parseFloat(customRemittanceAmount) 
-      : (parseFloat(targetBatch.totalWin || 0) || 0);
+      : (parseFloat(selectedWinTotal || 0) || 0);
 
     if (!isAdmin && !referenceNumber.trim()) {
       setFormError('Please enter the official remittance reference / control number.');
@@ -293,15 +429,15 @@ function AttachWeeklyProofModal({
         }
       }
 
-      // 2. Extract transaction IDs in batch
-      const itemsToRemit = targetBatch?.items || [];
+      // 2. Extract transaction IDs in selected batch
+      const itemsToRemit = selectedItems;
       const transIds = itemsToRemit.map(t => String(t.transactionId || t.transId).trim()).filter(Boolean);
       const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All' 
         ? currentUser.sub_office 
         : (itemsToRemit[0]?.sub_office || 'Mandaue Central');
 
-      // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by batch SRN)
-      const primaryTransId = batchSerialNumber || (transIds.length === 1 ? transIds[0] : `SRN-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-RW01`);
+      // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by sub-office serial format)
+      const primaryTransId = effectiveBatchSrn || generateRemittanceSerial(subOfficeName, transIds[0] || '892301', receiptDate ? new Date(receiptDate) : new Date());
       const receiptPayload = {
         batch_serial_no: primaryTransId,
         sub_office: subOfficeName,
@@ -310,13 +446,13 @@ function AttachWeeklyProofModal({
         reference_number: effectiveReferenceNumber,
         sender_name: senderName.trim() || currentUser?.full_name || 'System Administrator',
         sender_mobile: senderMobile.trim() || null,
-        bank_name: paymentChannel === 'BANK_TRANSFER' ? bankName : null,
+        bank_name: (paymentChannel === 'BANK_TRANSFER' || paymentChannel === 'BANK_DEPOSIT') ? bankName : null,
         remittance_amount: parseFloat(effectiveAmount) || 0,
         receipt_date: receiptDate || new Date().toISOString().split('T')[0],
         receipt_image_url: uploadedReceiptUrl || previewImage || null,
         verification_status: 'PENDING',
         tickets_count: transIds.length,
-        notes: notes.trim() || `Batch Remittance for Serial ${batchSerialNumber || 'SRN'} (${transIds.length} tickets)`
+        notes: notes.trim() || `Batch Remittance for Serial ${effectiveBatchSrn || 'SRN'} (${transIds.length} tickets)`
       };
 
       const { data: receiptData, error: receiptError } = await supabase
@@ -327,14 +463,14 @@ function AttachWeeklyProofModal({
 
       if (receiptError) throw receiptError;
 
-      // 4. Update status of all included returned winning records in database
+      // 4. Update status of all selected returned winning records in database
       if (transIds.length > 0) {
         const { error: updateError } = await supabase
           .from('returned_winnings')
           .update({
             receipt_status: 'PENDING_VERIFICATION',
             sub_office: subOfficeName,
-            batch_serial_no: batchSerialNumber || null,
+            batch_serial_no: effectiveBatchSrn || null,
             updated_at: new Date().toISOString()
           })
           .in('transactionId', transIds);
@@ -357,7 +493,7 @@ function AttachWeeklyProofModal({
           amount: effectiveAmount,
           channel: paymentChannel,
           ticketsCount: transIds.length,
-          batchSerial: batchSerialNumber || 'SRN'
+          batchSerial: effectiveBatchSrn || 'SRN'
         }
       }]);
 
@@ -381,7 +517,7 @@ function AttachWeeklyProofModal({
         <div className="bg-[#002B66] text-white px-5 py-3.5 flex justify-between items-center border-b-2 border-[#FFD700] shrink-0">
           <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs sm:text-sm">
             <UploadCloud size={18} className="text-[#FFD700]" />
-            <span>Attach Remittance Proof • {batchSerialNumber || 'Batch'}</span>
+            <span>Attach Remittance Proof • {effectiveBatchSrn || 'Batch'}</span>
           </div>
           <button 
             type="button"
@@ -410,22 +546,28 @@ function AttachWeeklyProofModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono">
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
                 <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">BATCH SERIAL NO.</span>
-                <span className="font-black text-[#002B66] truncate block text-xs mt-0.5 underline">{batchSerialNumber || 'SRN-000000'}</span>
+                <span className="font-black text-[#002B66] truncate block text-xs mt-0.5 underline">{effectiveBatchSrn || 'MAN-260901-892301'}</span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
-                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Batch Size</span>
-                <span className="font-extrabold text-slate-800 text-xs mt-0.5 block">{targetBatch.count} Returned Tickets</span>
+                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Tickets</span>
+                <span className="font-extrabold text-slate-800 text-xs mt-0.5 block">
+                  <span className="text-[#002B66] font-black">{selectedCount}</span> / {targetBatch.count} Tickets
+                </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
-                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Required Win Liability</span>
-                <span className="font-extrabold text-emerald-700 text-xs mt-0.5 block">₱{Number(targetBatch.totalWin || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Win Liability</span>
+                <span className="font-extrabold text-emerald-700 text-xs mt-0.5 block">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>
 
-          {/* MEMOIZED TICKETS TABLE */}
+          {/* MEMOIZED TICKETS TABLE WITH CHECKBOX SELECTION */}
           <BatchTicketsTable
             items={filteredTickets}
+            selectedKeys={selectedKeys}
+            onToggleSelect={handleToggleSelect}
+            onToggleSelectAll={handleToggleSelectAll}
+            selectedWinTotal={selectedWinTotal}
             totalWin={targetBatch.totalWin}
             modalTableSearch={modalTableSearch}
             onSearchChange={setModalTableSearch}
@@ -438,11 +580,12 @@ function AttachWeeklyProofModal({
               <label className="text-[11px] font-extrabold text-slate-700 uppercase block mb-1.5">
                 Remittance Payment Channel
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                 {[
                   { id: 'GCASH', name: 'GCash', icon: Smartphone, color: 'text-blue-600' },
                   { id: 'CEBUANA', name: 'Cebuana', icon: Building2, color: 'text-rose-600' },
-                  { id: 'BANK_TRANSFER', name: 'Bank Transfer', icon: Landmark, color: 'text-emerald-600' },
+                  { id: 'BANK_DEPOSIT', name: 'Bank Deposit', icon: Landmark, color: 'text-emerald-600' },
+                  { id: 'BANK_TRANSFER', name: 'Bank Transfer', icon: Landmark, color: 'text-teal-600' },
                   { id: 'CASH_PALAWAN', name: 'Palawan / Cash', icon: FileText, color: 'text-amber-600' }
                 ].map(channel => {
                   const Icon = channel.icon;
@@ -509,7 +652,7 @@ function AttachWeeklyProofModal({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. 10029384758 / CEB-9982"
+                    placeholder="e.g. 10029384758 / CEB-9982 / DEP-48921"
                     value={referenceNumber}
                     onChange={(e) => {
                       setReferenceNumber(e.target.value);
@@ -526,10 +669,10 @@ function AttachWeeklyProofModal({
                     </label>
                     <button
                       type="button"
-                      onClick={() => setCustomRemittanceAmount(Number(targetBatch.totalWin || 0).toFixed(2))}
+                      onClick={() => setCustomRemittanceAmount(Number(selectedWinTotal || 0).toFixed(2))}
                       className="text-[10px] text-[#002B66] hover:underline font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      <Sparkles size={11} className="text-amber-500" /> Match Batch Total
+                      <Sparkles size={11} className="text-amber-500" /> Match Selected Total
                     </button>
                   </div>
                   <input
@@ -543,11 +686,11 @@ function AttachWeeklyProofModal({
                 </div>
               </div>
 
-              {/* Bank Name if Bank Transfer */}
-              {paymentChannel === 'BANK_TRANSFER' && (
+              {/* Bank Name if Bank Transfer or Bank Deposit */}
+              {(paymentChannel === 'BANK_TRANSFER' || paymentChannel === 'BANK_DEPOSIT') && (
                 <div>
                   <label className="text-[11px] font-extrabold text-slate-700 uppercase block mb-1">
-                    Beneficiary Bank
+                    {paymentChannel === 'BANK_DEPOSIT' ? 'Depository Bank' : 'Beneficiary Bank'}
                   </label>
                   <select
                     value={bankName}
@@ -665,7 +808,7 @@ function AttachWeeklyProofModal({
           <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-start gap-2.5 text-[11px] text-amber-900">
             <ShieldCheck size={16} className="shrink-0 text-amber-700 mt-0.5" />
             <span>
-              <strong>Automated Ledger Transition:</strong> Upon submission, all <strong>{targetBatch.count} records</strong> in this Sunday–Saturday batch will immediately move to <strong>Collections & Commissions</strong> with their 4-tier commission pools, and the remittance proof will be queued for superadmin verification.
+              <strong>Automated Ledger Transition:</strong> Upon submission, all <strong>{selectedCount} selected records</strong> in this Sunday–Saturday batch will immediately move to <strong>Collections & Commissions</strong> with their 4-tier commission pools, and the remittance proof will be queued for superadmin verification.
             </span>
           </div>
 
@@ -675,7 +818,7 @@ function AttachWeeklyProofModal({
         <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono text-slate-500">
-              Target Liability: <strong className="text-emerald-700 font-mono font-black">₱{Number(targetBatch.totalWin || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+              Target Liability: <strong className="text-emerald-700 font-mono font-black">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
             </span>
           </div>
 
@@ -691,7 +834,7 @@ function AttachWeeklyProofModal({
             <button
               type="submit"
               form="weekly-remit-form"
-              disabled={isSubmitting || !targetBatch.count}
+              disabled={isSubmitting || selectedCount === 0}
               className="flex items-center gap-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 rounded-xl font-black transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer text-xs"
             >
               {isSubmitting ? (
@@ -702,7 +845,7 @@ function AttachWeeklyProofModal({
               ) : (
                 <>
                   <CheckCircle2 size={15} />
-                  <span>Confirm & Move {targetBatch.count} Records</span>
+                  <span>Confirm & Move {selectedCount} Records</span>
                 </>
               )}
             </button>
@@ -715,3 +858,4 @@ function AttachWeeklyProofModal({
 }
 
 export default memo(AttachWeeklyProofModal);
+

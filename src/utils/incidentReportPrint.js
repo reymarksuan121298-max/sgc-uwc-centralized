@@ -43,6 +43,8 @@ export const openIncidentReportPrint = (ticket) => {
     return;
   }
 
+  const subOffice = ticket.sub_office || ticket.subOffice || ticket.branch || 'Mandaue Central';
+
   reportWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(reportNumber)} - Incident Report</title><style>
     :root { color: #172033; font-family: Arial, sans-serif; }
     * { box-sizing: border-box; }
@@ -54,7 +56,7 @@ export const openIncidentReportPrint = (ticket) => {
     .brand { display: flex; align-items: center; gap: 14px; }
     .brand-logo { width: 68px; height: 50px; object-fit: contain; }
     .company { color: #002b66; font-size: 15px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
-    .company-detail { margin-top: 3px; color: #475569; font-size: 10.5px; line-height: 1.35; }
+    .company-detail { margin-top: 3px; color: #475569; font-size: 10.5px; line-height: 1.35; font-weight: 700; }
     .stl-logo { width: 68px; height: 50px; object-fit: contain; }
     .classification { align-self: start; padding: 4px 8px; border: 1.5px solid #002b66; color: #002b66; font-size: 9px; font-weight: 900; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
     .heading { display: flex; justify-content: space-between; gap: 16px; margin-top: 14px; padding-bottom: 10px; border-bottom: 2px solid #002b66; }
@@ -100,7 +102,7 @@ export const openIncidentReportPrint = (ticket) => {
         margin: 0; 
         padding: 0; 
         box-shadow: none; 
-        display: flex;
+        display: flex; 
         flex-direction: column;
         justify-content: space-between;
         page-break-after: avoid; 
@@ -112,13 +114,13 @@ export const openIncidentReportPrint = (ticket) => {
       }
     }
   </style></head><body><div class="toolbar"><strong>Incident Report Print Preview</strong><button onclick="window.print()">Print Report</button></div><main class="paper">
-    <header class="letterhead"><div class="brand"><img class="brand-logo" src="${window.location.origin}/lbp.png" alt="Lucky Betplay Corporation"><div><div class="company">Lucky Betplay Corporation</div><div class="company-detail">#257 Barlaps, A.S. Fortuna Street,<br>Bakilid, Mandaue City, Cebu 6014</div></div></div><div class="brand"><div class="classification">Confidential<br>Internal Use</div><img class="stl-logo" src="${window.location.origin}/stl.jpg" alt="STL"></div></header>
-    <header class="heading"><div><p class="eyebrow">Compliance and Operations</p><h1>Incident Report Issuance</h1></div><div class="report-number">REPORT NO.<br>${escapeHtml(reportNumber)}<br><br>DATE ISSUED<br>${escapeHtml(issuedDate)}</div></header>
-    <div class="document-control">${controlValue('Document Type', 'Operational Incident Report')}${controlValue('Classification', 'Internal Compliance Record')}${controlValue('Status', 'For Review and Appropriate Action')}</div>
+    <header class="letterhead"><div class="brand"><img class="brand-logo" src="${window.location.origin}/lbp.png" alt="Centralized Logo"><div><div class="company">CENTRALIZED UNCLAIMED WINNINGS</div><div class="company-detail">SUB-OFFICE: ${escapeHtml(subOffice)}<br>#257 Barlaps, A.S. Fortuna Street, Bakilid, Mandaue City</div></div></div><div class="brand"><div class="classification">Confidential<br>Internal Use</div><img class="stl-logo" src="${window.location.origin}/stl.jpg" alt="STL"></div></header>
+    <header class="heading"><div><p class="eyebrow">Compliance and Operations • ${escapeHtml(subOffice)}</p><h1>Incident Report Issuance</h1></div><div class="report-number">REPORT NO.<br>${escapeHtml(reportNumber)}<br><br>DATE ISSUED<br>${escapeHtml(issuedDate)}</div></header>
+    <div class="document-control">${controlValue('Document Type', 'Operational Incident Report')}${controlValue('Sub-Office Branch', subOffice)}${controlValue('Status', 'For Review and Appropriate Action')}</div>
     <div class="status">This ticket has remained unclaimed for <strong>${escapeHtml(ageInDays)} days</strong> and is eligible for incident report issuance.</div>
-    <h2 class="section-title">I. Ticket Identification and Particulars</h2><section class="fields">${reportValue('Transaction ID', transId)}${reportValue('Ticket Date', ticketDate)}${reportValue('Teller / Outlet', ticket.fullName || ticket.outlet || ticket.username)}${reportValue('Draw Schedule', drawSchedule)}${reportValue('Bet Combination', betCombination)}${reportValue('Win Liability', `PHP ${parseFloat(ticket.winAmount ?? 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`)}</section>
-    <h2 class="section-title">II. Statement of Incident</h2><section class="section"><p>The listed winning ticket remains unclaimed beyond the prescribed three-day period. This report is issued for monitoring, verification, and appropriate operational follow-up.</p></section>
-    <div class="certification"><strong>Certification and Disposition:</strong> This document records the operational finding based on the ticket information available at the time of issuance. It is submitted for review, verification, and determination of the appropriate succeeding action in accordance with applicable company procedures.</div>
+    <h2 class="section-title">I. Ticket Identification and Particulars</h2><section class="fields">${reportValue('Transaction ID', transId)}${reportValue('Sub-Office Branch', subOffice)}${reportValue('Ticket Date', ticketDate)}${reportValue('Teller / Outlet', ticket.fullName || ticket.outlet || ticket.username)}${reportValue('Draw Schedule', drawSchedule)}${reportValue('Bet Combination', betCombination)}${reportValue('Win Liability', `PHP ${parseFloat(ticket.winAmount ?? 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`)}</section>
+    <h2 class="section-title">II. Statement of Incident</h2><section class="section"><p>The listed winning ticket remains unclaimed beyond the prescribed three-day period at ${escapeHtml(subOffice)}. This report is issued for monitoring, verification, and appropriate operational follow-up.</p></section>
+    <div class="certification"><strong>Certification and Disposition:</strong> This document records the operational finding based on the ticket information available at the time of issuance for ${escapeHtml(subOffice)}. It is submitted for review, verification, and determination of the appropriate succeeding action in accordance with applicable company procedures.</div>
     <div class="signatures-wrap">
       <div class="signatures-top">
         <div class="signature">
@@ -146,7 +148,7 @@ export const openIncidentReportPrint = (ticket) => {
         </div>
       </div>
     </div>
-    <div class="footer">Lucky Betplay Corporation | STL Mandaue Operations Division | Controlled Internal Record</div>
+    <div class="footer">CENTRALIZED UNCLAIMED WINNINGS | SUB-OFFICE: ${escapeHtml(subOffice)} | CONTROLLED INTERNAL RECORD</div>
   </main></body></html>`);
   reportWindow.document.close();
   reportWindow.focus();

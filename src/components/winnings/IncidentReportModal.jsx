@@ -23,7 +23,7 @@ export default function IncidentReportModal({ ticket, onClose }) {
               <ShieldAlert size={20} />
             </div>
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-blue-200">Lucky Betplay Corporation • STL Mandaue</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-blue-200">CENTRALIZED PORTAL • SUB-OFFICE: {ticket.sub_office || ticket.subOffice || 'MANDAUE CENTRAL'}</p>
               <h2 className="text-sm sm:text-base font-black uppercase tracking-wider">Operational Incident Report Issuance</h2>
             </div>
           </div>

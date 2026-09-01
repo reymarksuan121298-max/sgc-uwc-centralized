@@ -183,7 +183,16 @@ class NotificationService {
       return null;
     }
 
-    if (Notification.permission !== 'granted') {
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      try {
+        permission = await Notification.requestPermission();
+      } catch (e) {
+        console.warn('Could not auto-request notification permission:', e);
+      }
+    }
+
+    if (permission !== 'granted') {
       return null;
     }
 
@@ -246,6 +255,9 @@ class NotificationService {
     return await this.dispatchSystemNotification(title, {
       body,
       tag: `stl-chat-${roomId || senderId || 'global'}`,
+      actions: [
+        { action: 'open', title: '💬 Open Chat' }
+      ],
       data: {
         type: 'CHAT_MESSAGE',
         senderName,
@@ -270,6 +282,16 @@ class NotificationService {
   }) {
     const settings = this.getSettings(currentUserId);
     if (!settings.auditNotifications) return false;
+
+    // Filter out video call logs from Web Push Notifications
+    if (
+      action.includes('VIDEO_CALL') || 
+      targetType === 'VIDEO_CALL' || 
+      action === 'VIDEO_CALL_COMPLETED' ||
+      action.includes('CALL_LOG')
+    ) {
+      return false;
+    }
 
     // Play subtle chime
     this.playTone('audit', currentUserId);

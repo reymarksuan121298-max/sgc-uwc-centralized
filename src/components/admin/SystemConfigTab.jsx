@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   Settings, Save, CheckCircle2, AlertCircle, RefreshCw, KeyRound, Globe, 
   Coins, ShieldCheck, Plus, Trash2, Edit2, Play, Building2, Check, X, Shield, 
-  ExternalLink, Server
+  ExternalLink, Server, QrCode, Copy, Users, UserCheck, Search, SlidersHorizontal,
+  ToggleLeft, ToggleRight
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
+import { formatRoleName, isSSRRole } from '../../utils/permissions';
 import ConfirmPopover from '../common/ConfirmPopover';
 
 export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
@@ -29,6 +31,18 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
   const [agentPercent, setAgentPercent] = useState(30);
   const [staffPercent, setStaffPercent] = useState(10);
   const [collectorPercent, setCollectorPercent] = useState(10);
+
+  // User Feature Permissions (Copy Transaction & QR Modal - per SSR account)
+  const [usersList, setUsersList] = useState([]);
+  const [userFeaturesConfig, setUserFeaturesConfig] = useState({
+    default_copy_transaction: false,
+    default_qr_modal: false,
+    users: {}
+  });
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('SSR');
+  const [userOfficeFilter, setUserOfficeFilter] = useState('ALL');
+  const [isSavingUserFeatures, setIsSavingUserFeatures] = useState(false);
 
   // Testing Gateway Status State
   const [testingId, setTestingId] = useState(null);
@@ -67,9 +81,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const [settingsRes, subOfficesRes] = await Promise.all([
+      const [settingsRes, subOfficesRes, usersRes] = await Promise.all([
         supabase.from('system_settings').select('*'),
-        supabase.from('sub_offices').select('name').order('name', { ascending: true })
+        supabase.from('sub_offices').select('name').order('name', { ascending: true }),
+        supabase.from('app_users').select('id, username, full_name, role, sub_office, is_active').order('username', { ascending: true })
       ]);
 
       if (subOfficesRes.data && subOfficesRes.data.length) {
@@ -78,6 +93,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
           if (so.name && so.name.trim()) branchSet.add(so.name.trim());
         });
         setSubOfficesList(Array.from(branchSet));
+      }
+
+      if (usersRes.data) {
+        setUsersList(usersRes.data);
       }
 
       const data = settingsRes.data || [];
@@ -104,6 +123,14 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
             if (Array.isArray(parsed) && parsed.length > 0) {
               foundEndpoints = parsed;
             }
+          } else if (row.key === 'user_feature_permissions' || row.key === 'user_features_config') {
+            if (parsed && typeof parsed === 'object') {
+              setUserFeaturesConfig({
+                default_copy_transaction: parsed.default_copy_transaction === true,
+                default_qr_modal: parsed.default_qr_modal === true,
+                users: parsed.users || {}
+              });
+            }
           }
         });
       }
@@ -118,6 +145,23 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
   useEffect(() => {
     loadSettings();
+
+    const channel = supabase
+      .channel('system_config_realtime_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        loadSettings();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => {
+        loadSettings();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => {
+        loadSettings();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const totalPercent = parseFloat(adminPercent || 0) + parseFloat(agentPercent || 0) + parseFloat(staffPercent || 0) + parseFloat(collectorPercent || 0);
@@ -353,6 +397,116 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
       setIsSaving(false);
     }
   };
+
+  // Save User Feature Permissions to Supabase
+  const handleSaveUserFeatures = async (configToSave) => {
+    setIsSavingUserFeatures(true);
+    const config = configToSave || userFeaturesConfig;
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .upsert({
+          key: 'user_feature_permissions',
+          value: config,
+          description: 'Per-User Permissions for Copy Transaction & QR Modal',
+          updated_by: currentUser?.username || 'admin',
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      await supabase.from('audit_logs').insert([{
+        actor_username: currentUser?.username || 'admin',
+        actor_role: currentUser?.role || 'Super Admin',
+        action: 'USER_FEATURE_PERMISSIONS_UPDATED',
+        target_type: 'SYSTEM',
+        target_id: 'USER_FEATURES',
+        details: { 
+          default_copy_transaction: config.default_copy_transaction,
+          default_qr_modal: config.default_qr_modal,
+          userOverridesCount: Object.keys(config.users || {}).length 
+        }
+      }]);
+
+      showToast('SSR Feature permissions saved successfully!');
+      if (onConfigUpdated) onConfigUpdated();
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to save user feature permissions.');
+    } finally {
+      setIsSavingUserFeatures(false);
+    }
+  };
+
+  // Toggle merged Copy & QR features for a specific user
+  const handleToggleUserMergedFeatures = async (username) => {
+    const uKey = String(username || '').toLowerCase().trim();
+    const currentUsers = { ...(userFeaturesConfig.users || {}) };
+    const currentPerms = currentUsers[uKey] || {
+      enableCopyTransaction: userFeaturesConfig.default_copy_transaction ?? false,
+      enableQrModal: userFeaturesConfig.default_qr_modal ?? false
+    };
+    const isCurrentlyEnabled = (currentPerms.enableCopyTransaction === true) && (currentPerms.enableQrModal === true);
+    const nextState = !isCurrentlyEnabled;
+    currentUsers[uKey] = {
+      enableCopyTransaction: nextState,
+      enableQrModal: nextState
+    };
+    
+    const newConfig = {
+      ...userFeaturesConfig,
+      users: currentUsers
+    };
+    setUserFeaturesConfig(newConfig);
+    await handleSaveUserFeatures(newConfig);
+  };
+
+  // Toggle global default merged features
+  const handleToggleDefaultMerged = async () => {
+    const isCurrentlyEnabled = (userFeaturesConfig.default_copy_transaction === true) && (userFeaturesConfig.default_qr_modal === true);
+    const nextState = !isCurrentlyEnabled;
+    const newConfig = {
+      ...userFeaturesConfig,
+      default_copy_transaction: nextState,
+      default_qr_modal: nextState
+    };
+    setUserFeaturesConfig(newConfig);
+    await handleSaveUserFeatures(newConfig);
+  };
+
+  // Reset user override to global default
+  const handleResetUserToDefault = async (username) => {
+    const uKey = String(username || '').toLowerCase().trim();
+    const newUsers = { ...(userFeaturesConfig.users || {}) };
+    delete newUsers[uKey];
+    
+    const newConfig = {
+      ...userFeaturesConfig,
+      users: newUsers
+    };
+    setUserFeaturesConfig(newConfig);
+    await handleSaveUserFeatures(newConfig);
+  };
+
+  // Filtered users for User Feature Permissions Table
+  const filteredUsersList = useMemo(() => {
+    return usersList.filter(u => {
+      const q = userSearchQuery.toLowerCase().trim();
+      const matchSearch = !q || (
+        (u.username || '').toLowerCase().includes(q) ||
+        (u.full_name || '').toLowerCase().includes(q) ||
+        (u.sub_office || '').toLowerCase().includes(q) ||
+        (u.role || '').toLowerCase().includes(q)
+      );
+      const isSSR = isSSRRole(u.role);
+      const matchRole = userRoleFilter === 'ALL'
+        ? true
+        : userRoleFilter === 'SSR'
+          ? isSSR
+          : (userRoleFilter === 'Sales Service Representative' ? isSSR : u.role === userRoleFilter);
+      const matchOffice = userOfficeFilter === 'ALL' || (u.sub_office || 'All') === userOfficeFilter;
+      return matchSearch && matchRole && matchOffice;
+    });
+  }, [usersList, userSearchQuery, userRoleFilter, userOfficeFilter]);
 
   return (
     <div className="w-full space-y-6">
@@ -682,6 +836,211 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
           </button>
         </div>
       </form>
+
+      {/* SECTION 3: Per-User Feature Permissions (Copy Transaction & QR Modal) */}
+      {showGatewaysCard && (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        
+        {/* Card Header */}
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-[#002B66] text-[#FFD700] rounded-xl shadow-xs">
+              <SlidersHorizontal size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-[#002B66] uppercase tracking-wide">
+                  SSR Feature Permissions & Capabilities
+                </h3>
+                <span className="text-[10px] font-bold bg-blue-100 text-[#002B66] px-2 py-0.5 rounded-full border border-blue-200">
+                  {filteredUsersList.length} Accounts
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Enable or restrict <strong>Copy Transaction</strong> and <strong>Ticket QR Modal</strong> access per SSR account (Disabled by default for SSRs).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Global Default Toggles & Quick Actions Toolbar */}
+        <div className="p-4 bg-slate-50/70 border-b border-slate-200 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+            
+            {/* Global Default Switch */}
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-extrabold text-slate-700 text-[11px] uppercase tracking-wider">SSR Global Default:</span>
+              
+              <button
+                type="button"
+                onClick={handleToggleDefaultMerged}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
+                  (userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal)
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs'
+                    : 'bg-slate-100 text-slate-600 border-slate-300'
+                }`}
+                title="Toggle default copy transaction & QR modal permission for unconfigured SSR accounts"
+              >
+                <div className="flex items-center gap-1 text-emerald-600">
+                  <Copy size={14} className={userFeaturesConfig.default_copy_transaction ? 'text-emerald-600' : 'text-slate-400'} />
+                  <QrCode size={14} className={userFeaturesConfig.default_qr_modal ? 'text-emerald-600' : 'text-slate-400'} />
+                </div>
+                <span>SSR Default: <strong>{(userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal) ? 'ENABLED' : 'DISABLED'}</strong></span>
+              </button>
+            </div>
+
+          </div>
+
+          {/* Search and Filters Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search SSR by username, name, sub-office..."
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                className="w-full bg-white border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-medium text-slate-800 focus:border-[#002B66] outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="SSR">Sales Service Representatives (SSR)</option>
+                <option value="ALL">All Roles</option>
+                <option value="Admin">Admin</option>
+                <option value="Unclaimed Specialist">Unclaimed Specialist</option>
+              </select>
+
+              <select
+                value={userOfficeFilter}
+                onChange={(e) => setUserOfficeFilter(e.target.value)}
+                className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="ALL">All Branches</option>
+                {subOfficesList.filter(s => s !== 'All').map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Users Feature Permissions Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[650px]">
+            <thead>
+              <tr className="bg-slate-100/90 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                <th className="px-4 py-2.5">User Account</th>
+                <th className="px-3 py-2.5">Role</th>
+                <th className="px-3 py-2.5">Sub-Office</th>
+                <th className="px-4 py-2.5 text-center">Copy Transaction & QR Access</th>
+                <th className="px-3 py-2.5 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs">
+              {filteredUsersList.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-bold">
+                    No users found matching your search criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsersList.map((user) => {
+                  const uKey = String(user.username || '').toLowerCase().trim();
+                  const userOverride = userFeaturesConfig.users?.[uKey];
+                  const hasCustomOverride = Boolean(userOverride);
+
+                  const isCopyEnabled = userOverride?.enableCopyTransaction ?? userFeaturesConfig.default_copy_transaction ?? false;
+                  const isQrEnabled = userOverride?.enableQrModal ?? userFeaturesConfig.default_qr_modal ?? false;
+                  const isMergedEnabled = isCopyEnabled && isQrEnabled;
+
+                  return (
+                    <tr key={user.id || user.username} className="hover:bg-slate-50/75 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center font-black text-xs shrink-0">
+                            {(user.username || 'U')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="font-mono font-bold text-slate-900 block leading-tight">
+                              @{user.username}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              {user.full_name || 'No Name Set'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-3">
+                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 font-bold text-[10px] px-2 py-0.5 rounded-md">
+                          {formatRoleName(user.role)}
+                        </span>
+                      </td>
+
+                      <td className="px-3 py-3">
+                        <span className="font-bold text-slate-700 text-xs">
+                          {user.sub_office || 'All Branches'}
+                        </span>
+                      </td>
+
+                      {/* Merged Copy Transaction & QR Modal Toggle */}
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUserMergedFeatures(user.username)}
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs ${
+                            isMergedEnabled
+                              ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                          }`}
+                          title={`Click to ${isMergedEnabled ? 'disable' : 'enable'} Copy Transaction & QR Modal access for @${user.username}`}
+                        >
+                          <div className="flex items-center gap-1">
+                            <Copy size={13} />
+                            <QrCode size={13} />
+                          </div>
+                          <span>{isMergedEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                        </button>
+                      </td>
+
+                      {/* Reset to Default Button */}
+                      <td className="px-3 py-3 text-center">
+                        {hasCustomOverride ? (
+                          <button
+                            type="button"
+                            onClick={() => handleResetUserToDefault(user.username)}
+                            className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+                            title="Reset to global default permissions"
+                          >
+                            Reset
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">Default</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer info */}
+        <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-xs">
+          <p className="text-slate-500 text-[11px]">
+            * Permissions apply immediately across all web sessions once saved.
+          </p>
+        </div>
+
+      </div>
+      )}
 
       {/* MODAL: Add / Edit Gateway */}
       {isModalOpen && (
