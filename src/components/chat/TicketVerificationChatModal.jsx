@@ -4,7 +4,7 @@ import {
   RefreshCw, Eye, Check, ShieldCheck, 
   Trash2, UploadCloud, Clock, Search, 
   FileText, Sparkles, Copy, ThumbsUp, Smile,
-  Minus, Maximize2, Minimize2, Users,
+  Minus, Maximize2, Minimize2, Users, ChevronDown,
   MessageSquare, ChevronLeft, Plus, Building2, CheckCheck,
   Video, PhoneCall
 } from 'lucide-react';
@@ -931,8 +931,12 @@ export default function TicketVerificationChatModal({
         {/* MESSENGER TOP BAR */}
         <div className="bg-white border-b border-slate-200/90 px-3 py-2 flex items-center justify-between gap-1.5 shrink-0 shadow-2xs">
           
-          {/* Contact identity */}
-          <div className="flex items-center gap-2 min-w-0">
+          {/* Contact identity (Clickable to switch conversation) */}
+          <div 
+            onClick={() => setIsChannelDrawerOpen(prev => !prev)}
+            className="flex items-center gap-2 min-w-0 cursor-pointer hover:bg-slate-50 p-1 -ml-1 rounded-xl transition-colors group flex-1"
+            title="Click to switch conversation or branch group"
+          >
             <div className="relative shrink-0">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black font-mono border border-white shadow-2xs ${chatHeaderAvatarClass}`}>
                 {chatHeaderInitials}
@@ -940,14 +944,15 @@ export default function TicketVerificationChatModal({
               <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1">
-                <h3 className="text-[12.5px] font-extrabold text-slate-900 truncate leading-tight">{chatHeaderName}</h3>
+                <h3 className="text-[12.5px] font-extrabold text-slate-900 truncate leading-tight group-hover:text-[#0084FF] transition-colors">{chatHeaderName}</h3>
                 {isGroupChat && (
                   <span className="text-[8px] font-black px-1.5 py-0.2 rounded uppercase shrink-0 bg-[#FFD700] text-[#002B66]">
                     GROUP
                   </span>
                 )}
+                <ChevronDown size={13} className={`text-slate-400 group-hover:text-[#0084FF] transition-transform ${isChannelDrawerOpen ? 'rotate-180' : ''}`} />
               </div>
               <p className="text-[9.5px] font-bold leading-none mt-0.5 truncate flex items-center gap-1">
                 {partnerTyping ? (
@@ -979,6 +984,16 @@ export default function TicketVerificationChatModal({
 
           {/* Action Icons */}
           <div className="flex items-center gap-0.5 shrink-0 text-[#0084FF]">
+            {/* Switch Conversation Drawer Button */}
+            <button
+              type="button"
+              onClick={() => setIsChannelDrawerOpen(prev => !prev)}
+              className={`p-1.5 rounded-full transition-colors cursor-pointer ${isChannelDrawerOpen ? 'bg-blue-100 text-[#0084FF]' : 'hover:bg-slate-100 text-slate-500 hover:text-[#0084FF]'}`}
+              title="All Conversations / Contacts"
+            >
+              <Users size={16} />
+            </button>
+
             {/* Start Live Video Call Button */}
             <button
               type="button"
@@ -1017,6 +1032,90 @@ export default function TicketVerificationChatModal({
             </button>
           </div>
         </div>
+
+        {/* CONVERSATION SWITCHER DRAWER (Overlaid over Chat Body) */}
+        {isChannelDrawerOpen && (
+          <div className="bg-slate-50 border-b border-slate-200 p-2.5 space-y-2 animate-in slide-in-from-top-2 max-h-[300px] overflow-y-auto z-30 shadow-md">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10.5px] font-black text-slate-600 uppercase tracking-wider">Switch Conversation</span>
+              <button 
+                type="button" 
+                onClick={() => setIsChannelDrawerOpen(false)}
+                className="text-[10px] font-bold text-[#0084FF] hover:underline cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Search filter */}
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                placeholder="Search person or group..."
+                className="w-full pl-7 pr-3 py-1 bg-white border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-[#0084FF] outline-hidden"
+              />
+            </div>
+
+            {/* Group channels */}
+            <div className="space-y-1">
+              <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider block px-1">Groups</span>
+              {filteredGroups.map(group => (
+                <div
+                  key={group.id}
+                  onClick={() => {
+                    setActiveContact(group);
+                    setChatCategory('groups');
+                    setIsChannelDrawerOpen(false);
+                  }}
+                  className={`flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition-all ${activeContact?.id === group.id ? 'bg-[#002B66] text-white font-bold' : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200'}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-6 h-6 rounded-full bg-[#FFD700] text-[#002B66] flex items-center justify-center text-[10px] font-black shrink-0">
+                      GP
+                    </div>
+                    <span className="text-xs truncate">{group.name}</span>
+                  </div>
+                  <span className="text-[9px] uppercase opacity-75 font-mono">{group.sub_office}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Direct messages */}
+            <div className="space-y-1 pt-1">
+              <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider block px-1">Direct Messages</span>
+              {!filteredUsers.length ? (
+                <div className="text-center py-2 text-slate-400 text-[11px]">No active users found</div>
+              ) : (
+                filteredUsers.map(user => (
+                  <div
+                    key={user.id || user.username}
+                    onClick={() => {
+                      setActiveContact(user);
+                      setChatCategory('direct');
+                      setIsChannelDrawerOpen(false);
+                    }}
+                    className={`flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition-all ${((activeContact?.id && activeContact.id === user.id) || (activeContact?.username && activeContact.username === user.username)) ? 'bg-[#0084FF] text-white font-bold' : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200'}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`w-6 h-6 rounded-full ${getUserAvatarColor(user.full_name || user.username, user.sub_office)} flex items-center justify-center text-[10px] font-black shrink-0`}>
+                        {(user.full_name || user.username || 'U')[0].toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs truncate block">{user.full_name || user.username}</span>
+                        <span className={`text-[9px] block ${((activeContact?.id && activeContact.id === user.id) || (activeContact?.username && activeContact.username === user.username)) ? 'text-blue-100' : 'text-slate-400'}`}>
+                          {user.sub_office || 'All'} • {formatRoleName(user.role)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* CHAT MESSAGES PANEL */}
         <div className="flex-1 flex flex-col bg-white overflow-hidden">
