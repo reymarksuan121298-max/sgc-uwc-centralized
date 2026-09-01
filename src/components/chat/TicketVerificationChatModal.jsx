@@ -32,6 +32,8 @@ const getAvatarColor = (name = '', subOffice = '') => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+const getUserAvatarColor = getAvatarColor;
+
 // Safe Realtime Broadcaster that avoids REST API fallback warnings
 const sendBroadcastSafe = (channel, event, payload) => {
   if (!channel) return;
@@ -1014,7 +1016,7 @@ export default function TicketVerificationChatModal({
                     className={`flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition-all ${((activeContact?.id && activeContact.id === user.id) || (activeContact?.username && activeContact.username === user.username)) ? 'bg-[#0084FF] text-white font-bold' : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200'}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-6 h-6 rounded-full ${getUserAvatarColor(user.full_name || user.username, user.sub_office)} flex items-center justify-center text-[10px] font-black shrink-0`}>
+                      <div className={`w-6 h-6 rounded-full ${getAvatarColor(user.full_name || user.username, user.sub_office)} flex items-center justify-center text-[10px] font-black shrink-0`}>
                         {(user.full_name || user.username || 'U')[0].toUpperCase()}
                       </div>
                       <div className="min-w-0">
