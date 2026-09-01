@@ -3,7 +3,7 @@ import {
   Video, VideoOff, Mic, MicOff, PhoneOff, Phone, 
   Maximize2, Minimize2, Monitor, Camera, Sparkles, 
   RefreshCw, Volume2, VolumeX, ShieldCheck, Building2, 
-  CheckCircle2, AlertCircle, Scan, Eye, Globe2, Wifi
+  CheckCircle2, AlertCircle, Scan, Eye, Globe2, Wifi, RotateCcw
 } from 'lucide-react';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { supabase } from '../../config/supabaseClient';
@@ -82,6 +82,8 @@ export default function VideoCallWindow({
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasCameraError, setHasCameraError] = useState(null);
   const [networkQuality, setNetworkQuality] = useState('good'); // 'good' | 'fair' | 'reconnecting'
+  const [facingMode, setFacingMode] = useState('user'); // 'user' | 'environment'
+  const [isRemoteVideoSuspended, setIsRemoteVideoSuspended] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -202,32 +204,65 @@ export default function VideoCallWindow({
     }
   };
 
-  // 1. Initialize Local Media Stream with Adaptive Audio & Video Constraints
-  const initLocalStream = useCallback(async () => {
+  // 1. Initialize Local Media Stream with Multi-Tier Adaptive Constraints (Mobile Friendly)
+  const initLocalStream = useCallback(async (preferredFacing = 'user') => {
     try {
       setHasCameraError(null);
       if (localStreamRef.current && localStreamRef.current.active) {
         return localStreamRef.current;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 360 },
-          frameRate: { ideal: 30, min: 15 },
-          facingMode: 'user'
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+      let stream = null;
+
+      // Tier 1: Relaxed Ideal Constraints (Allows portrait & landscape on iOS/Android without OverconstrainedError)
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: preferredFacing,
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+      } catch (tier1Err) {
+        console.warn('Tier 1 camera constraints failed, attempting Tier 2 fallback:', tier1Err);
+
+        // Tier 2: Basic Unconstrained Video & Audio (Standard mobile web fallback)
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+          });
+        } catch (tier2Err) {
+          console.warn('Tier 2 fallback failed, attempting Tier 3 Audio-Only fallback:', tier2Err);
+
+          // Tier 3: Audio Only (When camera is strictly unavailable or blocked)
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: false,
+              audio: true
+            });
+            setHasCameraError('Camera unavailable - Audio Only');
+          } catch (tier3Err) {
+            throw tier3Err;
+          }
         }
-      });
+      }
+
+      if (!stream) return null;
 
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        localVideoRef.current.play().catch(() => {});
+        localVideoRef.current.muted = true;
+        const playPromise = localVideoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {});
+        }
       }
       return stream;
     } catch (err) {
@@ -237,18 +272,31 @@ export default function VideoCallWindow({
     }
   }, []);
 
-  // Sync streams to video elements continuously
+  // Sync streams to video elements continuously with mobile playback support
   useEffect(() => {
     if (localVideoRef.current && localStreamRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
-      localVideoRef.current.play().catch(() => {});
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+      localVideoRef.current.muted = true;
+      const playPromise = localVideoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {});
+      }
     }
   }, [localStreamRef.current, callState]);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStreamRef.current) {
-      remoteVideoRef.current.srcObject = remoteStreamRef.current;
-      remoteVideoRef.current.play().catch(() => {});
+      if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      }
+      const playPromise = remoteVideoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => setIsRemoteVideoSuspended(false))
+          .catch(() => setIsRemoteVideoSuspended(true));
+      }
     }
   }, [remoteStreamRef.current, callState]);
 
@@ -606,6 +654,56 @@ export default function VideoCallWindow({
     }
   };
 
+  // Switch Front / Back Camera (Mobile Support)
+  const handleSwitchCamera = async () => {
+    try {
+      const nextFacing = facingMode === 'user' ? 'environment' : 'user';
+      setFacingMode(nextFacing);
+
+      if (localStreamRef.current) {
+        const oldTrack = localStreamRef.current.getVideoTracks()[0];
+        if (oldTrack) oldTrack.stop();
+      }
+
+      let newStream = null;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: nextFacing } },
+          audio: false
+        });
+      } catch {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: nextFacing },
+          audio: false
+        });
+      }
+
+      if (newStream) {
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        if (localStreamRef.current && newVideoTrack) {
+          const oldTrack = localStreamRef.current.getVideoTracks()[0];
+          if (oldTrack) localStreamRef.current.removeTrack(oldTrack);
+          localStreamRef.current.addTrack(newVideoTrack);
+        }
+
+        if (peerConnectionRef.current && newVideoTrack) {
+          const sender = peerConnectionRef.current.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(newVideoTrack);
+          }
+        }
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStreamRef.current;
+          localVideoRef.current.muted = true;
+          localVideoRef.current.play().catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Switch camera error:', err);
+    }
+  };
+
   // Toggle Screen Share
   const handleToggleScreenShare = async () => {
     if (isScreenSharing) {
@@ -688,8 +786,8 @@ export default function VideoCallWindow({
   return (
     <div className={`fixed z-[10000] transition-all duration-300 ${
       isExpanded 
-        ? 'inset-4 sm:inset-10 bg-slate-950/95 backdrop-blur-2xl rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.6)] border border-slate-700/60 overflow-hidden flex flex-col' 
-        : 'bottom-20 right-4 sm:right-8 w-[350px] sm:w-[420px] h-[520px] bg-slate-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/80 overflow-hidden flex flex-col'
+        ? 'inset-2 sm:inset-10 bg-slate-950/95 backdrop-blur-2xl rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.6)] border border-slate-700/60 overflow-hidden flex flex-col' 
+        : 'inset-x-2 bottom-3 sm:bottom-20 sm:right-8 sm:inset-x-auto sm:w-[420px] h-[82vh] sm:h-[520px] max-h-[92vh] bg-slate-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700/80 overflow-hidden flex flex-col'
     }`}>
       
       {/* TOP BAR */}
@@ -750,16 +848,35 @@ export default function VideoCallWindow({
       </div>
 
       {/* MAIN VIDEO AREA */}
-      <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden">
+      <div 
+        onClick={() => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.play().then(() => setIsRemoteVideoSuspended(false)).catch(() => {});
+          }
+        }}
+        className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden cursor-pointer"
+      >
         
         {/* Remote Video (Always mounted in DOM and auto-playing to prevent stream disconnects) */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          onLoadedMetadata={() => remoteVideoRef.current?.play().catch(() => {})}
+          webkit-playsinline="true"
+          onLoadedMetadata={() => {
+            const p = remoteVideoRef.current?.play();
+            if (p !== undefined) p.catch(() => setIsRemoteVideoSuspended(true));
+          }}
           className={`w-full h-full object-cover bg-slate-950 transition-opacity duration-300 ${callState === 'connected' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}
         />
+
+        {/* Mobile tap to resume overlay if browser suspended autoplay */}
+        {isRemoteVideoSuspended && callState === 'connected' && (
+          <div className="absolute inset-0 z-20 bg-black/60 flex flex-col items-center justify-center gap-2 text-white p-4 text-center">
+            <Video size={28} className="text-emerald-400 animate-bounce" />
+            <span className="text-xs font-bold bg-emerald-600 px-3 py-1.5 rounded-full shadow-lg">Tap anywhere to start live video</span>
+          </div>
+        )}
 
         {/* Ringing & Connecting Screen Placeholder */}
         {callState !== 'connected' && (
@@ -889,6 +1006,16 @@ export default function VideoCallWindow({
           title={isVideoOff ? 'Turn camera on' : 'Turn camera off'}
         >
           {isVideoOff ? <VideoOff size={18} /> : <Video size={18} />}
+        </button>
+
+        {/* Flip Front / Back Camera (Mobile Support) */}
+        <button
+          type="button"
+          onClick={handleSwitchCamera}
+          className="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-full transition-all cursor-pointer shadow-md"
+          title="Flip camera (Front / Back)"
+        >
+          <RotateCcw size={18} />
         </button>
 
         {/* Screen Share / Ticket Verification Mode */}
