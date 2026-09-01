@@ -289,6 +289,38 @@ function AttachWeeklyProofModal({
     });
   }, [targetBatch]);
 
+  // Dynamically compute SRN based on selected tickets
+  const effectiveBatchSrn = useMemo(() => {
+    if (!selectedItems || selectedItems.length === 0) {
+      return batchSerialNumber || 'SRN-NONE';
+    }
+
+    // 1. Single specific ticket selected -> generate SRN from its Trans ID
+    if (selectedItems.length === 1) {
+      const single = selectedItems[0];
+      if (single.batch_serial_no) return single.batch_serial_no;
+      const transId = single.transactionId || single.transId || single.id;
+      if (transId) {
+        return String(transId).startsWith('SRN-') ? String(transId) : `SRN-${transId}`;
+      }
+    }
+
+    // 2. All target batch tickets selected and batchSerialNumber provided -> keep batch serial number
+    if (targetBatch?.items?.length > 0 && selectedItems.length === targetBatch.items.length && batchSerialNumber) {
+      return batchSerialNumber;
+    }
+
+    // 3. Specific subset of tickets selected -> derive SRN from the first selected ticket's transId
+    const firstSelected = selectedItems[0];
+    if (firstSelected?.batch_serial_no) return firstSelected.batch_serial_no;
+    const firstTransId = firstSelected?.transactionId || firstSelected?.transId || firstSelected?.id;
+    if (firstTransId) {
+      return String(firstTransId).startsWith('SRN-') ? String(firstTransId) : `SRN-${firstTransId}`;
+    }
+
+    return batchSerialNumber || `SRN-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-RW01`;
+  }, [selectedItems, batchSerialNumber, targetBatch]);
+
   // Fast filtered tickets list
   const filteredTickets = useMemo(() => {
     if (!targetBatch?.items) return [];
@@ -347,7 +379,7 @@ function AttachWeeklyProofModal({
       return;
     }
 
-    const effectiveReferenceNumber = (referenceNumber.trim() || batchSerialNumber || `SRN-BATCH-${Date.now().toString().slice(-6)}`).toUpperCase();
+    const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn || `SRN-BATCH-${Date.now().toString().slice(-6)}`).toUpperCase();
     const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
       ? parseFloat(customRemittanceAmount) 
       : (parseFloat(selectedWinTotal || 0) || 0);
@@ -411,8 +443,8 @@ function AttachWeeklyProofModal({
         ? currentUser.sub_office 
         : (itemsToRemit[0]?.sub_office || 'Mandaue Central');
 
-      // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by batch SRN)
-      const primaryTransId = batchSerialNumber || (transIds.length === 1 ? transIds[0] : `SRN-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-RW01`);
+      // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by dynamic SRN)
+      const primaryTransId = effectiveBatchSrn || (transIds.length === 1 ? (String(transIds[0]).startsWith('SRN-') ? transIds[0] : `SRN-${transIds[0]}`) : `SRN-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-RW01`);
       const receiptPayload = {
         batch_serial_no: primaryTransId,
         sub_office: subOfficeName,
@@ -427,7 +459,7 @@ function AttachWeeklyProofModal({
         receipt_image_url: uploadedReceiptUrl || previewImage || null,
         verification_status: 'PENDING',
         tickets_count: transIds.length,
-        notes: notes.trim() || `Batch Remittance for Serial ${batchSerialNumber || 'SRN'} (${transIds.length} tickets)`
+        notes: notes.trim() || `Batch Remittance for Serial ${effectiveBatchSrn || 'SRN'} (${transIds.length} tickets)`
       };
 
       const { data: receiptData, error: receiptError } = await supabase
@@ -445,7 +477,7 @@ function AttachWeeklyProofModal({
           .update({
             receipt_status: 'PENDING_VERIFICATION',
             sub_office: subOfficeName,
-            batch_serial_no: batchSerialNumber || null,
+            batch_serial_no: effectiveBatchSrn || null,
             updated_at: new Date().toISOString()
           })
           .in('transactionId', transIds);
@@ -468,7 +500,7 @@ function AttachWeeklyProofModal({
           amount: effectiveAmount,
           channel: paymentChannel,
           ticketsCount: transIds.length,
-          batchSerial: batchSerialNumber || 'SRN'
+          batchSerial: effectiveBatchSrn || 'SRN'
         }
       }]);
 
@@ -492,7 +524,7 @@ function AttachWeeklyProofModal({
         <div className="bg-[#002B66] text-white px-5 py-3.5 flex justify-between items-center border-b-2 border-[#FFD700] shrink-0">
           <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs sm:text-sm">
             <UploadCloud size={18} className="text-[#FFD700]" />
-            <span>Attach Remittance Proof • {batchSerialNumber || 'Batch'}</span>
+            <span>Attach Remittance Proof • {effectiveBatchSrn || 'Batch'}</span>
           </div>
           <button 
             type="button"
@@ -521,7 +553,7 @@ function AttachWeeklyProofModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono">
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
                 <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">BATCH SERIAL NO.</span>
-                <span className="font-black text-[#002B66] truncate block text-xs mt-0.5 underline">{batchSerialNumber || 'SRN-000000'}</span>
+                <span className="font-black text-[#002B66] truncate block text-xs mt-0.5 underline">{effectiveBatchSrn || 'SRN-000000'}</span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
                 <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Tickets</span>
