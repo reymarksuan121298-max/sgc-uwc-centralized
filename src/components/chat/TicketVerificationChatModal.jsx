@@ -598,7 +598,7 @@ export default function TicketVerificationChatModal({
 
     return messages.filter(m => {
       const sId = String(m.sender_id || '').toLowerCase().trim();
-      const sUsername = String(m.sender_username || '').toLowerCase().trim();
+      const sUsername = String(m.ocr_data?.sender_username || m.sender_username || '').toLowerCase().trim();
       const sName = String(m.sender_name || '').toLowerCase().trim();
 
       const rId = String(m.recipient_id || m.ocr_data?.recipient_id || '').toLowerCase().trim();
@@ -662,7 +662,6 @@ export default function TicketVerificationChatModal({
     const newMsg = {
       id: crypto.randomUUID(),
       sender_id: currentUser?.id || currentUser?.username || 'user-1',
-      sender_username: currentUser?.username || currentUser?.id || 'user',
       sender_name: currentUser?.full_name || currentUser?.username || officerName,
       sender_role: formatRoleName(currentUser?.role) || 'Sales Service Representative',
       sub_office: currentUser?.sub_office || officerSubOffice,
@@ -675,6 +674,7 @@ export default function TicketVerificationChatModal({
         ...(ocrResult || {}),
         roomId: roomId,
         isGroup: isGroupChat,
+        sender_username: currentUser?.username || currentUser?.id,
         groupName: isGroupChat ? chatHeaderName : null,
         recipient_id: recipientId,
         recipient_name: recipientName

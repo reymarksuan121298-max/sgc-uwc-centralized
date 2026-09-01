@@ -277,12 +277,11 @@ export default function VideoCallWindow({
 
     // Remote track arrived
     pc.ontrack = (event) => {
-      console.log('WebRTC ontrack received global remote media:', event.streams);
       if (event.streams && event.streams[0]) {
         remoteStreamRef.current = event.streams[0];
-        if (remoteVideoRef.current) {
+        if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== event.streams[0]) {
           remoteVideoRef.current.srcObject = event.streams[0];
-          remoteVideoRef.current.play().catch(e => console.warn('Remote play:', e));
+          remoteVideoRef.current.play().catch(() => {});
         }
       }
     };
@@ -516,7 +515,9 @@ export default function VideoCallWindow({
           await processQueuedIceCandidates(peerConnectionRef.current);
         }
       } catch (err) {
-        console.error('Failed to set remote answer:', err);
+        if (peerConnectionRef.current?.signalingState !== 'stable') {
+          console.warn('Set remote answer notice:', err);
+        }
       }
     };
 
