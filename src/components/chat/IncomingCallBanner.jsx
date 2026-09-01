@@ -9,40 +9,53 @@ export default function IncomingCallBanner({
   const ringtoneTimerRef = useRef(null);
   const audioCtxRef = useRef(null);
 
-  // Play synthetic incoming ringtone
+  // Play synthetic incoming ringtone (with autoplay unlock)
   useEffect(() => {
     if (!incomingCall) return;
 
+    let ringtoneTimer = null;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const ctx = new AudioContextClass();
       audioCtxRef.current = ctx;
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880; // High frequency melodic ring
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      const startRinging = () => {
+        if (!audioCtxRef.current || ctx.state !== 'running') return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880; // High frequency melodic ring
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
 
-      let isRing = true;
-      ringtoneTimerRef.current = setInterval(() => {
-        if (!audioCtxRef.current) return;
-        if (isRing) {
-          gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        } else {
-          gain.gain.setValueAtTime(0, ctx.currentTime);
-        }
-        isRing = !isRing;
-      }, 900);
+        let isRing = true;
+        ringtoneTimer = setInterval(() => {
+          if (!audioCtxRef.current || ctx.state !== 'running') return;
+          if (isRing) {
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          } else {
+            gain.gain.setValueAtTime(0, ctx.currentTime);
+          }
+          isRing = !isRing;
+        }, 900);
 
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+      };
+
+      if (ctx.state === 'running') {
+        startRinging();
+      } else {
+        ctx.resume().then(() => startRinging()).catch(() => {});
+      }
     } catch {
       // safe fallback if audio context blocked
     }
 
     return () => {
-      if (ringtoneTimerRef.current) clearInterval(ringtoneTimerRef.current);
+      if (ringtoneTimer) clearInterval(ringtoneTimer);
       try {
         if (audioCtxRef.current) audioCtxRef.current.close();
       } catch {}

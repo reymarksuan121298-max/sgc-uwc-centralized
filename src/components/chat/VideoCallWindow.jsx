@@ -101,33 +101,45 @@ export default function VideoCallWindow({
   const playRingtone = useCallback((type = 'outgoing') => {
     try {
       if (audioContextRef.current) return;
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const ctx = new AudioContextClass();
       audioContextRef.current = ctx;
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = type === 'outgoing' ? 440 : 880;
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      const startTone = () => {
+        if (!audioContextRef.current || ctx.state !== 'running') return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = type === 'outgoing' ? 440 : 880;
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
 
-      let isBeep = true;
-      const ringInterval = setInterval(() => {
-        if (!audioContextRef.current) {
-          clearInterval(ringInterval);
-          return;
-        }
-        if (isBeep) {
-          gain.gain.setValueAtTime(0.08, ctx.currentTime);
-        } else {
-          gain.gain.setValueAtTime(0, ctx.currentTime);
-        }
-        isBeep = !isBeep;
-      }, 1000);
+        let isBeep = true;
+        const ringInterval = setInterval(() => {
+          if (!audioContextRef.current || ctx.state !== 'running') {
+            clearInterval(ringInterval);
+            return;
+          }
+          if (isBeep) {
+            gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          } else {
+            gain.gain.setValueAtTime(0, ctx.currentTime);
+          }
+          isBeep = !isBeep;
+        }, 1000);
 
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      ringtoneOscRef.current = { osc, interval: ringInterval };
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        ringtoneOscRef.current = { osc, interval: ringInterval };
+      };
+
+      if (ctx.state === 'running') {
+        startTone();
+      } else {
+        ctx.resume().then(() => startTone()).catch(() => {});
+      }
     } catch {
       // safe fallback if audio context blocked
     }
