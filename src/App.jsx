@@ -1148,13 +1148,24 @@ export default function App() {
 
   const handleSaveAgreement = async (payload) => {
     try {
+      // Write all settlement data directly onto the returned_winnings row.
+      // No separate settlement_agreements table is used.
       const { error } = await supabase
         .from('returned_winnings')
         .update({
-          isUnderSettlement: payload.isUnderSettlement,
-          settlementTerms: payload.settlementTerms,
+          isUnderSettlement: true,
+          settlementTerms: {
+            agreementDate: payload.agreementDate,
+            reason: payload.reason,
+            frequency: payload.frequency,
+            sub_office: payload.ticket?.sub_office || payload.sub_office || 'Mandaue Central',
+            installmentsCount: payload.installmentsCount,
+            installments: payload.installments,
+            signatories: payload.signatories || null
+          },
           totalInstallmentAmount: payload.totalInstallmentAmount,
-          settlementStatus: payload.settlementStatus
+          settlementStatus: 'PENDING',
+          updated_at: new Date().toISOString()
         })
         .eq('transactionId', payload.transactionId);
 
@@ -1176,6 +1187,7 @@ export default function App() {
       alert(`Failed to save agreement: ${err.message}`);
     }
   };
+
 
   // User-level feature capabilities (Copy Transaction & QR Modal) - per SSR account
   const userFeaturePermissions = useMemo(() => {

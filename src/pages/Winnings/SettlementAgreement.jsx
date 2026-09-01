@@ -204,6 +204,10 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const [isLoadingPayments, setIsLoadingPayments] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
 
+  // Settlement agreements fetched from settlement_agreements table
+  const [savedAgreementsList, setSavedAgreementsList] = useState([]);
+  const [isLoadingAgreements, setIsLoadingAgreements] = useState(false);
+
   // States for Editable Form
   const [selectedTicketId, setSelectedTicketId] = useState(initialTicketId || '');
   const [agreementDate, setAgreementDate] = useState(new Date().toISOString().split('T')[0]);
@@ -383,7 +387,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     openSettlementAgreementPrint();
   };
 
-  // Helper to parse settlementTerms
+  // Helper to parse settlementTerms JSONB (stored on returned_winnings)
   const parseSettlementTerms = (terms) => {
     if (!terms) return null;
     try {
@@ -393,20 +397,53 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     }
   };
 
-  // Filter records under settlement
-  const isSettlementRecord = (item) => {
-    const status = String(item.isUnderSettlement ?? '').toLowerCase();
-    return item.isUnderSettlement === true || status === 'true' || status === '1' || Boolean(item.settlementTerms || item.settlement_terms);
-  };
+  // Fetch settlement tickets from returned_winnings where isUnderSettlement = true
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAgreements = async () => {
+      setIsLoadingAgreements(true);
+      try {
+        let query = supabase
+          .from('returned_winnings')
+          .select('*')
+          .eq('isUnderSettlement', true)
+          .order('created_at', { ascending: false });
 
-  // Filtered saved agreements based on selected sub-office
-  const savedAgreementsList = filteredData.filter((item) => {
-    if (!isSettlementRecord(item)) return false;
-    if (selectedSubOfficeFilter === 'ALL') return true;
-    const itemOffice = (item.sub_office || item.subOffice || item.branch || '').toLowerCase().trim();
-    const targetOffice = selectedSubOfficeFilter.toLowerCase().trim();
-    return itemOffice === targetOffice || (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all'));
-  });
+        if (selectedSubOfficeFilter !== 'ALL') {
+          query = query.eq('sub_office', selectedSubOfficeFilter);
+        }
+
+        const { data, error } = await query;
+        if (!isMounted) return;
+        if (error) {
+          console.warn('Failed to load settlement tickets:', error.message);
+        } else {
+          setSavedAgreementsList(data || []);
+        }
+      } catch (err) {
+        console.warn('Failed to load settlement tickets:', err);
+      } finally {
+        if (isMounted) setIsLoadingAgreements(false);
+      }
+    };
+
+    fetchAgreements();
+
+    // Realtime subscription on returned_winnings
+    const channel = supabase
+      .channel('settlement_returned_winnings_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'returned_winnings' }, () => {
+        fetchAgreements();
+      })
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [selectedSubOfficeFilter]);
+
+  // Fetch payment history for visible agreements
   const displayedAgreementIds = savedAgreementsList.map((item) => item.id).filter(Boolean);
   const displayedAgreementIdsKey = displayedAgreementIds.join(',');
 
@@ -450,6 +487,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const getPaymentSummary = (item) => {
     const payments = paymentsByAgreement[item.id] || [];
     const paidAmount = payments.reduce((sum, payment) => sum + parseFloat(payment.paymentAmount || 0), 0);
+    // All amounts come from returned_winnings camelCase fields
     const totalAmount = parseFloat(item.totalInstallmentAmount || item.winAmount || 0);
     const status = paidAmount >= totalAmount && totalAmount > 0
       ? 'FULLY PAID'
@@ -505,13 +543,14 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     const { paidAmount, totalAmount } = getPaymentSummary(paymentModalItem);
     const updatedPaidAmount = paidAmount + amount;
     const settlementStatus = updatedPaidAmount >= totalAmount && totalAmount > 0 ? 'FULLY PAID' : 'PARTIAL';
+    // Update settlementStatus on the returned_winnings row directly
     const { error: statusError } = await supabase
       .from('returned_winnings')
       .update({ settlementStatus })
       .eq('id', paymentModalItem.id);
 
     if (statusError) {
-      setPaymentError(`Payment saved, but agreement status could not be updated: ${statusError.message}`);
+      setPaymentError(`Payment saved, but settlement status could not be updated: ${statusError.message}`);
       setIsSavingPayment(false);
       return;
     }
@@ -628,7 +667,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           ) : (
             <div className="grid grid-cols-1 gap-4">
               {savedAgreementsList.map((item, index) => {
-                const parsedTerms = parseSettlementTerms(item.settlementTerms || item.settlement_terms);
+                // All data comes from returned_winnings; nested settlement info is in settlementTerms JSONB
+                const parsedTerms = parseSettlementTerms(item.settlementTerms);
                 const { payments, paidAmount, remainingAmount, status } = getPaymentSummary(item);
                 const agreementKey = item.id || item.transactionId || index;
                 const isExpanded = expandedAgreementId === agreementKey;
@@ -642,7 +682,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                         </span>
                         <span className="bg-amber-50 text-amber-900 border border-amber-200 font-sans font-bold px-2.5 py-1 rounded-lg text-[10px] uppercase flex items-center gap-1">
                           <Building2 size={11} className="text-amber-700" />
-                          {item.sub_office || item.subOffice || parsedTerms?.sub_office || 'Mandaue Central'}
+                          {item.sub_office || 'Mandaue Central'}
                         </span>
                         <span className="text-xs font-bold text-slate-700">
                           Accountable Payer: <span className="text-slate-900">{item.fullName || item.username || 'N/A'}</span>
@@ -653,7 +693,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                           {status}
                         </span>
                         <span className="text-xs font-mono font-bold text-slate-500 flex items-center gap-1">
-                          <Calendar size={12} /> {formatTransactionDate(item.updated_at || item.created_at)}
+                          <Calendar size={12} /> {formatTransactionDate(parsedTerms?.agreementDate || item.updated_at || item.created_at)}
                         </span>
                         <button type="button" onClick={() => setExpandedAgreementId(isExpanded ? null : agreementKey)} className="flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide text-[#002B66] hover:bg-blue-100 cursor-pointer">
                           {isExpanded ? 'Hide Details' : 'View Details'} {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -665,7 +705,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-1">
                         <span className="text-[10px] font-black text-slate-400 uppercase">Reason</span>
                         <p className="font-medium text-slate-800 line-clamp-2">
-                          {parsedTerms?.reason || item.reason || 'No reason provided'}
+                          {parsedTerms?.reason || 'No reason provided'}
                         </p>
                       </div>
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-1">
@@ -676,7 +716,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                       </div>
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 space-y-1">
                         <span className="text-[10px] font-black text-slate-400 uppercase block">Payment Terms</span>
-                        <p className="font-medium text-slate-700">{parsedTerms?.installments?.length || 0} Terms Scheduled</p>
+                        <p className="font-medium text-slate-700">{Array.isArray(parsedTerms?.installments) ? parsedTerms.installments.length : (parsedTerms?.installmentsCount || 0)} Terms Scheduled</p>
                       </div>
                     </div>
 
