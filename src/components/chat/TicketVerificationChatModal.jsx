@@ -178,7 +178,39 @@ export default function TicketVerificationChatModal({
     setIsChannelDrawerOpen(false);
   };
 
-  const isGroupChat = Boolean(activeContact?.isGroup || activeContact?.member_ids);
+  const isGroupChat = Boolean(activeContact?.isGroup || activeContact?.member_ids || String(activeContact?.id || '').startsWith('group-'));
+
+  // Find matching full user profile for active contact and current user from activeUsers
+  const contactUser = useMemo(() => {
+    if (!activeContact || activeContact.isGroup) return null;
+    const cId = String(activeContact.id || '').toLowerCase().trim();
+    const cUsername = String(activeContact.username || '').toLowerCase().trim();
+    const cName = String(activeContact.full_name || activeContact.name || '').toLowerCase().trim();
+
+    return (activeUsers || []).find(u => 
+      (u.id && String(u.id).toLowerCase().trim() === cId) ||
+      (u.username && (String(u.username).toLowerCase().trim() === cUsername || String(u.username).toLowerCase().trim() === cId)) ||
+      (u.full_name && (String(u.full_name).toLowerCase().trim() === cName || String(u.full_name).toLowerCase().trim() === cId))
+    ) || null;
+  }, [activeContact, activeUsers]);
+
+  const myUser = useMemo(() => {
+    if (!currentUser) return null;
+    const myId = String(currentUser.id || '').toLowerCase().trim();
+    const myUsername = String(currentUser.username || '').toLowerCase().trim();
+    return (activeUsers || []).find(u => 
+      (u.id && String(u.id).toLowerCase().trim() === myId) ||
+      (u.username && String(u.username).toLowerCase().trim() === myUsername)
+    ) || null;
+  }, [currentUser, activeUsers]);
+
+  // Compute canonical 1-on-1 Direct Room ID using stable usernames / user IDs
+  const directRoomId = useMemo(() => {
+    if (isGroupChat || !activeContact) return null;
+    const myKey = String(myUser?.username || currentUser?.username || myUser?.id || currentUser?.id || 'me').toLowerCase().trim();
+    const otherKey = String(contactUser?.username || activeContact?.username || contactUser?.id || activeContact?.id || 'them').toLowerCase().trim();
+    return `dm_${[myKey, otherKey].sort().join('__')}`;
+  }, [isGroupChat, activeContact, myUser, currentUser, contactUser]);
 
   // Target chat receiver profile
   const chatHeaderName = activeContact
@@ -314,19 +346,19 @@ export default function TicketVerificationChatModal({
     if (isOpen) {
       fetchMessages();
     }
-  }, [isOpen]);
+  }, [isOpen, activeContact?.id, activeContact?.username]);
 
   // 2. Real-time Subscription for Incoming Tickets, Live Verifications, and Typing/AFK Broadcasts
   useEffect(() => {
     if (!isOpen) return;
 
-    const myId = String(currentUser?.id || currentUser?.username || 'me').toLowerCase();
-    const theirId = String(activeContact?.id || activeContact?.username || 'them').toLowerCase();
+    const myKey = String(myUser?.username || currentUser?.username || myUser?.id || currentUser?.id || 'me').toLowerCase().trim();
+    const otherKey = String(contactUser?.username || activeContact?.username || contactUser?.id || activeContact?.id || 'them').toLowerCase().trim();
     const isGroup = Boolean(activeContact?.isGroup || activeContact?.member_ids || activeContact?.id?.toString().startsWith('group-'));
 
     const channelName = isGroup
       ? `rt_chat_${activeContact?.id || 'group-all-branches-ssr'}`
-      : `rt_chat_${[myId, theirId].sort().join('_')}`;
+      : `rt_chat_${[myKey, otherKey].sort().join('_')}`;
 
     const channel = supabase
       .channel(channelName, {
@@ -417,7 +449,7 @@ export default function TicketVerificationChatModal({
       realtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [isOpen, activeContact, currentUser]);
+  }, [isOpen, activeContact, currentUser, myUser, contactUser]);
 
   useEffect(() => {
     scrollToBottom();
@@ -512,54 +544,93 @@ export default function TicketVerificationChatModal({
     }
   };
 
-  // Compute 1-on-1 Direct Room ID between current user and active contact
-  const directRoomId = useMemo(() => {
-    if (isGroupChat || !activeContact) return null;
-    const myId = String(currentUser?.id || currentUser?.username || '').trim().toLowerCase();
-    const otherId = String(activeContact?.id || activeContact?.username || '').trim().toLowerCase();
-    return `dm_${[myId, otherId].sort().join('__')}`;
-  }, [isGroupChat, activeContact, currentUser]);
-
   // Filter displayed messages for Group Rooms vs 1-on-1 Direct Chats
   const displayedMessages = useMemo(() => {
     if (!activeContact) return messages;
 
     if (isGroupChat) {
-      return messages.filter(m => 
-        m.ocr_data?.roomId === activeContact.id ||
-        (activeContact.id === 'group-all-branches-ssr' && (!m.ocr_data?.roomId || m.ocr_data?.isGroup)) ||
-        (m.sub_office === activeContact.sub_office && m.ocr_data?.isGroup)
-      );
+      const gId = String(activeContact.id || '').toLowerCase().trim();
+      const gSubOffice = String(activeContact.sub_office || '').toLowerCase().trim();
+
+      return messages.filter(m => {
+        const mRoom = String(m.room_id || m.ocr_data?.roomId || '').toLowerCase().trim();
+        if (mRoom === gId) return true;
+        if (gId === 'group-all-branches-ssr') {
+          return m.ocr_data?.isGroup || mRoom.startsWith('group-') || (!m.recipient_id && !m.ocr_data?.recipient_id && !mRoom.startsWith('dm_'));
+        }
+        if (gSubOffice && gSubOffice !== 'all') {
+          const mSub = String(m.sub_office || '').toLowerCase().trim();
+          return mSub === gSubOffice && (m.ocr_data?.isGroup || mRoom.startsWith('group-'));
+        }
+        return false;
+      });
     }
 
-    // 1-on-1 Direct Communication filtering
-    const myId = String(currentUser?.id || currentUser?.username || '').trim().toLowerCase();
-    const myName = String(currentUser?.full_name || currentUser?.username || '').trim().toLowerCase();
-    const otherId = String(activeContact.id || activeContact.username || '').trim().toLowerCase();
-    const otherName = String(activeContact.full_name || activeContact.username || '').trim().toLowerCase();
+    // Comprehensive identifier sets for Current User ("Me") and Active Contact ("Them")
+    const myIdentifiers = new Set(
+      [
+        currentUser?.id,
+        currentUser?.username,
+        currentUser?.full_name,
+        currentUser?.fullName,
+        myUser?.id,
+        myUser?.username,
+        myUser?.full_name
+      ]
+        .filter(Boolean)
+        .map(s => String(s).toLowerCase().trim())
+    );
+
+    const otherIdentifiers = new Set(
+      [
+        activeContact?.id,
+        activeContact?.username,
+        activeContact?.full_name,
+        activeContact?.fullName,
+        activeContact?.name,
+        contactUser?.id,
+        contactUser?.username,
+        contactUser?.full_name
+      ]
+        .filter(Boolean)
+        .map(s => String(s).toLowerCase().trim())
+    );
 
     return messages.filter(m => {
+      const sId = String(m.sender_id || '').toLowerCase().trim();
+      const sUsername = String(m.sender_username || '').toLowerCase().trim();
+      const sName = String(m.sender_name || '').toLowerCase().trim();
+
+      const rId = String(m.recipient_id || m.ocr_data?.recipient_id || '').toLowerCase().trim();
+      const rName = String(m.recipient_name || m.ocr_data?.recipient_name || '').toLowerCase().trim();
+
+      const mRoom = String(m.room_id || m.ocr_data?.roomId || '').toLowerCase().trim();
+
+      const isSenderMe = (sId && myIdentifiers.has(sId)) || (sUsername && myIdentifiers.has(sUsername)) || (sName && myIdentifiers.has(sName));
+      const isSenderThem = (sId && otherIdentifiers.has(sId)) || (sUsername && otherIdentifiers.has(sUsername)) || (sName && otherIdentifiers.has(sName));
+
+      const isRecipientMe = (rId && myIdentifiers.has(rId)) || (rName && myIdentifiers.has(rName));
+      const isRecipientThem = (rId && otherIdentifiers.has(rId)) || (rName && otherIdentifiers.has(rName));
+
       // 1. Direct room ID match
-      if (m.ocr_data?.roomId === directRoomId) return true;
+      if (directRoomId && mRoom === directRoomId.toLowerCase().trim()) {
+        return true;
+      }
 
-      // 2. Sender and Recipient pair match
-      const sId = String(m.sender_id || '').toLowerCase();
-      const sName = String(m.sender_name || '').toLowerCase();
-      const rId = String(m.recipient_id || m.ocr_data?.recipient_id || '').toLowerCase();
-      const rName = String(m.recipient_name || m.ocr_data?.recipient_name || '').toLowerCase();
+      // 2. Direct sender-recipient conversation pair match
+      if (isSenderMe && isRecipientThem) return true;
+      if (isSenderThem && isRecipientMe) return true;
 
-      if ((sId === myId && rId === otherId) || (sId === otherId && rId === myId)) return true;
-      if ((sName === myName && rName === otherName) || (sName === otherName && rName === myName)) return true;
-
-      // 3. Fallback for legacy direct exchanges
-      if (!m.ocr_data?.isGroup && !m.ocr_data?.roomId?.startsWith('group-')) {
-        if ((sId === otherId || sName === otherName) && (!rId || rId === myId)) return true;
-        if ((sId === myId || sName === myName) && (rId === otherId || rName === otherName)) return true;
+      // 3. Fallback for 1-on-1 messages where recipient was not explicitly indexed
+      if (!m.ocr_data?.isGroup && !mRoom.startsWith('group-')) {
+        if (isSenderThem && (!rId && !rName)) return true;
+        if (isSenderMe && isRecipientThem) return true;
+        if (isSenderThem && (isRecipientMe || !rId)) return true;
       }
 
       return false;
     });
-  }, [messages, isGroupChat, activeContact, directRoomId, currentUser]);
+  }, [messages, isGroupChat, activeContact, directRoomId, currentUser, myUser, contactUser]);
 
   // Broadcast seen status when reading conversation
   useEffect(() => {
@@ -585,8 +656,8 @@ export default function TicketVerificationChatModal({
     setIsSending(true);
 
     const roomId = isGroupChat ? activeContact.id : directRoomId;
-    const recipientId = isGroupChat ? null : (activeContact?.id || activeContact?.username || null);
-    const recipientName = isGroupChat ? null : (activeContact?.full_name || activeContact?.username || null);
+    const recipientId = isGroupChat ? null : (contactUser?.id || activeContact?.id || activeContact?.username || null);
+    const recipientName = isGroupChat ? null : (contactUser?.full_name || activeContact?.full_name || activeContact?.name || activeContact?.username || null);
 
     const newMsg = {
       id: crypto.randomUUID(),

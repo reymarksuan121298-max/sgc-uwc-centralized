@@ -380,32 +380,27 @@ export default function Header({
 
         const map = {};
         data.forEach((msg) => {
-          const sId = String(msg.sender_id || '').toLowerCase();
-          const sName = String(msg.sender_name || '').toLowerCase();
-          const rId = String(msg.recipient_id || msg.ocr_data?.recipient_id || '').toLowerCase();
-          const rName = String(msg.recipient_name || msg.ocr_data?.recipient_name || '').toLowerCase();
-          const roomId = msg.room_id || msg.ocr_data?.roomId;
+          const sId = String(msg.sender_id || '').toLowerCase().trim();
+          const sUsername = String(msg.sender_username || '').toLowerCase().trim();
+          const sName = String(msg.sender_name || '').toLowerCase().trim();
+          const rId = String(msg.recipient_id || msg.ocr_data?.recipient_id || '').toLowerCase().trim();
+          const rName = String(msg.recipient_name || msg.ocr_data?.recipient_name || '').toLowerCase().trim();
+          const roomId = String(msg.room_id || msg.ocr_data?.roomId || '').toLowerCase().trim();
           const isGroup = msg.ocr_data?.isGroup;
 
-          if (isGroup || (roomId && roomId.startsWith('group-'))) {
+          if (isGroup || roomId.startsWith('group-')) {
             const gKey = roomId || 'group-all-branches-ssr';
             if (!map[gKey]) {
               map[gKey] = msg;
             }
           } else {
-            // Direct 1-on-1
-            let partnerId = null;
-            let partnerName = null;
-            if (sId === myId || sName === myName) {
-              partnerId = rId;
-              partnerName = rName;
-            } else {
-              partnerId = sId;
-              partnerName = sName;
-            }
+            // Direct 1-on-1: determine conversation partner
+            const isSenderMe = sId === myId || sUsername === myId || sName === myName;
+            const partnerKeys = isSenderMe ? [rId, rName] : [sId, sUsername, sName];
 
-            if (partnerId && !map[partnerId]) map[partnerId] = msg;
-            if (partnerName && !map[partnerName]) map[partnerName] = msg;
+            partnerKeys.filter(Boolean).forEach((key) => {
+              if (!map[key]) map[key] = msg;
+            });
             if (roomId && !map[roomId]) map[roomId] = msg;
           }
         });
