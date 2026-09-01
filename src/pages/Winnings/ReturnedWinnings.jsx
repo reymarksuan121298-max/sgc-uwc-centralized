@@ -210,6 +210,14 @@ export default function ReturnedWinnings({
     return (filteredData || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
   }, [filteredData]);
 
+  const displayTotalWin = useMemo(() => {
+    return (displayItems || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
+  }, [displayItems]);
+
+  const displayTotalBet = useMemo(() => {
+    return (displayItems || []).reduce((sum, item) => sum + parseFloat(item.betAmount ?? 0), 0);
+  }, [displayItems]);
+
   // Compute clean Remittance Serial Number dynamically from active unremitted tickets (e.g. MAN-260901-892301)
   const batchSerialNumber = useMemo(() => {
     const subOffice = currentUser?.sub_office && currentUser.sub_office !== 'All'
@@ -348,7 +356,7 @@ export default function ReturnedWinnings({
 
       {/* MAIN DATA TABLE CONTAINER */}
       <div className="bg-white border border-slate-300 shadow-xs overflow-hidden w-full rounded-xl">
-        <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center bg-[#002B66]/5">
+        <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center bg-[#002B66]/5 flex-wrap gap-2">
           <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
             <h3 className="font-extrabold text-[#002B66] text-xs uppercase tracking-wider truncate">
               Returned Winnings Summary
@@ -358,8 +366,12 @@ export default function ReturnedWinnings({
               <span>{batchSerialNumber}</span>
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold bg-white text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono shadow-2xs shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300/80 px-2.5 py-1 rounded-md font-mono shadow-2xs shrink-0 flex items-center gap-1.5">
+              <span className="text-[9px] font-extrabold text-emerald-600 uppercase">Total Win:</span>
+              <span className="font-black text-emerald-700">₱{displayTotalWin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </span>
+            <span className="text-[10px] font-bold bg-white text-slate-600 px-2 py-1 rounded-md border border-slate-200 font-mono shadow-2xs shrink-0">
               {displayItems.length} Record{displayItems.length === 1 ? '' : 's'}
             </span>
           </div>
@@ -507,11 +519,35 @@ export default function ReturnedWinnings({
                 <tr><td colSpan="10" className="px-3 py-12 text-center text-slate-500 font-semibold uppercase text-xs">No matching returned tickets found in this view.</td></tr>
               )}
             </tbody>
+            {displayItems.length > 0 && (
+              <tfoot className="bg-[#002B66]/5 border-t-2 border-slate-300 font-mono text-[11px] font-bold">
+                <tr>
+                  <td colSpan={5} className="px-3.5 py-2.5 text-right text-slate-700 uppercase font-black font-sans border-r border-slate-200">
+                    Total ({displayItems.length} Record{displayItems.length === 1 ? '' : 's'}):
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-black text-slate-800 border-r border-slate-200">
+                    ₱{displayTotalBet.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-black text-emerald-700 border-r border-slate-200 text-xs">
+                    ₱{displayTotalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td colSpan={3} className="px-3.5 py-2.5 text-slate-500 font-sans text-[10px]">
+                    Total Returned Win Liability
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
         {/* MOBILE VIEW: Card Stack format */}
         <div className="block md:hidden p-3 space-y-3 bg-slate-50">
+          {displayItems.length > 0 && (
+            <div className="bg-white border border-emerald-200 p-3 rounded-xl shadow-2xs flex items-center justify-between font-mono">
+              <span className="text-xs font-bold text-slate-500 uppercase font-sans">Total Win Amount:</span>
+              <span className="text-sm font-black text-emerald-700">₱{displayTotalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
           {Object.keys(activeGroupedData).length > 0 ? (
             Object.entries(activeGroupedData).map(([username, items]) => {
               const unremittedInGroup = items.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
