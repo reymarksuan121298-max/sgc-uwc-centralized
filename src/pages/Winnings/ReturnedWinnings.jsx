@@ -532,7 +532,7 @@ export default function ReturnedWinnings({
                     ₱{displayTotalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </td>
                   <td colSpan={3} className="px-3.5 py-2.5 text-slate-500 font-sans text-[10px]">
-                    Total Returned Win Liability
+                    Total Returned Winnings
                   </td>
                 </tr>
               </tfoot>
