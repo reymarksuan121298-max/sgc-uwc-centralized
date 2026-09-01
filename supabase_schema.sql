@@ -210,7 +210,56 @@ CREATE POLICY "Allow all access to remittance_receipts for anon/authenticated" O
 CREATE POLICY "Allow all access to system_settings for anon/authenticated" ON public.system_settings FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to audit_logs for anon/authenticated" ON public.audit_logs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
+-- ==============================================================================
+-- 9. SEED DATA: DEFAULT SUB-OFFICES (`sub_offices`)
+-- ==============================================================================
+INSERT INTO public.sub_offices (id, name, location, head_name, contact_number, assigned_endpoint_id, status)
+VALUES
+    ('so-default-0', 'All', 'Global Central Operations HQ', 'Central Admin', '0917-000-0000', 'cfg-default-1', 'ACTIVE'),
+    ('so-default-1', 'Mandaue Central', 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City', 'Main HQ Supervisor', '0917-123-4567', 'cfg-default-1', 'ACTIVE'),
+    ('so-default-2', 'Tipolo', 'Tipolo Branch, Mandaue City', 'Tipolo Operations Head', '0917-234-5678', NULL, 'ACTIVE'),
+    ('so-default-3', 'Canduman', 'Canduman Branch, Mandaue City', 'Canduman Operations Head', '0917-345-6789', NULL, 'ACTIVE'),
+    ('so-default-4', 'Ibabao-Estancia', 'Ibabao-Estancia Branch, Mandaue City', 'Ibabao Operations Head', '0917-456-7890', NULL, 'ACTIVE'),
+    ('so-default-5', 'Pagsabungan', 'Pagsabungan Branch, Mandaue City', 'Pagsabungan Operations Head', '0917-567-8901', NULL, 'ACTIVE'),
+    ('so-default-6', 'Centro', 'Centro Branch, Mandaue City', 'Centro Operations Head', '0917-678-9012', NULL, 'ACTIVE')
+ON CONFLICT (name) DO UPDATE 
+SET 
+    location = EXCLUDED.location,
+    head_name = EXCLUDED.head_name,
+    contact_number = EXCLUDED.contact_number,
+    status = EXCLUDED.status;
 
+-- ==============================================================================
+-- 10. SEED DATA: DEFAULT SYSTEM USERS (`app_users`)
+-- ==============================================================================
+INSERT INTO public.app_users (id, username, password, full_name, role, sub_office, is_active)
+VALUES
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b999c', 'superadmin', 'admin123*', 'Master Super Administrator', 'Super Admin', 'All', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b999d', 'admin', 'admin123', 'System Administrator', 'Admin', 'All', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b999e', 'staff', 'staff123', 'Mandaue Main Staff', 'Staff', 'All', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b999f', 'ssr', 'ssr123', 'Special Sales Representative', 'SSR', 'All', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b9991', 'sub_tipolo', 'tipolo123', 'Tipolo Sub-Office Head', 'Sub-Office Head', 'Tipolo', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b9992', 'sub_canduman', 'canduman123', 'Canduman Sub-Office Head', 'Sub-Office Head', 'Canduman', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b9993', 'sub_ibabao', 'ibabao123', 'Ibabao-Estancia Sub-Office Head', 'Sub-Office Head', 'Ibabao-Estancia', TRUE),
+    ('91d76a31-4ada-4b8e-84aa-9c90b41b9994', 'sub_pagsabungan', 'pagsabungan123', 'Pagsabungan Sub-Office Head', 'Sub-Office Head', 'Pagsabungan', TRUE)
+ON CONFLICT (username) DO UPDATE 
+SET 
+    password = EXCLUDED.password,
+    full_name = EXCLUDED.full_name,
+    role = EXCLUDED.role,
+    sub_office = EXCLUDED.sub_office,
+    is_active = EXCLUDED.is_active;
+
+-- ==============================================================================
+-- 10. SEED DATA: DEFAULT SYSTEM CONFIGURATION (`system_settings`)
+-- ==============================================================================
+INSERT INTO public.system_settings (key, value, description)
+VALUES 
+    ('commission_rates', '{"admin": 50, "agent": 30, "staff": 10, "collector": 10}'::jsonb, 'Standard 4-Tier Commission Percentage Distribution'),
+    ('sub_offices', '["Tipolo", "Canduman", "Ibabao-Estancia", "Pagsabungan", "Centro"]'::jsonb, 'Configured Sub-Office Branches'),
+    ('api_endpoints', '[{"id": "cfg-default-1", "name": "Mandaue Central", "sub_office": "All", "baseUrl": "https://stl-mandaue-api.com", "token": "Bearer 2860|OCyU72t1DzxdBeSjj3izVKCIcCwHkqNbwjRlxHp5", "isClaim": 0, "is_active": true, "is_default": true}]'::jsonb, 'Central API Connection Settings')
+ON CONFLICT (key) DO UPDATE 
+SET value = EXCLUDED.value;
 
 
 
@@ -432,27 +481,3 @@ END $$;
 
 
 
-
--- ==============================================================================
--- LIVE DATA BACKUP (returned_winnings & settlement_payments)
--- ==============================================================================
-
-INSERT INTO public.returned_winnings ("id", "transactionId", "fullName", "betNo", "betCode", "betAmount", "winAmount", "drawTime", "created_at", "apiId", "username", "address", "location", "outlet", "supervisor", "tellerId", "drawId", "rambolito", "type", "status", "isParent", "isSoldOut", "isLowWin", "isVoid", "isClaim", "voidDate", "isVoidByStaff", "reprintDate", "claimDate", "isOffline", "CombiNo", "SoldOutCombiNo", "drawDate", "updated_at", "isUnderSettlement", "settlementTerms", "totalInstallmentAmount", "settlementStatus") VALUES
-    ('cc3a446f-941c-4b9a-9d5f-06404a11db96', '081626-OIIRA0CN', 'BARDAGU, DAPHNIE', '784', 'TS3', 10, 5000, '17', '2026-08-22T15:34:14.757229+00:00', 45210, 'spvr-carl', 'IBABAO-ESTANCIA, MANDAUE CITY', 'MANDAUE CITY', 'BARDAGU, DAPHNIE', NULL, 263, 17, 0, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', NULL, NULL, '2026-08-16T00:00:00+00:00', '2026-08-22T15:34:14.757229+00:00', true, '{"reason":"Wala na scan ang cesibo, paso na at hindi na makita.","installments":[{"id":1,"dueDate":"2026-08-26","amountDue":"500.00","status":"PAID, QUENNIE LIM"},{"id":2,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":3,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":4,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":5,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":6,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":7,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":8,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":9,"dueDate":"","amountDue":"500.00","status":"Pending"},{"id":10,"dueDate":"","amountDue":"500.00","status":"Pending"}]}', 5000, 'PARTIAL'),
-    ('751add20-2587-4715-bb79-08d169793a65', '081726-OUA4KY2Z', 'LESLIE S. DESABILLE', '058', 'RS3', 10, 833, '21', '2026-08-29T04:31:12.379103+00:00', 200564, 'spvr-molly', 'KABILDUHAN, LOOC', 'MANTUYONG', 'LESLIE S. DESABILLE', NULL, 335, 25, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, '2026-08-17T18:16:00+00:00', NULL, '0', ''',058,,508,,085,,805,,580,,850,''', NULL, '2026-08-17T00:00:00+00:00', '2026-08-29T04:31:12.379103+00:00', false, NULL, NULL, 'PENDING'),
-    ('148fe49b-f898-4612-b557-1d0bde143b57', '082526-IOUDQIGF', 'MA. ARJEN COMAHIG', '941', 'RS3', 10, 833, '21', '2026-08-29T04:32:15.450641+00:00', 1064642, 'spvr-michael', 'SAN JOSE 1, LABOGON MANDAUE CITY', 'SAN JOSE 1, LABOGON MANDAUE CITY', 'MA. ARJEN COMAHIG', NULL, 306, 73, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',941,,491,,914,,194,,419,,149,''', NULL, '2026-08-25T00:00:00+00:00', '2026-08-29T04:32:15.450641+00:00', false, NULL, NULL, 'PENDING'),
-    ('dfae4f08-9e9a-4d46-9d25-f1ab4ca5c7d7', '082426-UOEP8GRV', 'MARY GRACE SUPERAL', '543', 'RS3', 10, 833, '21', '2026-08-30T03:52:37.449239+00:00', 914400, 'spvr-arlfred', 'CAMBARO, MANDAUE CITY', 'MANDAUE CITY', 'MARY GRACE, SUPERAL', NULL, 119, 67, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',543,,453,,534,,354,,435,,345,''', NULL, '2026-08-24T00:00:00+00:00', '2026-08-30T03:52:37.449239+00:00', false, NULL, NULL, 'PENDING'),
-    ('2d1e0f57-7f15-4609-b0c9-7e082a3a75f9', '082126-UAI30S5S', 'UMBAY, RICKA CHRISTELLE', '423', 'TS3', 10, 5000, '17', '2026-08-29T06:03:40.260484+00:00', 629790, 'spvr-eya', 'CANDUMAN, MANDAUE CITY', 'MANDAUE CITY', 'UMBAY, RICKA CHRISTELLE', NULL, 104, 47, 0, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', NULL, NULL, '2026-08-21T00:00:00+00:00', '2026-08-29T06:03:40.260484+00:00', true, '{"reason":"The agent did not follow the standard ticket verification policy; the claim was submitted to the office without the original physical receipt, preventing system scanning.","frequency":"weekly","installmentsCount":25,"installments":[{"id":1,"dueDate":"2026-09-05","amountDue":"200.00","status":"Pending"},{"id":2,"dueDate":"2026-09-12","amountDue":"200.00","status":"Pending"},{"id":3,"dueDate":"2026-09-19","amountDue":"200.00","status":"Pending"},{"id":4,"dueDate":"2026-09-26","amountDue":"200.00","status":"Pending"},{"id":5,"dueDate":"2026-10-03","amountDue":"200.00","status":"Pending"},{"id":6,"dueDate":"2026-10-10","amountDue":"200.00","status":"Pending"},{"id":7,"dueDate":"2026-10-17","amountDue":"200.00","status":"Pending"},{"id":8,"dueDate":"2026-10-24","amountDue":"200.00","status":"Pending"},{"id":9,"dueDate":"2026-10-31","amountDue":"200.00","status":"Pending"},{"id":10,"dueDate":"2026-11-07","amountDue":"200.00","status":"Pending"},{"id":11,"dueDate":"2026-11-14","amountDue":"200.00","status":"Pending"},{"id":12,"dueDate":"2026-11-21","amountDue":"200.00","status":"Pending"},{"id":13,"dueDate":"2026-11-28","amountDue":"200.00","status":"Pending"},{"id":14,"dueDate":"2026-12-05","amountDue":"200.00","status":"Pending"},{"id":15,"dueDate":"2026-12-12","amountDue":"200.00","status":"Pending"},{"id":16,"dueDate":"2026-12-19","amountDue":"200.00","status":"Pending"},{"id":17,"dueDate":"2026-12-26","amountDue":"200.00","status":"Pending"},{"id":18,"dueDate":"2027-01-02","amountDue":"200.00","status":"Pending"},{"id":19,"dueDate":"2027-01-09","amountDue":"200.00","status":"Pending"},{"id":20,"dueDate":"2027-01-16","amountDue":"200.00","status":"Pending"},{"id":21,"dueDate":"2027-01-23","amountDue":"200.00","status":"Pending"},{"id":22,"dueDate":"2027-01-30","amountDue":"200.00","status":"Pending"},{"id":23,"dueDate":"2027-02-06","amountDue":"200.00","status":"Pending"},{"id":24,"dueDate":"2027-02-13","amountDue":"200.00","status":"Pending"},{"id":25,"dueDate":"2027-02-20","amountDue":"200.00","status":"Pending"}]}', 5000, 'PARTIAL'),
-    ('bdb1fae6-9aed-4192-8cdd-eb9ae01aa1c5', '082926-UOUEZOHE', 'DORIAS, JANNET', '369', 'RS3', 10, 833, '14', '2026-08-31T05:11:51.934117+00:00', 1425653, 'spvr-joel', 'MANDAUE CITY', 'MANDAUE CITY', 'DORIAS, JANNET', NULL, 144, 93, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',369,,639,,396,,936,,693,,963,''', NULL, '2026-08-29T00:00:00+00:00', '2026-08-31T05:11:51.934117+00:00', false, NULL, NULL, 'PENDING'),
-    ('7b207eac-a455-44ed-8383-57b989817d64', '082826-OOELQM78', 'MARIA CORAZON TORENO', '830', 'RS3', 12, 1000, '17', '2026-08-31T05:12:20.216776+00:00', 1355623, 'spvr-joel', 'MANDAUE', 'MANDAUE', 'MARIA CORAZON TORENO', NULL, 323, 89, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',830,,380,,803,,083,,308,,038,''', NULL, '2026-08-28T00:00:00+00:00', '2026-08-31T05:12:20.216776+00:00', false, NULL, NULL, 'PENDING'),
-    ('c5745097-6caa-4968-b13b-de56840ac7bd', '082726-UIATJXWW', 'OMANDAC, ARSELA', '185', 'TS3', 25, 12500, '21', '2026-08-31T05:31:55.538992+00:00', 1294208, 'spvr-michael', 'PAKNAAN, MANDAUE CITY', 'MANDAUE CITY', 'OMANDAC, ARSELA', NULL, 243, 85, 0, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', NULL, NULL, '2026-08-27T00:00:00+00:00', '2026-08-31T05:31:55.538992+00:00', false, NULL, NULL, 'PENDING'),
-    ('3cb2e15e-cf8a-4c5a-a0d0-84cf25bd8972', '082726-AIEDYHUM', 'AMANTE, JANELY', '518', 'RS3', 10, 833, '21', '2026-08-31T05:31:59.205603+00:00', 1288026, 'spvr-michael', 'LABOGON, MANDAUE CITY', 'MANDAUE CITY', 'AMANTE, JANELY', NULL, 227, 85, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',518,,158,,581,,851,,185,,815,''', NULL, '2026-08-27T00:00:00+00:00', '2026-08-31T05:31:59.205603+00:00', false, NULL, NULL, 'PENDING'),
-    ('1fa054ee-c400-4c8b-ac7c-dd71823498cb', '081626-OIAC4DXG', 'HERRERO, JOCELYN', '569', 'RS3', 10, 833, '14', '2026-08-21T15:51:38.96409+00:00', 38812, 'spvr-jed', 'PAGSABUNGAN, MANDAUE CITY', 'MANDAUE CITY', 'HERRERO, JOCELYN', 28, 201, 15, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',569,,659,,596,,956,,695,,965,''', NULL, '2026-08-16T00:00:00+00:00', '2026-08-21T15:51:38.96409+00:00', false, NULL, NULL, 'PENDING'),
-    ('d5cdc6fc-48ae-4225-9b96-f41a15113027', '082126-AIEUK6TP', 'JUDY ANN FUENTES', '324', 'RS3', 50, 4167, '17', '2026-08-23T04:29:47.501267+00:00', 633479, 'spvr-jason', 'TIPOLO, MANDAUE CITY', 'MANDAUE CITY', 'JUDY ANN FUENTES', NULL, 88, 47, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',324,,234,,342,,432,,243,,423,''', NULL, '2026-08-21T00:00:00+00:00', '2026-08-23T04:29:47.501267+00:00', false, NULL, NULL, 'PENDING'),
-    ('fc9fd2d4-8511-44f8-a1f0-43ab1062b969', '082026-UAU0OGUY', 'GARAN, ANALIZA', '792', 'RS3', 10, 833, '21', '2026-08-23T03:57:22.402103+00:00', 545311, 'spvr-roel', 'CANDUMAN, MANDAUE CITY', 'MANDAUE CITY', 'GARAN, ANALIZA', NULL, 46, 43, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',792,,972,,729,,279,,927,,297,''', NULL, '2026-08-20T00:00:00+00:00', '2026-08-23T03:57:22.402103+00:00', false, NULL, NULL, 'PENDING'),
-    ('ca2aad6c-2934-4d2e-b7e3-78d9beb35351', '082026-UOIMITEJ', 'FLORES, NINAMARIE', '972', 'RS3', 5, 417, '21', '2026-08-23T05:10:24.30911+00:00', 541999, 'spvr-joel', 'MANDAUE CITY', 'MANDAUE CITY', 'FLORES, NINAMARIE', NULL, 188, 43, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',972,,792,,927,,297,,729,,279,''', NULL, '2026-08-20T00:00:00+00:00', '2026-08-23T05:10:24.30911+00:00', false, NULL, NULL, 'PENDING'),
-    ('fadd887e-fde4-46a5-a24a-f0095d60ce8a', '081726-EOELNEFJ', 'BACASON, BELLA', '850', 'RS3', 10, 833, '21', '2026-08-24T05:01:42.674068+00:00', 219081, 'spvr-eya', 'CANDUMAN, MANDAUE CITY', 'MANDAUE CITY', 'BACASON, BELLA', NULL, 53, 25, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',850,,580,,805,,085,,508,,058,''', NULL, '2026-08-17T00:00:00+00:00', '2026-08-24T05:01:42.674068+00:00', false, NULL, NULL, 'PENDING'),
-    ('ce580207-f67e-4956-a538-076f932959e5', '082326-UEOB1FTA', 'SOON, CHERYL', '672', 'RS3', 5, 417, '14', '2026-08-25T04:27:06.603252+00:00', 787663, 'spvr-michael', 'PAKNAAN, MANDAUE CITY', 'MANDAUE CITY', 'SOON, CHERYL', NULL, 245, 57, 1, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', ''',672,,762,,627,,267,,726,,276,''', NULL, '2026-08-23T00:00:00+00:00', '2026-08-25T04:27:06.603252+00:00', false, NULL, NULL, 'PENDING'),
-    ('39a92145-1963-4d69-a314-1e46f39e6b10', '082426-AIEGUYQC', 'ZENAIDA BOYONAS', '435', 'TS3', 5, 2500, '21', '2026-08-27T04:13:52.46916+00:00', 957564, 'spvr-roel', 'LABOGON, MANDAUE CITY', 'MANDUE CITY', 'ZENAIDA BOYONAS', NULL, 226, 67, 0, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', NULL, NULL, '2026-08-24T00:00:00+00:00', '2026-08-27T04:13:52.46916+00:00', false, NULL, NULL, 'PENDING'),
-    ('c58a5842-f04c-4c1e-98a6-813a6f4d71b7', '082526-OUAIIOFW', 'ROSEMARIE SANORIA', '726', 'TS3', 3, 1500, '17', '2026-08-28T05:31:51.456697+00:00', 1039929, 'spvr-arlfred', 'LOOC MANDAUE CITY', 'MANDAUE CITY', 'ROSEMARIE SANORIA', NULL, 196, 71, 0, 0, 1, '1', '0', '0', 0, 0, NULL, 0, NULL, NULL, '0', NULL, NULL, '2026-08-25T00:00:00+00:00', '2026-08-28T05:31:51.456697+00:00', false, NULL, NULL, 'PENDING')
-ON CONFLICT ("transactionId") DO NOTHING;
