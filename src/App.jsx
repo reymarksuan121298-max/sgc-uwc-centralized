@@ -11,7 +11,6 @@ import TicketQrModal from './components/winnings/TicketQrModal';
 import TicketVerificationChatModal from './components/chat/TicketVerificationChatModal';
 import TicketVerificationBotModal from './components/chat/TicketVerificationBotModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
-import IncomingCallBanner from './components/chat/IncomingCallBanner';
 import { notificationService } from './services/notificationService';
 import { MessageSquare, Sparkles, Bot } from 'lucide-react';
 
@@ -97,7 +96,6 @@ export default function App() {
 
   // In-App Heads-Up Notification Banner Popup State (Mobile & Desktop)
   const [activeNotificationPopup, setActiveNotificationPopup] = useState(null);
-  const [globalIncomingCall, setGlobalIncomingCall] = useState(null);
   const activePopupTimerRef = useRef(null);
 
   const triggerNotificationPopup = useCallback((notif) => {
@@ -110,18 +108,6 @@ export default function App() {
     }, 6000);
   }, []);
 
-  const isCallNotification = (n) => {
-    if (!n) return false;
-    const act = String(n.action || '').toUpperCase();
-    const title = String(n.title || '').toUpperCase();
-    const msg = String(n.message || '').toUpperCase();
-    const target = String(n.targetType || '').toUpperCase();
-    return act.includes('VIDEO_CALL') ||
-      title.includes('VIDEO CALL') ||
-      msg.includes('VIDEO CALL') ||
-      target === 'VIDEO_CALL';
-  };
-
   // System Notifications State (Audit Trail & Activity Logs Only)
   const [notifications, setNotifications] = useState(() => {
     try {
@@ -129,7 +115,7 @@ export default function App() {
       const saved = localStorage.getItem(`stl_notifications_${userKey}`);
       if (!saved) return [];
       const parsed = JSON.parse(saved);
-      const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
+      const cleaned = parsed.filter(n => n.type !== 'chat');
       try {
         localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
       } catch { }
@@ -139,25 +125,11 @@ export default function App() {
     }
   });
 
-  // Auto-clean any stored notifications containing call logs
-  useEffect(() => {
-    try {
-      const userKey = currentUser?.id || currentUser?.username || 'default';
-      const saved = localStorage.getItem(`stl_notifications_${userKey}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const cleaned = parsed.filter(n => n.type !== 'chat' && !isCallNotification(n));
-        localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(cleaned));
-        setNotifications(cleaned);
-      }
-    } catch { }
-  }, [currentUser]);
-
   const appendNotification = useCallback((notif) => {
-    if (!notif || isCallNotification(notif)) return;
+    if (!notif) return;
     const userKey = currentUser?.id || currentUser?.username || 'default';
     setNotifications((prev) => {
-      const filtered = prev.filter(n => n.id !== notif.id && !isCallNotification(n));
+      const filtered = prev.filter(n => n.id !== notif.id);
       const updated = [notif, ...filtered].slice(0, 60);
       try {
         localStorage.setItem(`stl_notifications_${userKey}`, JSON.stringify(updated));
@@ -181,7 +153,7 @@ export default function App() {
     });
   }, [currentUser]);
 
-  const handleMarkAllNotificationsRead = useCallback(() => {
+  const handleMarkAllNotificationsRead = useCallback((notifId) => {
     const userKey = currentUser?.id || currentUser?.username || 'default';
     setNotifications((prev) => {
       const updated = prev.map(n => ({ ...n, read: true }));
@@ -202,137 +174,6 @@ export default function App() {
     } catch (e) {
       console.warn(e);
     }
-  }, [currentUser]);
-
-  // Global Realtime Direct Inbound Channel for Incoming Calls & Urgent Alerts
-  useEffect(() => {
-    if (!currentUser?.username) return;
-
-    const myUsername = String(currentUser.username || '').toLowerCase().trim();
-    const myId = String(currentUser.id || '').toLowerCase().trim();
-    const myName = String(currentUser.full_name || currentUser.fullName || '').toLowerCase().trim();
-    const myInboxChannelName = `user_inbox_${myUsername}`;
-
-    const checkIsForMe = (payload) => {
-      if (!payload) return false;
-      const callerUser = String(payload.callerUsername || '').toLowerCase().trim();
-      const callerId = String(payload.callerId || '').toLowerCase().trim();
-      if ((callerUser && callerUser === myUsername) || (callerId && callerId === myId)) return false;
-
-      const targetUser = String(payload.targetUsername || '').toLowerCase().trim();
-      const targetId = String(payload.targetId || '').toLowerCase().trim();
-      const targetName = String(payload.targetName || '').toLowerCase().trim();
-
-      return targetUser === myUsername ||
-        targetId === myId ||
-        targetUser === myId ||
-        targetId === myUsername ||
-        (targetName && (targetName === myName || targetName === myUsername));
-    };
-
-    // 1. Universal video signaling broadcast channel
-    const globalCallChannel = supabase.channel('global_video_signaling_room', {
-      config: { broadcast: { self: false } }
-    })
-      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
-        if (checkIsForMe(payload)) {
-          setGlobalIncomingCall(payload);
-        }
-      })
-      .on('broadcast', { event: 'video_call_end' }, ({ payload }) => {
-        if (!payload || checkIsForMe(payload)) {
-          setGlobalIncomingCall(null);
-        }
-      })
-      .on('broadcast', { event: 'video_call_reject' }, ({ payload }) => {
-        if (!payload || checkIsForMe(payload)) {
-          setGlobalIncomingCall(null);
-        }
-      })
-      .subscribe();
-
-    // 2. Personal inbox direct fallback channel
-    const inboxChannel = supabase.channel(myInboxChannelName, {
-      config: { broadcast: { self: false } }
-    })
-      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
-        if (payload && checkIsForMe(payload)) {
-          setGlobalIncomingCall(payload);
-        }
-      })
-      .on('broadcast', { event: 'video_call_end' }, () => {
-        setGlobalIncomingCall(null);
-      })
-      .on('broadcast', { event: 'video_call_reject' }, () => {
-        setGlobalIncomingCall(null);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(globalCallChannel);
-      supabase.removeChannel(inboxChannel);
-    };
-  }, [currentUser]);
-
-  const handleAcceptGlobalCall = useCallback((callInfo) => {
-    if (!callInfo) return;
-
-    if (callInfo.callerUsername) {
-      const callerInbox = supabase.channel(`user_inbox_${String(callInfo.callerUsername).toLowerCase().trim()}`);
-      callerInbox.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          callerInbox.send({
-            type: 'broadcast',
-            event: 'video_call_accept',
-            payload: {
-              responderUsername: currentUser?.username,
-              responderName: currentUser?.full_name || currentUser?.username
-            }
-          }).catch(() => { });
-        }
-      });
-    }
-
-    const callerContact = {
-      id: callInfo.callerId || callInfo.callerUsername,
-      username: callInfo.callerUsername,
-      name: callInfo.callerName,
-      full_name: callInfo.callerName,
-      sub_office: callInfo.callerSubOffice,
-      role: callInfo.callerRole,
-      autoStartCall: true,
-      initialCallOffer: callInfo
-    };
-
-    setOpenChats((prev) => {
-      const contactKey = callerContact.username || callerContact.id;
-      if (prev.some((c) => (c.username || c.id) === contactKey)) {
-        return prev.map((c) =>
-          (c.username || c.id) === contactKey
-            ? { ...c, autoStartCall: true, initialCallOffer: callInfo }
-            : c
-        );
-      }
-      return [callerContact, ...prev];
-    });
-
-    setGlobalIncomingCall(null);
-  }, [currentUser]);
-
-  const handleDeclineGlobalCall = useCallback((callInfo) => {
-    if (callInfo?.callerUsername) {
-      const callerInbox = supabase.channel(`user_inbox_${String(callInfo.callerUsername).toLowerCase().trim()}`);
-      callerInbox.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          callerInbox.send({
-            type: 'broadcast',
-            event: 'video_call_reject',
-            payload: { responderUsername: currentUser?.username }
-          }).catch(() => { });
-        }
-      });
-    }
-    setGlobalIncomingCall(null);
   }, [currentUser]);
 
   const isSuperAdmin = isSuperAdminRole(currentUser?.role);
@@ -1468,13 +1309,6 @@ export default function App() {
           onSyncLedger={fetchReturnedFromSupabase}
         />
       </MainLayout>
-
-      {/* Global Real-time Incoming Video Call Banner Alert */}
-      <IncomingCallBanner
-        incomingCall={globalIncomingCall}
-        onAccept={handleAcceptGlobalCall}
-        onDecline={handleDeclineGlobalCall}
-      />
 
       {/* Floating Docked Multi-Chat Messenger Windows (Side-by-Side) */}
       <div className="fixed bottom-0 right-3 sm:right-6 z-[9999] flex flex-row-reverse items-end gap-3 pointer-events-none max-w-[calc(100vw-24px)] overflow-x-auto pb-0">

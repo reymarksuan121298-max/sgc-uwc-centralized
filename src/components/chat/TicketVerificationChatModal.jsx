@@ -5,14 +5,12 @@ import {
   Trash2, UploadCloud, Clock, Search, 
   FileText, Sparkles, Copy, ThumbsUp, Smile,
   Minus, Maximize2, Minimize2, Users, ChevronDown,
-  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck,
-  Video, PhoneCall
+  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { canApproveDeletionRequests, isAdminRole, formatRoleName, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 import CreateGroupChatModal from './CreateGroupChatModal';
-import VideoCallWindow from './VideoCallWindow';
 
 // Deterministic Color Generator for User Initials per Sub-Office / Name
 const getAvatarColor = (name = '', subOffice = '') => {
@@ -79,11 +77,6 @@ export default function TicketVerificationChatModal({
   // Messenger Window Mode: 'docked' (floating bottom-right window) | 'expanded' (full modal) | 'minimized'
   const [windowMode, setWindowMode] = useState('docked');
 
-  // Live WebRTC Video Call States
-  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
-  const [videoCallState, setVideoCallState] = useState('idle'); // 'idle' | 'calling' | 'incoming' | 'connected'
-  const [incomingCallData, setIncomingCallData] = useState(null);
-
   // Custom persistent chat groups
   const [chatGroups, setChatGroups] = useState(() => {
     try {
@@ -124,13 +117,6 @@ export default function TicketVerificationChatModal({
     if (selectedContact) {
       setActiveContact(selectedContact);
       setChatCategory(selectedContact.isGroup ? 'groups' : 'direct');
-      if (selectedContact.autoStartCall) {
-        setIsVideoCallOpen(true);
-        setVideoCallState('connected');
-        if (selectedContact.initialCallOffer) {
-          setIncomingCallData(selectedContact.initialCallOffer);
-        }
-      }
     } else if (!activeContact) {
       // Default to general group channel if no contact provided
       setActiveContact({
@@ -416,30 +402,6 @@ export default function TicketVerificationChatModal({
             lastMsgId: payload.lastMsgId
           });
         }
-      })
-      // WebRTC Live Video Calling Realtime Signaling
-      .on('broadcast', { event: 'video_call_offer' }, ({ payload }) => {
-        if (payload && payload.callerId !== (currentUser?.id || currentUser?.username)) {
-          setIncomingCallData(payload);
-          setVideoCallState('incoming');
-          setIsVideoCallOpen(true);
-        }
-      })
-      .on('broadcast', { event: 'video_call_accept' }, () => {
-        setVideoCallState('connected');
-      })
-      .on('broadcast', { event: 'video_call_answer' }, () => {
-        setVideoCallState('connected');
-      })
-      .on('broadcast', { event: 'video_call_reject' }, () => {
-        setIsVideoCallOpen(false);
-        setVideoCallState('idle');
-        setIncomingCallData(null);
-      })
-      .on('broadcast', { event: 'video_call_end' }, () => {
-        setIsVideoCallOpen(false);
-        setVideoCallState('idle');
-        setIncomingCallData(null);
       })
       .subscribe();
 
@@ -788,44 +750,6 @@ export default function TicketVerificationChatModal({
     }
   };
 
-  // Video Call Action Handlers
-  const handleStartVideoCall = () => {
-    setIsVideoCallOpen(true);
-    setVideoCallState('calling');
-  };
-
-  const handleAcceptCall = () => {
-    setVideoCallState('connected');
-    sendBroadcastSafe(realtimeChannelRef.current, 'video_call_accept', {
-      responderId: currentUser?.id || currentUser?.username
-    });
-  };
-
-  const handleRejectCall = () => {
-    setIsVideoCallOpen(false);
-    setVideoCallState('idle');
-    setIncomingCallData(null);
-    sendBroadcastSafe(realtimeChannelRef.current, 'video_call_reject', {
-      responderId: currentUser?.id || currentUser?.username
-    });
-  };
-
-  const handleEndCall = (isLocalInitiator = true) => {
-    setIsVideoCallOpen(false);
-    setVideoCallState('idle');
-    setIncomingCallData(null);
-    if (isLocalInitiator) {
-      sendBroadcastSafe(realtimeChannelRef.current, 'video_call_end', {
-        senderId: currentUser?.id || currentUser?.username
-      });
-    }
-  };
-
-  const handleTicketSnapshotScanned = (scanRes, previewUrl) => {
-    if (previewUrl) setFilePreview(previewUrl);
-    if (scanRes) setOcrResult(scanRes);
-  };
-
   // Filtered contacts list
   const filteredUsers = useMemo(() => {
     let list = activeUsers.filter(u => {
@@ -992,16 +916,6 @@ export default function TicketVerificationChatModal({
               title="All Conversations / Contacts"
             >
               <Users size={16} />
-            </button>
-
-            {/* Start Live Video Call Button */}
-            <button
-              type="button"
-              onClick={handleStartVideoCall}
-              className="p-1 rounded-full hover:bg-blue-50 text-[#0084FF] hover:text-blue-700 transition-colors cursor-pointer"
-              title={`Start Video Call with ${chatHeaderName}`}
-            >
-              <Video size={16} />
             </button>
 
             <button
@@ -1499,20 +1413,6 @@ export default function TicketVerificationChatModal({
         currentUser={currentUser}
         activeUsers={activeUsers}
         onCreateGroup={handleCreateGroup}
-      />
-
-      {/* LIVE WEBRTC VIDEO CALL OVERLAY WINDOW */}
-      <VideoCallWindow
-        isOpen={isVideoCallOpen}
-        callState={videoCallState}
-        partner={incomingCallData ? { name: incomingCallData.callerName, username: incomingCallData.callerUsername, sub_office: incomingCallData.callerSubOffice } : activeContact}
-        currentUser={currentUser}
-        realtimeChannel={realtimeChannelRef.current}
-        initialOffer={incomingCallData || selectedContact?.initialCallOffer}
-        onEndCall={handleEndCall}
-        onAcceptCall={handleAcceptCall}
-        onRejectCall={handleRejectCall}
-        onTicketSnapshotScanned={handleTicketSnapshotScanned}
       />
     </div>
   );
