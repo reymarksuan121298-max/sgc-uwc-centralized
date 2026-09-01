@@ -57,13 +57,13 @@ export default function IncomingCallBanner({
   const initials = callerName.slice(0, 2).toUpperCase();
 
   return (
-    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl animate-in fade-in duration-300 pointer-events-auto">
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl animate-in fade-in duration-75 pointer-events-auto">
       {/* Dynamic ambient background glow */}
       <div className="absolute w-96 h-96 bg-emerald-500/15 rounded-full blur-3xl animate-pulse pointer-events-none" />
       <div className="absolute w-80 h-80 bg-blue-600/20 rounded-full blur-3xl -top-10 -left-10 pointer-events-none" />
 
       {/* Main Calling Card */}
-      <div className="relative bg-gradient-to-b from-[#001D47]/95 via-slate-900/98 to-slate-950 text-white border-2 border-emerald-500/60 rounded-3xl p-6 sm:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.8)] max-w-md w-full text-center space-y-6 animate-in zoom-in-95 duration-200">
+      <div className="relative bg-gradient-to-b from-[#001D47]/95 via-slate-900/98 to-slate-950 text-white border-2 border-emerald-500/60 rounded-3xl p-6 sm:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.8)] max-w-md w-full text-center space-y-6 animate-in zoom-in-95 duration-75">
         
         {/* Top Calling Badge */}
         <div className="inline-flex items-center gap-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-3.5 py-1 rounded-full text-xs font-black tracking-wide uppercase shadow-sm">

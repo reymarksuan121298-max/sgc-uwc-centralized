@@ -386,39 +386,49 @@ export default function VideoCallWindow({
           targetUsername: targetUsername,
           targetId: targetId,
           targetName: targetName,
-          sdp: offer
+          sdp: offer,
+          timestamp: Date.now()
         };
 
-        // 1. Universal video signaling channel (instant app-wide delivery)
-        const globalCallChannel = supabase.channel('global_video_signaling_room');
-        globalCallChannel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            globalCallChannel.send({
+        // Instant Multi-Channel Signaling Function (Dispatches simultaneously without waiting for handshake delay)
+        const dispatchInstantOffer = () => {
+          // 1. Shared direct room channel (if open)
+          if (realtimeChannel) {
+            sendSafeBroadcast(realtimeChannel, 'video_call_offer', callPayload);
+          }
+
+          // 2. Universal global signaling room (Immediate send on existing or newly registered channel)
+          try {
+            const activeGlobal = supabase.getChannels().find(c => c.topic === 'realtime:global_video_signaling_room') || supabase.channel('global_video_signaling_room');
+            activeGlobal.send({
               type: 'broadcast',
               event: 'video_call_offer',
               payload: callPayload
             }).catch(() => {});
-          }
-        });
+          } catch {}
 
-        // 2. Shared direct room broadcast
-        if (realtimeChannel) {
-          sendSafeBroadcast(realtimeChannel, 'video_call_offer', callPayload);
-        }
-
-        // 3. Direct broadcast to recipient's personal inbound channel
-        if (targetUsername) {
-          const directInboxChannel = supabase.channel(`user_inbox_${targetUsername}`);
-          directInboxChannel.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              directInboxChannel.send({
+          // 3. Callee direct personal inbox channel
+          if (targetUsername) {
+            try {
+              const activeInbox = supabase.getChannels().find(c => c.topic === `realtime:user_inbox_${targetUsername}`) || supabase.channel(`user_inbox_${targetUsername}`);
+              activeInbox.send({
                 type: 'broadcast',
                 event: 'video_call_offer',
                 payload: callPayload
               }).catch(() => {});
-            }
-          });
-        }
+            } catch {}
+          }
+        };
+
+        // Fire immediately (0ms) + rapid re-transmission burst (150ms, 400ms) to ensure zero delay
+        dispatchInstantOffer();
+        const t1 = setTimeout(dispatchInstantOffer, 150);
+        const t2 = setTimeout(dispatchInstantOffer, 400);
+
+        return () => {
+          clearTimeout(t1);
+          clearTimeout(t2);
+        };
       } catch (err) {
         console.error('Failed to create offer:', err);
       }
