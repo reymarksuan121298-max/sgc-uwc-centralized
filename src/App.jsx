@@ -789,31 +789,36 @@ export default function App() {
               const senderId = payload.new?.sender_id || null;
 
               // Dispatch Web Push / Browser notification + audio chime only for incoming messages from other users
-              notificationService.sendChatNotification({
-                senderName: sender,
-                senderId,
-                roomId,
-                subOffice,
-                message: msgSnippet,
-                currentUserId: currentUser?.id || currentUser?.username,
-                onClick: () => {
-                  if (roomId) {
-                    handleOpenTicketChat({
-                      id: roomId,
-                      name: sender,
-                      sub_office: subOffice,
-                      isGroup: String(roomId).startsWith('group-')
-                    });
-                  } else {
-                    handleOpenTicketChat({
-                      id: senderId || sender,
-                      username: sender,
-                      full_name: sender,
-                      sub_office: subOffice
-                    });
+              if (!isSSRRole(currentUser?.role)) {
+                notificationService.sendChatNotification({
+                  senderName: sender,
+                  senderId,
+                  roomId,
+                  subOffice,
+                  message: msgSnippet,
+                  currentUserId: currentUser?.id || currentUser?.username,
+                  onClick: () => {
+                    if (roomId) {
+                      handleOpenTicketChat({
+                        id: roomId,
+                        name: sender,
+                        sub_office: subOffice,
+                        isGroup: String(roomId).startsWith('group-')
+                      });
+                    } else {
+                      handleOpenTicketChat({
+                        id: senderId || sender,
+                        username: sender,
+                        full_name: sender,
+                        sub_office: subOffice
+                      });
+                    }
                   }
-                }
-              });
+                });
+              } else {
+                // On SSR side, play local audio chime only (no system web push popup)
+                notificationService.playTone('chat', currentUser?.id || currentUser?.username);
+              }
 
               if (openChats.length > 0) {
                 const userKey = currentUser?.id || currentUser?.username || 'user';
@@ -946,8 +951,8 @@ export default function App() {
           // 1. Append to notification center feed
           appendNotification(auditNotif);
 
-          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self)
-          if (!isMe) {
+          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self and not SSR)
+          if (!isMe && !isSSRRole(currentUser?.role)) {
             triggerNotificationPopup(auditNotif);
             notificationService.sendAuditNotification({
               actorUsername: actorName,

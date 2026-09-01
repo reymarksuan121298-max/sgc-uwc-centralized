@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
 import { scanReceiptProof } from '../../utils/receiptOcr';
+import { generateRemittanceSerial, getSubOfficeAbbreviation } from '../../utils/formatters';
 
 // Fast Date Formatter (cached, avoids heavy toLocaleString overhead on every render)
 const fastFormatTimestamp = (timestampStr) => {
@@ -289,37 +290,29 @@ function AttachWeeklyProofModal({
     });
   }, [targetBatch]);
 
-  // Dynamically compute SRN based on selected tickets
+  // Dynamically compute Remittance Serial Number based on sub-office (e.g. MANDAUE -> MAN) and actual current date + 6-digit code
   const effectiveBatchSrn = useMemo(() => {
+    const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
+      ? currentUser.sub_office
+      : (selectedItems[0]?.sub_office || targetBatch?.items[0]?.sub_office || 'Mandaue Central');
+    const dateObj = new Date(); // Actual current date
+
     if (!selectedItems || selectedItems.length === 0) {
-      return batchSerialNumber || 'SRN-NONE';
+      return generateRemittanceSerial(subOfficeName, '892301', dateObj);
     }
 
-    // 1. Single specific ticket selected -> generate SRN from its Trans ID
+    // 1. Single specific ticket selected -> generate format [SUB-OFFICE]-[YYMMDD]-[6-DIGIT CODE] (e.g. MAN-260901-892301)
     if (selectedItems.length === 1) {
       const single = selectedItems[0];
-      if (single.batch_serial_no) return single.batch_serial_no;
       const transId = single.transactionId || single.transId || single.id;
-      if (transId) {
-        return String(transId).startsWith('SRN-') ? String(transId) : `SRN-${transId}`;
-      }
+      return generateRemittanceSerial(subOfficeName, transId, dateObj);
     }
 
-    // 2. All target batch tickets selected and batchSerialNumber provided -> keep batch serial number
-    if (targetBatch?.items?.length > 0 && selectedItems.length === targetBatch.items.length && batchSerialNumber) {
-      return batchSerialNumber;
-    }
-
-    // 3. Specific subset of tickets selected -> derive SRN from the first selected ticket's transId
+    // 2. Multiple tickets selected -> derive 6-digit sequence from first selected ticket
     const firstSelected = selectedItems[0];
-    if (firstSelected?.batch_serial_no) return firstSelected.batch_serial_no;
     const firstTransId = firstSelected?.transactionId || firstSelected?.transId || firstSelected?.id;
-    if (firstTransId) {
-      return String(firstTransId).startsWith('SRN-') ? String(firstTransId) : `SRN-${firstTransId}`;
-    }
-
-    return batchSerialNumber || `SRN-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-RW01`;
-  }, [selectedItems, batchSerialNumber, targetBatch]);
+    return generateRemittanceSerial(subOfficeName, firstTransId, dateObj);
+  }, [selectedItems, targetBatch, currentUser]);
 
   // Fast filtered tickets list
   const filteredTickets = useMemo(() => {
@@ -379,7 +372,7 @@ function AttachWeeklyProofModal({
       return;
     }
 
-    const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn || `SRN-BATCH-${Date.now().toString().slice(-6)}`).toUpperCase();
+    const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn).toUpperCase();
     const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
       ? parseFloat(customRemittanceAmount) 
       : (parseFloat(selectedWinTotal || 0) || 0);
@@ -443,8 +436,8 @@ function AttachWeeklyProofModal({
         ? currentUser.sub_office 
         : (itemsToRemit[0]?.sub_office || 'Mandaue Central');
 
-      // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by dynamic SRN)
-      const primaryTransId = effectiveBatchSrn || (transIds.length === 1 ? (String(transIds[0]).startsWith('SRN-') ? transIds[0] : `SRN-${transIds[0]}`) : `SRN-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-RW01`);
+      // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by sub-office serial format)
+      const primaryTransId = effectiveBatchSrn || generateRemittanceSerial(subOfficeName, transIds[0] || '892301', receiptDate ? new Date(receiptDate) : new Date());
       const receiptPayload = {
         batch_serial_no: primaryTransId,
         sub_office: subOfficeName,
@@ -453,7 +446,7 @@ function AttachWeeklyProofModal({
         reference_number: effectiveReferenceNumber,
         sender_name: senderName.trim() || currentUser?.full_name || 'System Administrator',
         sender_mobile: senderMobile.trim() || null,
-        bank_name: paymentChannel === 'BANK_TRANSFER' ? bankName : null,
+        bank_name: (paymentChannel === 'BANK_TRANSFER' || paymentChannel === 'BANK_DEPOSIT') ? bankName : null,
         remittance_amount: parseFloat(effectiveAmount) || 0,
         receipt_date: receiptDate || new Date().toISOString().split('T')[0],
         receipt_image_url: uploadedReceiptUrl || previewImage || null,
@@ -553,7 +546,7 @@ function AttachWeeklyProofModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono">
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
                 <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">BATCH SERIAL NO.</span>
-                <span className="font-black text-[#002B66] truncate block text-xs mt-0.5 underline">{effectiveBatchSrn || 'SRN-000000'}</span>
+                <span className="font-black text-[#002B66] truncate block text-xs mt-0.5 underline">{effectiveBatchSrn || 'MAN-260901-892301'}</span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
                 <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Tickets</span>
@@ -587,11 +580,12 @@ function AttachWeeklyProofModal({
               <label className="text-[11px] font-extrabold text-slate-700 uppercase block mb-1.5">
                 Remittance Payment Channel
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                 {[
                   { id: 'GCASH', name: 'GCash', icon: Smartphone, color: 'text-blue-600' },
                   { id: 'CEBUANA', name: 'Cebuana', icon: Building2, color: 'text-rose-600' },
-                  { id: 'BANK_TRANSFER', name: 'Bank Transfer', icon: Landmark, color: 'text-emerald-600' },
+                  { id: 'BANK_DEPOSIT', name: 'Bank Deposit', icon: Landmark, color: 'text-emerald-600' },
+                  { id: 'BANK_TRANSFER', name: 'Bank Transfer', icon: Landmark, color: 'text-teal-600' },
                   { id: 'CASH_PALAWAN', name: 'Palawan / Cash', icon: FileText, color: 'text-amber-600' }
                 ].map(channel => {
                   const Icon = channel.icon;
@@ -658,7 +652,7 @@ function AttachWeeklyProofModal({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. 10029384758 / CEB-9982"
+                    placeholder="e.g. 10029384758 / CEB-9982 / DEP-48921"
                     value={referenceNumber}
                     onChange={(e) => {
                       setReferenceNumber(e.target.value);
@@ -692,11 +686,11 @@ function AttachWeeklyProofModal({
                 </div>
               </div>
 
-              {/* Bank Name if Bank Transfer */}
-              {paymentChannel === 'BANK_TRANSFER' && (
+              {/* Bank Name if Bank Transfer or Bank Deposit */}
+              {(paymentChannel === 'BANK_TRANSFER' || paymentChannel === 'BANK_DEPOSIT') && (
                 <div>
                   <label className="text-[11px] font-extrabold text-slate-700 uppercase block mb-1">
-                    Beneficiary Bank
+                    {paymentChannel === 'BANK_DEPOSIT' ? 'Depository Bank' : 'Beneficiary Bank'}
                   </label>
                   <select
                     value={bankName}

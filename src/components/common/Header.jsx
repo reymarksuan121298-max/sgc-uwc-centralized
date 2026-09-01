@@ -886,7 +886,7 @@ export default function Header({
                   <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
                     Notifications
                   </h3>
-                  {permissionStatus === 'granted' && (
+                  {!isSSR && permissionStatus === 'granted' && (
                     <span className="bg-emerald-50 text-emerald-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Push On
@@ -906,8 +906,8 @@ export default function Header({
                 </div>
               </div>
 
-              {/* Web Push Permission Banner (When Permission is Pending or Default) */}
-              {permissionStatus !== 'granted' && (
+              {/* Web Push Permission Banner (Hidden on SSR Side) */}
+              {!isSSR && permissionStatus !== 'granted' && (
                 <div className="bg-blue-50/90 border-b border-blue-100 p-2.5 px-4 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-2 h-2 rounded-full bg-[#0084FF] animate-ping shrink-0" />

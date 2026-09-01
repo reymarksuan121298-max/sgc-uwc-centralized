@@ -11,7 +11,7 @@ import { winningsService } from '../../services/winningsService';
 import AttachWeeklyProofModal from '../../components/receipts/AttachWeeklyProofModal';
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
-import { superClean, getTicketTransId } from '../../utils/formatters';
+import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
 
 export default function ReturnedWinnings({
@@ -210,23 +210,20 @@ export default function ReturnedWinnings({
     return (filteredData || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
   }, [filteredData]);
 
-  // Compute clean SRN
+  // Compute clean Remittance Serial Number dynamically from active unremitted tickets (e.g. MAN-260901-892301)
   const batchSerialNumber = useMemo(() => {
-    const ticketWithSrn = (filteredData || []).find(item => item.batch_serial_no || (item.transactionId && String(item.transactionId).startsWith('SRN-')));
-    if (ticketWithSrn?.batch_serial_no) return ticketWithSrn.batch_serial_no;
-    if (ticketWithSrn?.transactionId && String(ticketWithSrn.transactionId).startsWith('SRN-')) return ticketWithSrn.transactionId;
+    const subOffice = currentUser?.sub_office && currentUser.sub_office !== 'All'
+      ? currentUser.sub_office
+      : (unremittedDepositItems[0]?.sub_office || filteredData[0]?.sub_office || 'Mandaue Central');
 
     if (unremittedDepositItems.length > 0) {
       const firstTicket = unremittedDepositItems[0];
-      const transId = firstTicket.batch_serial_no || firstTicket.transactionId || firstTicket.transId || firstTicket.receipt_no;
-      if (transId && String(transId).startsWith('SRN-')) return transId;
-      if (transId) return `SRN-${transId}`;
+      const transId = firstTicket.transactionId || firstTicket.transId || firstTicket.receipt_no;
+      return generateRemittanceSerial(subOffice, transId);
     }
 
-    const d = new Date();
-    const datePart = d.toISOString().slice(2, 10).replace(/-/g, '');
-    return `SRN-${datePart}-RW01`;
-  }, [filteredData, unremittedDepositItems]);
+    return generateRemittanceSerial(subOffice, '892301');
+  }, [unremittedDepositItems, filteredData, currentUser]);
 
   return (
     <div className="w-full space-y-4">

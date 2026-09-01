@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, XCircle, Eye, Search, 
-  Check, RefreshCw 
+  Check, RefreshCw, X 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 
 export default function RemittanceVerification({ currentUser, onDataUpdated }) {
   const [receipts, setReceipts] = useState([]);
+  const [usersMap, setUsersMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [approvingReceipt, setApprovingReceipt] = useState(null);
@@ -26,19 +27,29 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
   const fetchReceipts = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('remittance_receipts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [receiptsRes, usersRes] = await Promise.all([
+        supabase.from('remittance_receipts').select('*').order('created_at', { ascending: false }),
+        supabase.from('app_users').select('username, full_name')
+      ]);
 
-      if (error) {
-        if (error.code !== 'PGRST205') {
-          console.warn('Receipts queue fetch notice:', error.message);
+      if (usersRes.data) {
+        const uMap = {};
+        usersRes.data.forEach(u => {
+          if (u.username) {
+            uMap[u.username.toLowerCase().trim()] = u.full_name;
+          }
+        });
+        setUsersMap(uMap);
+      }
+
+      if (receiptsRes.error) {
+        if (receiptsRes.error.code !== 'PGRST205') {
+          console.warn('Receipts queue fetch notice:', receiptsRes.error.message);
         }
         setReceipts([]);
         return;
       }
-      setReceipts(data || []);
+      setReceipts(receiptsRes.data || []);
     } catch (err) {
       setReceipts([]);
     } finally {
@@ -50,20 +61,34 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
     fetchReceipts();
   }, []);
 
+  const getOfficerName = (item) => {
+    if (!item) return 'N/A';
+    const usernameKey = String(item.uploaded_by_user || '').toLowerCase().trim();
+    if (usersMap[usernameKey]) {
+      return usersMap[usernameKey];
+    }
+    if (item.sender_name && item.sender_name.trim() && item.sender_name !== 'System Administrator') {
+      return item.sender_name.trim();
+    }
+    return item.uploaded_by_user || 'N/A';
+  };
+
   const filteredList = useMemo(() => {
     return receipts.filter((r) => {
       const matchStatus = statusFilter === 'ALL' || r.verification_status === statusFilter;
       const q = searchQuery.toLowerCase().trim();
+      const officer = getOfficerName(r).toLowerCase();
       const matchSearch = !q || (
         (r.transactionId || '').toLowerCase().includes(q) ||
         (r.reference_number || '').toLowerCase().includes(q) ||
         (r.sub_office || '').toLowerCase().includes(q) ||
         (r.sender_name || '').toLowerCase().includes(q) ||
-        (r.uploaded_by_user || '').toLowerCase().includes(q)
+        (r.uploaded_by_user || '').toLowerCase().includes(q) ||
+        officer.includes(q)
       );
       return matchStatus && matchSearch;
     });
-  }, [receipts, statusFilter, searchQuery]);
+  }, [receipts, statusFilter, searchQuery, usersMap]);
 
   const handleApprove = (receipt) => {
     setApprovingReceipt(receipt);
@@ -151,16 +176,24 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
 
       if (rErr) throw rErr;
 
-      // 2. Update returned_winnings
+      // 2. Revert returned_winnings tickets back to UNREMITTED (NO_RECEIPT)
       if (selectedReceipt.batch_serial_no) {
         await supabase
           .from('returned_winnings')
-          .update({ receipt_status: 'REJECTED' })
+          .update({ 
+            receipt_status: 'NO_RECEIPT',
+            batch_serial_no: null,
+            updated_at: new Date().toISOString()
+          })
           .eq('batch_serial_no', selectedReceipt.batch_serial_no);
       } else if (selectedReceipt.transactionId) {
         await supabase
           .from('returned_winnings')
-          .update({ receipt_status: 'REJECTED' })
+          .update({ 
+            receipt_status: 'NO_RECEIPT',
+            batch_serial_no: null,
+            updated_at: new Date().toISOString()
+          })
           .eq('transactionId', selectedReceipt.transactionId);
       }
 
@@ -311,6 +344,12 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
                     <span className="text-[9px] font-sans font-bold text-slate-400 uppercase block">Amount Out</span>
                     <span className="font-black text-emerald-700">₱{parseFloat(item.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                   </div>
+                  <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                    <span className="text-[9px] font-sans font-bold text-slate-400 uppercase">Officer:</span>
+                    <span className="font-bold text-slate-800 text-[11px] truncate max-w-[170px]" title={getOfficerName(item)}>
+                      {getOfficerName(item)}
+                    </span>
+                  </div>
                 </div>
 
                 {item.rejection_reason && (
@@ -342,12 +381,14 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
                       <span>Approve</span>
                     </button>
                     <button
-                      onClick={() => { setSelectedReceipt(item); setRejectModalOpen(true); }}
-                      disabled={isProcessing}
-                      className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedReceipt(item);
+                        setRejectModalOpen(true);
+                      }}
+                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition-colors cursor-pointer"
                       title="Reject"
                     >
-                      <XCircle size={16} />
+                      <X size={15} />
                     </button>
                   </>
                 )}
@@ -358,46 +399,31 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
         )}
       </div>
 
-      {/* Inspector Modal */}
-      {selectedReceipt && !rejectModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-[#002B66] text-white px-5 py-3 flex items-center justify-between border-b-2 border-[#FFD700]">
-              <span className="font-extrabold text-xs uppercase tracking-wider text-white">
+      {/* INSPECT PROOF MODAL */}
+      {selectedReceipt && !rejectModalOpen && !approvingReceipt && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="p-4 bg-[#002B66] text-white flex items-center justify-between">
+              <span className="font-bold text-xs">
                 Inspect Remittance Proof — {selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'SRN'}
               </span>
-              <button onClick={() => setSelectedReceipt(null)} className="text-slate-300 hover:text-white cursor-pointer font-bold">✕</button>
+              <button onClick={() => setSelectedReceipt(null)} className="text-white/80 hover:text-white cursor-pointer">
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="p-4 space-y-3">
-              {selectedReceipt.receipt_image_url && (
-                <div className="bg-slate-100 rounded-xl p-2 max-h-[50vh] overflow-auto flex items-center justify-center border border-slate-200">
+            <div className="p-4 overflow-y-auto space-y-4">
+              {selectedReceipt.receipt_image_url ? (
+                <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center max-h-[55vh]">
                   <img 
                     src={selectedReceipt.receipt_image_url} 
-                    alt="Receipt Full View" 
-                    className="max-h-[45vh] w-full object-contain rounded-lg shadow-sm"
+                    alt="Proof" 
+                    className="max-h-[55vh] object-contain w-auto" 
                   />
                 </div>
+              ) : (
+                <div className="p-12 text-center text-slate-400">No Image Uploaded</div>
               )}
-
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-mono">
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">SRN</span>
-                  <span className="font-black text-[#002B66]">{selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">Remitted Amount</span>
-                  <span className="font-extrabold text-emerald-700">₱{parseFloat(selectedReceipt.remittance_amount || 0).toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">Channel & Ref</span>
-                  <span className="font-bold text-slate-800">{selectedReceipt.payment_channel} • {selectedReceipt.reference_number}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">Sub-Office & Officer</span>
-                  <span className="font-bold text-slate-800">{selectedReceipt.sub_office} ({selectedReceipt.uploaded_by_user})</span>
-                </div>
-              </div>
 
               {selectedReceipt.verification_status === 'PENDING' && (
                 <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200">

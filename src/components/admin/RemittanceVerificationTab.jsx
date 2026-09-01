@@ -1,21 +1,22 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, XCircle, Clock, Eye, Download, Search, 
-  Smartphone, Building2, Landmark, FileText, Check, AlertCircle, RefreshCw 
+  Smartphone, Building2, Landmark, FileText, Check, AlertCircle, RefreshCw, X 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import ConfirmPopover from '../common/ConfirmPopover';
 
 export default function RemittanceVerificationTab({ currentUser, onDataUpdated }) {
   const [receipts, setReceipts] = useState([]);
+  const [usersMap, setUsersMap] = useState({});
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('PENDING'); // Default to PENDING for fast queue triage
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState(null);
-  const [approvingReceipt, setApprovingReceipt] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('PENDING'); // Default to PENDING for fast queue triage
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [approvingReceipt, setApprovingReceipt] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = (msg) => {
@@ -26,16 +27,26 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
   const fetchReceipts = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('remittance_receipts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [receiptsRes, usersRes] = await Promise.all([
+        supabase.from('remittance_receipts').select('*').order('created_at', { ascending: false }),
+        supabase.from('app_users').select('username, full_name')
+      ]);
 
-      if (error) {
+      if (usersRes.data) {
+        const uMap = {};
+        usersRes.data.forEach(u => {
+          if (u.username) {
+            uMap[u.username.toLowerCase().trim()] = u.full_name;
+          }
+        });
+        setUsersMap(uMap);
+      }
+
+      if (receiptsRes.error) {
         setReceipts([]);
         return;
       }
-      setReceipts(data || []);
+      setReceipts(receiptsRes.data || []);
     } catch (err) {
       setReceipts([]);
     } finally {
@@ -47,20 +58,35 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
     fetchReceipts();
   }, []);
 
+  const getOfficerName = (item) => {
+    if (!item) return 'N/A';
+    const usernameKey = String(item.uploaded_by_user || '').toLowerCase().trim();
+    if (usersMap[usernameKey]) {
+      return usersMap[usernameKey];
+    }
+    if (item.sender_name && item.sender_name.trim() && item.sender_name !== 'System Administrator') {
+      return item.sender_name.trim();
+    }
+    return item.uploaded_by_user || 'N/A';
+  };
+
   const filteredList = useMemo(() => {
     return receipts.filter((r) => {
       const matchStatus = statusFilter === 'ALL' || r.verification_status === statusFilter;
       const q = searchQuery.toLowerCase().trim();
+      const officer = getOfficerName(r).toLowerCase();
       const matchSearch = !q || (
         (r.transactionId || '').toLowerCase().includes(q) ||
+        (r.batch_serial_no || '').toLowerCase().includes(q) ||
         (r.reference_number || '').toLowerCase().includes(q) ||
         (r.sub_office || '').toLowerCase().includes(q) ||
         (r.sender_name || '').toLowerCase().includes(q) ||
-        (r.uploaded_by_user || '').toLowerCase().includes(q)
+        (r.uploaded_by_user || '').toLowerCase().includes(q) ||
+        officer.includes(q)
       );
       return matchStatus && matchSearch;
     });
-  }, [receipts, statusFilter, searchQuery]);
+  }, [receipts, statusFilter, searchQuery, usersMap]);
 
   const handleApprove = (receipt) => {
     setApprovingReceipt(receipt);
@@ -148,16 +174,24 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
 
       if (rErr) throw rErr;
 
-      // 2. Update returned_winnings
+      // 2. Revert returned_winnings tickets back to UNREMITTED (NO_RECEIPT)
       if (selectedReceipt.batch_serial_no) {
         await supabase
           .from('returned_winnings')
-          .update({ receipt_status: 'REJECTED' })
+          .update({ 
+            receipt_status: 'NO_RECEIPT',
+            batch_serial_no: null,
+            updated_at: new Date().toISOString()
+          })
           .eq('batch_serial_no', selectedReceipt.batch_serial_no);
       } else if (selectedReceipt.transactionId) {
         await supabase
           .from('returned_winnings')
-          .update({ receipt_status: 'REJECTED' })
+          .update({ 
+            receipt_status: 'NO_RECEIPT',
+            batch_serial_no: null,
+            updated_at: new Date().toISOString()
+          })
           .eq('transactionId', selectedReceipt.transactionId);
       }
 
@@ -309,6 +343,12 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
                     <span className="text-[9px] font-sans font-bold text-slate-400 uppercase block">Amount Out</span>
                     <span className="font-black text-emerald-700">₱{parseFloat(item.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                   </div>
+                  <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                    <span className="text-[9px] font-sans font-bold text-slate-400 uppercase">Officer:</span>
+                    <span className="font-bold text-slate-800 text-[11px] truncate max-w-[170px]" title={getOfficerName(item)}>
+                      {getOfficerName(item)}
+                    </span>
+                  </div>
                 </div>
 
                 {item.rejection_reason && (
@@ -377,25 +417,6 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
                   />
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-mono">
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">SRN</span>
-                  <span className="font-black text-[#002B66]">{selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">Remitted Amount</span>
-                  <span className="font-extrabold text-emerald-700">₱{parseFloat(selectedReceipt.remittance_amount || 0).toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">Channel & Ref</span>
-                  <span className="font-bold text-slate-800">{selectedReceipt.payment_channel} • {selectedReceipt.reference_number}</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-sans text-slate-400 block uppercase">Sub-Office & Officer</span>
-                  <span className="font-bold text-slate-800">{selectedReceipt.sub_office} ({selectedReceipt.uploaded_by_user})</span>
-                </div>
-              </div>
 
               {selectedReceipt.verification_status === 'PENDING' && (
                 <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200">
