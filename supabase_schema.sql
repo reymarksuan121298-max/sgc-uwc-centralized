@@ -85,7 +85,6 @@ CREATE TABLE public.returned_winnings (
     "isSoldOut" TEXT,
     "isLowWin" TEXT,
     "isVoid" INTEGER DEFAULT 0,
-    "isClaim" INTEGER DEFAULT 0,
     "voidDate" TEXT,
     "isVoidByStaff" INTEGER DEFAULT 0,
     "reprintDate" TEXT,

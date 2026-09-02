@@ -67,6 +67,7 @@ export default function App() {
   const [toDate, setToDate] = useState(todayStr);
   const [data, setData] = useState([]);
   const [returnedData, setReturnedData] = useState([]);
+  const [liveClaimedTransactionIds, setLiveClaimedTransactionIds] = useState(() => new Set());
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -1177,6 +1178,82 @@ export default function App() {
     } catch { }
   };
 
+  const syncClaimedTickets = async (showToastMessage = true) => {
+    try {
+      if (showToastMessage) showToast("Starting synchronization with central server...");
+
+      let apiFromDate = parseToDateString(fromDate) || getLocalDateString();
+      let apiToDate = parseToDateString(toDate) || getLocalDateString();
+
+      // Dynamically expand date range to include all dates present in the current returnedData
+      if (returnedData && returnedData.length > 0) {
+        let minTime = Number.MAX_SAFE_INTEGER;
+        let maxTime = 0;
+        returnedData.forEach(t => {
+          const dt = t.drawDate || t.drawTime || t.created_at;
+          if (dt) {
+            const time = new Date(dt).getTime();
+            if (!isNaN(time)) {
+              if (time < minTime) minTime = time;
+              if (time > maxTime) maxTime = time;
+            }
+          }
+        });
+        if (minTime !== Number.MAX_SAFE_INTEGER) {
+          const dataFromStr = new Date(minTime).toISOString().split('T')[0];
+          const dataToStr = new Date(maxTime).toISOString().split('T')[0];
+          if (dataFromStr < apiFromDate) apiFromDate = dataFromStr;
+          if (dataToStr > apiToDate) apiToDate = dataToStr;
+        }
+      }
+      const activeEndpoints = gatewayEndpoints.filter(e => e.is_active !== false && e.baseUrl);
+
+      const fetchApi = async (cfg) => {
+        let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
+        let targetUrl = cleanBaseUrl;
+        if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
+          targetUrl = targetUrl.toLowerCase().endsWith('/api')
+            ? `${targetUrl}/accountant/UnclaimedReceipts`
+            : `${targetUrl}/api/accountant/UnclaimedReceipts`;
+        }
+
+        const queryGlue = targetUrl.includes('?') ? '&' : '?';
+        const fullUrl = `${targetUrl}${queryGlue}isClaim=1&from=${apiFromDate}&to=${apiToDate}`;
+
+        const rawToken = (cfg.token || '').trim();
+        const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
+
+        const res = await fetch(fullUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json'
+          }
+        });
+        if (!res.ok) return [];
+        const result = await res.json();
+        const deepData = result?.data?.data || result?.data || result;
+        return Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+      };
+
+      const promises = activeEndpoints.map(cfg => fetchApi(cfg));
+      const results = await Promise.allSettled(promises);
+      const claimedRecords = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+
+      const claimedIds = new Set(claimedRecords.map(r => String(r.transactionId || r.transId || r.receipt_no || r.ticket_no).trim()));
+
+      setLiveClaimedTransactionIds(claimedIds);
+
+      if (showToastMessage) {
+        showToast(`Sync complete: Found ${claimedIds.size} claimed ticket(s) from central server.`);
+      }
+    } catch (err) {
+      console.error("Sync error:", err);
+      if (showToastMessage) showToast("Error during sync: " + err.message);
+    }
+  };
+
   // Background session verification (checks if current user account is still active in database)
   useEffect(() => {
     if (!currentUser?.username) return;
@@ -1207,6 +1284,22 @@ export default function App() {
     verifySession();
     return () => { isMounted = false; };
   }, [currentUser?.username]);
+
+  // Live polling for claimed tickets (runs in background every 15 seconds)
+  const syncClaimedRef = useRef(syncClaimedTickets);
+  useEffect(() => {
+    syncClaimedRef.current = syncClaimedTickets;
+  });
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const intervalId = setInterval(() => {
+      if (activeTab === 'returned' || activeTab === 'settlement') {
+        if (syncClaimedRef.current) syncClaimedRef.current(false);
+      }
+    }, 1000); // Check every 1 second
+    return () => clearInterval(intervalId);
+  }, [currentUser, activeTab]);
 
   // If not logged in, render Login page
   if (!currentUser) {
@@ -1309,6 +1402,8 @@ export default function App() {
           selectedSettlementTicketId={selectedSettlementTicketId}
           onSaveAgreement={handleSaveAgreement}
           onSyncLedger={fetchReturnedFromSupabase}
+          onSyncClaimedTickets={syncClaimedTickets}
+          liveClaimedTransactionIds={liveClaimedTransactionIds}
         />
       </MainLayout>
 

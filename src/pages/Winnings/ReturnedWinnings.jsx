@@ -21,8 +21,9 @@ export default function ReturnedWinnings({
   currentUser,
   onDeleteRecord,
   onDataUpdated,
-  onOpenQrModal,
-  onNavigateToSettlement
+  onNavigateToSettlement,
+  onSyncClaimedTickets,
+  liveClaimedTransactionIds = new Set()
 }) {
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [selectedForRequestDelete, setSelectedForRequestDelete] = useState(null);
@@ -43,13 +44,7 @@ export default function ReturnedWinnings({
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
 
   const checkIsExplicitlyClaimed = (item) => {
-    return [
-      item.isClaime,
-      item.isClaim,
-      item.is_claime,
-      item.is_claimed,
-      item.isClaimed
-    ].some(v => v === 1 || v === '1' || v === true || v === 'true');
+    return liveClaimedTransactionIds.has(String(item.transactionId).trim());
   };
 
   // Pending Deletion Requests
@@ -316,6 +311,8 @@ export default function ReturnedWinnings({
             <Download size={15} />
             <span className="hidden sm:inline">Export CSV</span>
           </button>
+          
+          {/* Sync Claimed Button removed since it is real-time via App.jsx now */}
         </div>
       </div>
 
@@ -486,24 +483,13 @@ export default function ReturnedWinnings({
                                     </span>
                                   )
                                 ) : isClaimedInSourceSystem && !isUnderSettlement ? (
-                                  canApprove ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedForDelete({ ...item, computedTransId: transId })}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-300 hover:border-rose-600 rounded-xs transition-all cursor-pointer"
-                                    >
-                                      <Trash2 size={12} /> Delete
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-300 hover:border-rose-600 rounded-xs transition-all cursor-pointer"
-                                      title={isRemitted ? "Request admin/staff to delete and deduct from Collections" : "Request deletion of this ticket"}
-                                    >
-                                      <Trash2 size={12} /> Request Delete
-                                    </button>
-                                  )
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer"
+                                  >
+                                    <Trash2 size={12} /> Request Delete
+                                  </button>
                                 ) : isRemitted ? (
                                   <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
                                 ) : null}
@@ -667,23 +653,13 @@ export default function ReturnedWinnings({
                               </span>
                             )
                           ) : isClaimedInSourceSystem && !isUnderSettlement ? (
-                            canApprove ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedForDelete({ ...item, computedTransId: transId })}
-                                className="px-2.5 py-1 text-rose-600 border border-rose-300 rounded-lg text-[10px] font-bold uppercase"
-                              >
-                                Delete
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-300 rounded-lg text-[10px] font-bold uppercase"
-                              >
-                                Request Delete
-                              </button>
-                            )
+                            <button
+                              type="button"
+                              onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                              className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase"
+                            >
+                              Request Delete
+                            </button>
                           ) : null}
                         </div>
                       </div>
