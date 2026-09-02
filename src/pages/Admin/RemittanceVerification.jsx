@@ -4,6 +4,7 @@ import {
   Check, RefreshCw, X 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
+import { generateRemittanceSerial } from '../../utils/formatters';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 
 export default function RemittanceVerification({ currentUser, onDataUpdated }) {
@@ -97,33 +98,57 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
   const executeApprove = async () => {
     if (!approvingReceipt) return;
     const receipt = approvingReceipt;
-    const displayId = receipt.batch_serial_no || receipt.transactionId || receipt.reference_number || 'Batch';
+
+    const formattedSerial = generateRemittanceSerial(
+      receipt.sub_office || 'Mandaue Central',
+      receipt.batch_serial_no || receipt.reference_number || receipt.transactionId,
+      receipt.created_at || new Date()
+    );
+
+    const displayId = formattedSerial || receipt.batch_serial_no || receipt.transactionId || receipt.reference_number || 'Batch';
 
     setIsProcessing(true);
     try {
-      // 1. Update remittance_receipts
+      // 1. Update remittance_receipts with verified status & formatted batch_serial_no
       const { error: rErr } = await supabase
         .from('remittance_receipts')
         .update({
           verification_status: 'VERIFIED',
           verified_by: currentUser?.full_name || currentUser?.username || 'Unclaimed Specialist',
-          verified_at: new Date().toISOString()
+          verified_at: new Date().toISOString(),
+          batch_serial_no: formattedSerial
         })
         .eq('id', receipt.id);
 
       if (rErr) throw rErr;
 
-      // 2. Update returned_winnings
+      // 2. Update returned_winnings with aligned batch_serial_no and receipt_status: 'VERIFIED'
       if (receipt.batch_serial_no) {
         await supabase
           .from('returned_winnings')
-          .update({ receipt_status: 'VERIFIED' })
+          .update({
+            receipt_status: 'VERIFIED',
+            batch_serial_no: formattedSerial
+          })
           .eq('batch_serial_no', receipt.batch_serial_no);
-      } else if (receipt.transactionId) {
+      }
+      if (receipt.transactionId) {
         await supabase
           .from('returned_winnings')
-          .update({ receipt_status: 'VERIFIED' })
+          .update({
+            receipt_status: 'VERIFIED',
+            batch_serial_no: formattedSerial
+          })
           .eq('transactionId', receipt.transactionId);
+      }
+      if (receipt.reference_number) {
+        await supabase
+          .from('returned_winnings')
+          .update({
+            receipt_status: 'VERIFIED',
+            batch_serial_no: formattedSerial
+          })
+          .eq('batch_serial_no', receipt.reference_number);
       }
 
       // 3. Log into audit trail
@@ -137,7 +162,7 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
         details: {
           ref: receipt.reference_number,
           amount: receipt.remittance_amount,
-          batchSerial: receipt.batch_serial_no || null
+          batchSerial: formattedSerial
         }
       }]);
 
@@ -289,7 +314,13 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">SRN</span>
-                  <span className="font-mono font-black text-sm text-[#002B66]">{item.batch_serial_no || item.transactionId || item.reference_number || 'SRN'}</span>
+                  <span className="font-mono font-black text-sm text-[#002B66]">
+                    {generateRemittanceSerial(
+                      item.sub_office || 'Mandaue Central',
+                      item.batch_serial_no || item.transactionId || item.reference_number || 'SRN',
+                      item.created_at
+                    )}
+                  </span>
                 </div>
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                   item.verification_status === 'VERIFIED'
@@ -404,8 +435,12 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="p-4 bg-[#002B66] text-white flex items-center justify-between">
-              <span className="font-bold text-xs">
-                Inspect Remittance Proof — {selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'SRN'}
+              <span className="font-extrabold text-xs uppercase tracking-wider text-white">
+                Inspect Remittance Proof — {generateRemittanceSerial(
+                  selectedReceipt.sub_office || 'Mandaue Central',
+                  selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'SRN',
+                  selectedReceipt.created_at
+                )}
               </span>
               <button onClick={() => setSelectedReceipt(null)} className="text-white/80 hover:text-white cursor-pointer">
                 <X size={18} />
@@ -502,7 +537,13 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 space-y-2 font-mono text-[11px]">
               <div className="flex justify-between border-b border-emerald-200/60 pb-1.5">
                 <span className="text-slate-500 font-sans font-bold">Reference / SRN:</span>
-                <span className="font-black text-[#002B66]">{approvingReceipt.reference_number || approvingReceipt.batch_serial_no}</span>
+                <span className="font-black text-[#002B66]">
+                  {generateRemittanceSerial(
+                    approvingReceipt.sub_office || 'Mandaue Central',
+                    approvingReceipt.batch_serial_no || approvingReceipt.reference_number || approvingReceipt.transactionId,
+                    approvingReceipt.created_at
+                  )}
+                </span>
               </div>
               <div className="flex justify-between border-b border-emerald-200/60 pb-1.5">
                 <span className="text-slate-500 font-sans font-bold">Sub-Office / Channel:</span>

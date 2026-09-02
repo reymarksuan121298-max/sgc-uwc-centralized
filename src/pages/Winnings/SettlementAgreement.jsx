@@ -187,6 +187,9 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   // Filtered available tickets based on sub-office scope
   const availableTickets = filteredData.filter((item) => {
+    // Hide tickets that are already under settlement
+    if (item.isUnderSettlement) return false;
+
     if (selectedSubOfficeFilter === 'ALL') return true;
     const itemOffice = (item.sub_office || item.subOffice || item.branch || '').toLowerCase().trim();
     const targetOffice = selectedSubOfficeFilter.toLowerCase().trim();
@@ -326,7 +329,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   };
 
   const handleTicketChange = (ticketId) => {
-    const nextTicket = filteredData.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
+    const nextTicket = availableTickets.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
     setSelectedTicketId(ticketId);
     const winAmt = getWinAmount(nextTicket);
     const perInst = (winAmt / installmentsCount).toFixed(2);
@@ -841,12 +844,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               <span className="text-[11px] text-slate-500">Choose the returned winning record for this agreement.</span>
             </div>
             <select
-              value={selectedTicketId || (filteredData[0]?.transactionId || filteredData[0]?.transId || '')}
+              value={selectedTicketId || (availableTickets[0]?.transactionId || availableTickets[0]?.transId || '')}
               onChange={(e) => handleTicketChange(e.target.value)}
               className="w-full md:w-auto bg-white border border-blue-200 px-3 py-2 rounded-lg font-mono font-bold text-slate-800 outline-none focus:border-[#002B66] focus:ring-2 focus:ring-blue-200"
             >
-              {filteredData.length > 0 ? (
-                filteredData.map((item, idx) => {
+              {availableTickets.length > 0 ? (
+                availableTickets.map((item, idx) => {
                   const tid = item.transactionId || item.transId || item.receipt_no || `TID-${idx}`;
                   return (
                     <option key={idx} value={tid}>

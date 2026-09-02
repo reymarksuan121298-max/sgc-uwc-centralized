@@ -230,27 +230,6 @@ SET
     status = EXCLUDED.status;
 
 -- ==============================================================================
--- 10. SEED DATA: DEFAULT SYSTEM USERS (`app_users`)
--- ==============================================================================
-INSERT INTO public.app_users (id, username, password, full_name, role, sub_office, is_active)
-VALUES
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b999c', 'superadmin', 'admin123*', 'Master Super Administrator', 'Super Admin', 'All', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b999d', 'admin', 'admin123', 'System Administrator', 'Admin', 'All', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b999e', 'staff', 'staff123', 'Mandaue Main Staff', 'Staff', 'All', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b999f', 'ssr', 'ssr123', 'Special Sales Representative', 'SSR', 'All', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b9991', 'sub_tipolo', 'tipolo123', 'Tipolo Sub-Office Head', 'Sub-Office Head', 'Tipolo', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b9992', 'sub_canduman', 'canduman123', 'Canduman Sub-Office Head', 'Sub-Office Head', 'Canduman', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b9993', 'sub_ibabao', 'ibabao123', 'Ibabao-Estancia Sub-Office Head', 'Sub-Office Head', 'Ibabao-Estancia', TRUE),
-    ('91d76a31-4ada-4b8e-84aa-9c90b41b9994', 'sub_pagsabungan', 'pagsabungan123', 'Pagsabungan Sub-Office Head', 'Sub-Office Head', 'Pagsabungan', TRUE)
-ON CONFLICT (username) DO UPDATE 
-SET 
-    password = EXCLUDED.password,
-    full_name = EXCLUDED.full_name,
-    role = EXCLUDED.role,
-    sub_office = EXCLUDED.sub_office,
-    is_active = EXCLUDED.is_active;
-
--- ==============================================================================
 -- 10. SEED DATA: DEFAULT SYSTEM CONFIGURATION (`system_settings`)
 -- ==============================================================================
 INSERT INTO public.system_settings (key, value, description)

@@ -7,6 +7,7 @@ import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import { winningsService } from '../../services/winningsService';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
+import { generateRemittanceSerial } from '../../utils/formatters';
 
 export default function TotalCollections({ 
   returnedData = [], 
@@ -97,7 +98,8 @@ export default function TotalCollections({
   // Filtered transactions aligned with Sub-Office & search
   const filteredList = useMemo(() => {
     return scopedData.filter(item => {
-      const transId = String(item.batch_serial_no || item.transactionId || '').trim();
+      const rawTransId = String(item.batch_serial_no || item.transactionId || '').trim();
+      const transId = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
 
       // Sub-office filter
       if (subOfficeFilter !== 'ALL' && (item.sub_office || 'Mandaue Central') !== subOfficeFilter) {
@@ -133,12 +135,12 @@ export default function TotalCollections({
     const branchSummary = {};
 
     filteredList.forEach(item => {
-      const win = parseFloat(item.winAmount ?? 0);
-      const out = parseFloat(item.return_amount_out ?? win);
-      const adm = parseFloat(item.admin_commission ?? (win * 0.50));
-      const agt = parseFloat(item.agent_commission ?? (win * 0.30));
-      const stf = parseFloat(item.staff_commission ?? (win * 0.10));
-      const col = parseFloat(item.collector_commission ?? (win * 0.10));
+      const win = parseFloat(item.winAmount || 0);
+      const out = parseFloat(item.return_amount_out) || win;
+      const adm = parseFloat(item.admin_commission) || (win * 0.50);
+      const agt = parseFloat(item.agent_commission) || (win * 0.30);
+      const stf = parseFloat(item.staff_commission) || (win * 0.10);
+      const col = parseFloat(item.collector_commission) || (win * 0.10);
 
       totalWin += win;
       totalReturnOut += out;
@@ -182,14 +184,15 @@ export default function TotalCollections({
     ];
 
     const rows = filteredList.map(item => {
-      const transId = String(item.batch_serial_no || item.transactionId || 'N/A').trim();
+      const rawTransId = String(item.batch_serial_no || item.transactionId || 'N/A').trim();
+      const transId = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
 
-      const win = parseFloat(item.winAmount ?? 0);
-      const out = parseFloat(item.return_amount_out ?? win);
-      const adm = parseFloat(item.admin_commission ?? (win * 0.50)).toFixed(2);
-      const agt = parseFloat(item.agent_commission ?? (win * 0.30)).toFixed(2);
-      const stf = parseFloat(item.staff_commission ?? (win * 0.10)).toFixed(2);
-      const col = parseFloat(item.collector_commission ?? (win * 0.10)).toFixed(2);
+      const win = parseFloat(item.winAmount || 0);
+      const out = parseFloat(item.return_amount_out) || win;
+      const adm = (parseFloat(item.admin_commission) || (win * 0.50)).toFixed(2);
+      const agt = (parseFloat(item.agent_commission) || (win * 0.30)).toFixed(2);
+      const stf = (parseFloat(item.staff_commission) || (win * 0.10)).toFixed(2);
+      const col = (parseFloat(item.collector_commission) || (win * 0.10)).toFixed(2);
 
       return [
         `"${transId}"`,
@@ -636,14 +639,15 @@ export default function TotalCollections({
                   </tr>
                 ) : (
                   filteredList.map((item) => {
-                    const transId = String(item.batch_serial_no || item.transactionId || '').trim();
+                    const rawTransId = String(item.batch_serial_no || item.transactionId || '').trim();
+                    const transId = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
 
-                    const win = parseFloat(item.winAmount ?? 0);
-                    const out = parseFloat(item.return_amount_out ?? win);
-                    const adm = parseFloat(item.admin_commission ?? (win * 0.50));
-                    const agt = parseFloat(item.agent_commission ?? (win * 0.30));
-                    const stf = parseFloat(item.staff_commission ?? (win * 0.10));
-                    const col = parseFloat(item.collector_commission ?? (win * 0.10));
+                    const win = parseFloat(item.winAmount || 0);
+                    const out = parseFloat(item.return_amount_out) || win;
+                    const adm = parseFloat(item.admin_commission) || (win * 0.50);
+                    const agt = parseFloat(item.agent_commission) || (win * 0.30);
+                    const stf = parseFloat(item.staff_commission) || (win * 0.10);
+                    const col = parseFloat(item.collector_commission) || (win * 0.10);
 
                     return (
                       <tr key={item.id || transId} className="hover:bg-slate-50 transition-colors">

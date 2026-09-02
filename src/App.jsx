@@ -939,7 +939,9 @@ export default function App() {
       agent_commission: agentComm,
       staff_commission: staffComm,
       collector_commission: collectorComm,
-      receipt_status: 'NO_RECEIPT'
+      receipt_status: 'NO_RECEIPT',
+      isClaim: selectedTicket.isClaim ?? (gatewayConfig?.isClaim === 1 ? 1 : 0),
+      status: selectedTicket.status ?? (gatewayConfig?.isClaim === 1 ? 1 : 0)
     };
 
     try {
