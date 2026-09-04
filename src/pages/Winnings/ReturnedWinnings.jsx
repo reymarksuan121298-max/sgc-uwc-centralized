@@ -12,7 +12,22 @@ import AttachWeeklyProofModal from '../../components/receipts/AttachWeeklyProofM
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
-import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
+import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole } from '../../utils/permissions';
+
+const SUPERVISOR_NAMES = {
+  "spvr-arlfred": "ARLFRED SABERON",
+  "spvr-raffy": "RAFFY BAGUIO",
+  "spvr-roel": "ROEL CATALAN",
+  "spvr-michael": "MICHAEL DE GUZMAN",
+  "spvr-joel": "JOEL ESTORCO",
+  "spvr-eya": "HARRY EYA",
+  "spvr-carl": "CARL MANGRUBAN",
+  "spvr-jed": "JED MELENDREZ",
+  "spvr-nyor": "NYOR SESALDO",
+  "spvr-jason": "NARCISO TAGUD JR.",
+  "spvr-molly": "MOLLY BATUBALANOS",
+  "spvr-apple": "COORDINATOR - APPLEGROUP"
+};
 
 export default function ReturnedWinnings({
   groupedData = {},
@@ -41,10 +56,27 @@ export default function ReturnedWinnings({
 
   // Admin / Staff Approval Permission (SSR can request, Staff/Admin can approve)
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
+  const isSSR = isSSRRole(currentUser?.role);
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
 
   const checkIsExplicitlyClaimed = (item) => {
-    return liveClaimedTransactionIds.has(String(item.transactionId).trim());
+    if (!item) return false;
+    const tid = getTicketTransId(item);
+    if (tid && (liveClaimedTransactionIds?.has?.(tid) || liveClaimedTransactionIds?.has?.(String(item.transactionId || '').trim()))) return true;
+    return Boolean(
+      item.is_claimed === 1 ||
+      item.is_claimed === '1' ||
+      item.is_claimed === true ||
+      item.is_claimed === 'true' ||
+      item.isClaimed === 1 ||
+      item.isClaimed === '1' ||
+      item.isClaimed === true ||
+      item.isClaimed === 'true' ||
+      item.is_already_claimed ||
+      item.status === 'CLAIMED' ||
+      item.claim_status === 'CLAIMED' ||
+      item.claimed_at
+    );
   };
 
   // Pending Deletion Requests
@@ -398,7 +430,7 @@ export default function ReturnedWinnings({
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
                               <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                              <span>USER / ACCOUNT: @{username}</span>
+                              <span>SUPERVISOR: {SUPERVISOR_NAMES[username?.toLowerCase()] ? SUPERVISOR_NAMES[username?.toLowerCase()] : `@${username}`}</span>
                             </div>
                             <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-slate-300">
                               {items.length} records ({unremittedInGroup.length} unremitted) • Subtotal: ₱{subtotalWin.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -491,7 +523,8 @@ export default function ReturnedWinnings({
                                       <button
                                         type="button"
                                         onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer"
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer shadow-2xs"
+                                        title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
                                       >
                                         <Trash2 size={12} /> Request Delete
                                       </button>
@@ -663,7 +696,8 @@ export default function ReturnedWinnings({
                                 <button
                                   type="button"
                                   onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                  className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase"
+                                  className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase shadow-2xs"
+                                  title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
                                 >
                                   Request Delete
                                 </button>

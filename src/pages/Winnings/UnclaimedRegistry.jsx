@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { 
-  FileText, Landmark, CheckCircle2, Search, AlertCircle, 
-  Eye, EyeOff, UserCheck, RefreshCw, Check, Image as ImageIcon, 
+import {
+  FileText, Landmark, CheckCircle2, Search, AlertCircle,
+  Eye, EyeOff, UserCheck, RefreshCw, Check, Image as ImageIcon,
   ChevronRight, QrCode, Building2, ShieldAlert, AlertTriangle
 } from 'lucide-react';
 import IncidentReportModal from '../../components/winnings/IncidentReportModal';
@@ -9,6 +9,21 @@ import { isIncidentReportEligible, getTicketAgeInDays } from '../../utils/ticket
 import { getTicketTransId } from '../../utils/formatters';
 import CustomDatePicker from '../../components/common/CustomDatePicker';
 import { isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
+
+const SUPERVISOR_NAMES = {
+  "spvr-arlfred": "ARLFRED SABERON",
+  "spvr-raffy": "RAFFY BAGUIO",
+  "spvr-roel": "ROEL CATALAN",
+  "spvr-michael": "MICHAEL DE GUZMAN",
+  "spvr-joel": "JOEL ESTORCO",
+  "spvr-eya": "HARRY EYA",
+  "spvr-carl": "CARL MANGRUBAN",
+  "spvr-jed": "JED MELENDREZ",
+  "spvr-nyor": "NYOR SESALDO",
+  "spvr-jason": "NARCISO TAGUD JR.",
+  "spvr-molly": "MOLLY BATUBALANOS",
+  "spvr-apple": "COORDINATOR - APPLEGROUP"
+};
 
 export default function UnclaimedRegistry({
   currentUser,
@@ -78,11 +93,11 @@ export default function UnclaimedRegistry({
 
       {/* FROZEN / STICKY TOP HEADER: Date Filters, Search & Summary Metrics (Zero Bleed-through) */}
       <div className="sticky -top-2.5 sm:-top-4 md:-top-6 z-10 bg-slate-100 pt-2.5 sm:pt-4 md:pt-6 pb-3 -mt-2.5 sm:-mt-4 md:-mt-6 -mx-2.5 sm:-mx-4 md:-mx-6 px-2.5 sm:px-4 md:px-6 shadow-xs space-y-3.5">
-        
+
         {/* Date Filters & Search Toolbar (With Top Navy Accent) */}
         <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-blue-200/80 border-t-4 border-t-[#002B66] shadow-xs flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="flex flex-wrap items-center gap-3 sm:gap-4 w-full md:w-auto">
-            
+
             {/* Custom Date Range Filter Boxes */}
             <div className="flex flex-wrap items-center gap-3">
               <CustomDatePicker
@@ -164,9 +179,9 @@ export default function UnclaimedRegistry({
             <h3 className="font-extrabold text-[#002B66] text-xs uppercase tracking-wider truncate">Unclaimed Winnings Summary</h3>
             <span className="text-[10px] font-bold bg-[#002B66] text-[#FFD700] px-2 py-0.5 rounded font-mono shadow-2xs shrink-0">{activeDisplayDate}</span>
           </div>
-          <button 
+          <button
             type="button"
-            onClick={() => setShowDailyTable(!showDailyTable)} 
+            onClick={() => setShowDailyTable(!showDailyTable)}
             className="text-slate-500 hover:text-[#002B66] p-1 rounded-lg hover:bg-slate-200/50 transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0"
           >
             {showDailyTable ? <Eye size={16} /> : <EyeOff size={16} />}
@@ -190,7 +205,7 @@ export default function UnclaimedRegistry({
                     <div className="bg-slate-100 border-b border-slate-200 px-4 py-2.5 font-black text-[#002B66] text-xs uppercase tracking-wider font-mono flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2 truncate">
                         <UserCheck size={14} className="text-[#002B66] shrink-0" />
-                        <span className="truncate">Supervisor / Outlet: {userKey}</span>
+                        <span className="truncate">Supervisor: {SUPERVISOR_NAMES[userKey?.toLowerCase()] ? SUPERVISOR_NAMES[userKey?.toLowerCase()] : userKey}</span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] bg-blue-100 text-[#002B66] px-2 py-0.5 rounded shrink-0">{items.length} items</span>
@@ -248,9 +263,8 @@ export default function UnclaimedRegistry({
                             return (
                               <tr
                                 key={index}
-                                className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 cursor-pointer group border-b border-slate-100 ${
-                                  meta.showWarningBadge ? 'bg-rose-50/30 hover:bg-rose-50/80 border-l-4 border-l-rose-500' : ''
-                                }`}
+                                className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 cursor-pointer group border-b border-slate-100 ${meta.showWarningBadge ? 'bg-rose-50/30 hover:bg-rose-50/80 border-l-4 border-l-rose-500' : ''
+                                  }`}
                                 onClick={() => onRowClick && onRowClick(item, index)}
                                 title="Click row to process return"
                               >
@@ -305,9 +319,8 @@ export default function UnclaimedRegistry({
                           <div
                             key={index}
                             onClick={() => onRowClick && onRowClick(item, index)}
-                            className={`bg-white border border-slate-200 rounded-xl p-3 shadow-2xs active:scale-[0.99] transition-all space-y-2.5 cursor-pointer relative overflow-hidden ${
-                              meta.showWarningBadge ? 'border-l-4 border-l-rose-500' : ''
-                            }`}
+                            className={`bg-white border border-slate-200 rounded-xl p-3 shadow-2xs active:scale-[0.99] transition-all space-y-2.5 cursor-pointer relative overflow-hidden ${meta.showWarningBadge ? 'border-l-4 border-l-rose-500' : ''
+                              }`}
                           >
                             <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${meta.showWarningBadge ? 'bg-rose-500' : 'bg-[#002B66]'}`}></div>
                             <div className="flex items-center justify-between border-b border-slate-100 pb-2 pl-2">
@@ -369,7 +382,7 @@ export default function UnclaimedRegistry({
                     </div>
 
                     <div className="bg-slate-100 px-4 py-2.5 font-black border-t border-slate-200 text-slate-900 text-xs font-mono flex items-center justify-between">
-                      <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal ({userKey}):</span>
+                      <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal ({SUPERVISOR_NAMES[userKey?.toLowerCase()] ? SUPERVISOR_NAMES[userKey?.toLowerCase()] : userKey}):</span>
                       <div className="flex items-center gap-4">
                         <span className="text-slate-700 font-bold">Bet: ₱{groupBetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         <span className="text-emerald-700 font-extrabold">Win: ₱{groupWinTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>

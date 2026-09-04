@@ -1290,12 +1290,17 @@ export default function App() {
     syncClaimedRef.current = syncClaimedTickets;
   });
 
-  // Fetch claimed tickets once when tab changes to returned or settlement, instead of infinite polling
+  // Fetch claimed tickets when tab changes and poll periodically every 15s in the background
   useEffect(() => {
+    if (!currentUser) return;
     if (activeTab === 'returned' || activeTab === 'settlement') {
       if (syncClaimedRef.current) syncClaimedRef.current(false);
+      const intervalId = setInterval(() => {
+        if (syncClaimedRef.current) syncClaimedRef.current(false);
+      }, 15000);
+      return () => clearInterval(intervalId);
     }
-  }, [activeTab]);
+  }, [currentUser, activeTab]);
 
   // If not logged in, render Login page
   if (!currentUser) {
