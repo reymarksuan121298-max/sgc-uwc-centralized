@@ -247,8 +247,8 @@ export default function ReturnedWinnings({
             type="button"
             onClick={() => setActiveFilterTab('ALL')}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'ALL'
-                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-                : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
             All Returned ({filteredData.length})
@@ -258,8 +258,8 @@ export default function ReturnedWinnings({
             type="button"
             onClick={() => setActiveFilterTab('UNREMITTED')}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'UNREMITTED'
-                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-                : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
             Unremitted ({unremittedTotalTickets.length})
@@ -269,10 +269,10 @@ export default function ReturnedWinnings({
             type="button"
             onClick={() => setActiveFilterTab('REQUESTS')}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'REQUESTS'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : pendingDeletionRequests.length > 0
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black animate-pulse'
-                  : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : pendingDeletionRequests.length > 0
+                ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black animate-pulse'
+                : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
             <AlertTriangle size={14} className={pendingDeletionRequests.length > 0 ? 'text-amber-700' : ''} />
@@ -311,7 +311,7 @@ export default function ReturnedWinnings({
             <Download size={15} />
             <span className="hidden sm:inline">Export CSV</span>
           </button>
-          
+
           {/* Sync Claimed Button removed since it is real-time via App.jsx now */}
         </div>
       </div>
@@ -482,17 +482,22 @@ export default function ReturnedWinnings({
                                       Pending Approval
                                     </span>
                                   )
-                                ) : isClaimedInSourceSystem && !isUnderSettlement ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer"
-                                  >
-                                    <Trash2 size={12} /> Request Delete
-                                  </button>
-                                ) : isRemitted ? (
-                                  <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
-                                ) : null}
+                                ) : (
+                                  <>
+                                    {isRemitted && !isClaimedInSourceSystem && (
+                                      <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
+                                    )}
+                                    {isClaimedInSourceSystem && !isUnderSettlement && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer"
+                                      >
+                                        <Trash2 size={12} /> Request Delete
+                                      </button>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -652,15 +657,19 @@ export default function ReturnedWinnings({
                                 Awaiting Approval
                               </span>
                             )
-                          ) : isClaimedInSourceSystem && !isUnderSettlement ? (
-                            <button
-                              type="button"
-                              onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                              className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase"
-                            >
-                              Request Delete
-                            </button>
-                          ) : null}
+                          ) : (
+                            <>
+                              {isClaimedInSourceSystem && !isUnderSettlement && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                  className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase"
+                                >
+                                  Request Delete
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     );
