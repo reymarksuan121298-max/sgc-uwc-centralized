@@ -55,7 +55,9 @@ export default function AppRoutes({
   // Settlement agreement props
   selectedSettlementTicketId,
   onSaveAgreement,
-  onSyncLedger
+  onSyncLedger,
+  onSyncClaimedTickets,
+  liveClaimedTransactionIds
 }) {
   switch (activeTab) {
     case 'superadmin':
@@ -117,6 +119,8 @@ export default function AppRoutes({
           canCopyTransaction={canCopyTransaction}
           canOpenQrModal={canOpenQrModal}
           onNavigateToSettlement={onNavigateToSettlement}
+          onSyncClaimedTickets={onSyncClaimedTickets}
+          liveClaimedTransactionIds={liveClaimedTransactionIds}
         />
       );
 

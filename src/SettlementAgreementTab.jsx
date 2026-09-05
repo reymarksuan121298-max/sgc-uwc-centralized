@@ -736,7 +736,7 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
           <div id="settlement-agreement-print-area" className={`${currentStep === 4 ? 'bg-white border border-slate-300 rounded-xl shadow-md p-6 sm:p-8 max-w-4xl mx-auto' : 'bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs'} space-y-6 text-slate-900 font-sans w-full print:w-full print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0`}>
             
             {/* HEADER WITH LOGOS */}
-            <div className={`${currentStep === 4 ? '' : 'hidden'} flex justify-between items-center border-b-2 border-[#002B66] pb-4`}>
+            <div className={`${currentStep === 4 ? '' : 'hidden'} flex justify-between items-center border-b-2 border-[#002B66] pb-1`}>
               <div className="flex items-center gap-3">
                 <img 
                   src="/lbp.png" 
@@ -1000,7 +1000,7 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                     {selectedTicket.fullName || selectedTicket.username || 'Accountable Payer Name'}
                   </div>
                   <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    [ ACCOUNTABLE PAYER ]<br />
+                    ACCOUNTABLE PAYER<br />
                     <span className="font-normal normal-case text-slate-500">Signature over Printed Name</span><br />
                     <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
                   </div>
@@ -1012,11 +1012,11 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                     type="text"
                     value={hrManagerName}
                     onChange={(e) => setHrManagerName(e.target.value)}
-                    className="w-full border-b border-slate-900 pb-1 font-bold uppercase text-slate-900 text-center bg-slate-50 outline-none"
+                    className="w-full border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900 text-center bg-slate-50 outline-none"
                     placeholder="Enter Representative Name"
                   />
                   <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    [ AUTHORIZED COMPANY REPRESENTATIVE ]<br />
+                    AUTHORIZED COMPANY REPRESENTATIVE<br />
                     <span className="font-normal normal-case text-slate-500">Company Representative / Signature over Printed Name</span><br />
                     <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
                   </div>
@@ -1030,11 +1030,11 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                     type="text"
                     value={supervisorName}
                     onChange={(e) => setSupervisorName(e.target.value)}
-                    className="w-full border-b border-slate-900 pb-1 font-bold uppercase text-slate-900 text-center bg-slate-50 outline-none"
+                    className="w-full border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900 text-center bg-slate-50 outline-none"
                     placeholder="Enter Supervisor Name"
                   />
                   <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    [ SALES SUPERVISOR ]<br />
+                    SALES SUPERVISOR<br />
                     <span className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</span><br />
                     <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
                   </div>

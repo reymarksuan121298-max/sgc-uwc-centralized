@@ -68,8 +68,9 @@ export const getNumericSequenceCode = (seed = '') => {
 export const generateRemittanceSerial = (subOfficeName = 'Mandaue Central', seed = '', dateObj = new Date()) => {
   const abbr = getSubOfficeAbbreviation(subOfficeName);
   
-  // Actual current date in YYMMDD format
-  const d = dateObj instanceof Date && !isNaN(dateObj.getTime()) ? dateObj : new Date();
+  // Safely parse date parameter whether passed as Date, ISO string, timestamp, or fallback to now
+  const parsedDate = dateObj ? new Date(dateObj) : new Date();
+  const d = !isNaN(parsedDate.getTime()) ? parsedDate : new Date();
   const yy = String(d.getFullYear()).slice(-2);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');

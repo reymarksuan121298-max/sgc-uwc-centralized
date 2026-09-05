@@ -10,6 +10,31 @@ class NotificationService {
     this.actionListeners = new Set();
     this.initServiceWorker();
     this.initMessageListener();
+    this.initAudioUnlock();
+  }
+
+  // Automatic AudioContext gesture unlock on first user interaction
+  initAudioUnlock() {
+    if (typeof window === 'undefined') return;
+    const unlock = () => {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          if (!this.audioCtx) {
+            this.audioCtx = new AudioContextClass();
+          }
+          if (this.audioCtx && this.audioCtx.state === 'suspended') {
+            this.audioCtx.resume().catch(() => {});
+          }
+        }
+      } catch {}
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('click', unlock, { passive: true, once: true });
+    window.addEventListener('touchstart', unlock, { passive: true, once: true });
+    window.addEventListener('keydown', unlock, { passive: true, once: true });
   }
 
   // Register service worker for web push and background notification support
@@ -122,7 +147,8 @@ class NotificationService {
       }
 
       if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume();
+        this.audioCtx.resume().catch(() => {});
+        return; // Skip audio until unlocked by user interaction to prevent browser warnings
       }
 
       const now = this.audioCtx.currentTime;

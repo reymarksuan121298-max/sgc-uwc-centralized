@@ -12,7 +12,22 @@ import AttachWeeklyProofModal from '../../components/receipts/AttachWeeklyProofM
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
-import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
+import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole } from '../../utils/permissions';
+
+const SUPERVISOR_NAMES = {
+  "spvr-arlfred": "ARLFRED SABERON",
+  "spvr-raffy": "RAFFY BAGUIO",
+  "spvr-roel": "ROEL CATALAN",
+  "spvr-michael": "MICHAEL DE GUZMAN",
+  "spvr-joel": "JOEL ESTORCO",
+  "spvr-eya": "HARRY EYA",
+  "spvr-carl": "CARL MANGRUBAN",
+  "spvr-jed": "JED MELENDREZ",
+  "spvr-nyor": "NYOR SESALDO",
+  "spvr-jason": "NARCISO TAGUD JR.",
+  "spvr-molly": "MOLLY BATUBALANOS",
+  "spvr-apple": "COORDINATOR - APPLEGROUP"
+};
 
 export default function ReturnedWinnings({
   groupedData = {},
@@ -21,8 +36,9 @@ export default function ReturnedWinnings({
   currentUser,
   onDeleteRecord,
   onDataUpdated,
-  onOpenQrModal,
-  onNavigateToSettlement
+  onNavigateToSettlement,
+  onSyncClaimedTickets,
+  liveClaimedTransactionIds = new Set()
 }) {
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [selectedForRequestDelete, setSelectedForRequestDelete] = useState(null);
@@ -40,16 +56,27 @@ export default function ReturnedWinnings({
 
   // Admin / Staff Approval Permission (SSR can request, Staff/Admin can approve)
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
+  const isSSR = isSSRRole(currentUser?.role);
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
 
   const checkIsExplicitlyClaimed = (item) => {
-    return [
-      item.isClaime,
-      item.isClaim,
-      item.is_claime,
-      item.is_claimed,
-      item.isClaimed
-    ].some(v => v === 1 || v === '1' || v === true || v === 'true');
+    if (!item) return false;
+    const tid = getTicketTransId(item);
+    if (tid && (liveClaimedTransactionIds?.has?.(tid) || liveClaimedTransactionIds?.has?.(String(item.transactionId || '').trim()))) return true;
+    return Boolean(
+      item.is_claimed === 1 ||
+      item.is_claimed === '1' ||
+      item.is_claimed === true ||
+      item.is_claimed === 'true' ||
+      item.isClaimed === 1 ||
+      item.isClaimed === '1' ||
+      item.isClaimed === true ||
+      item.isClaimed === 'true' ||
+      item.is_already_claimed ||
+      item.status === 'CLAIMED' ||
+      item.claim_status === 'CLAIMED' ||
+      item.claimed_at
+    );
   };
 
   // Pending Deletion Requests
@@ -252,8 +279,8 @@ export default function ReturnedWinnings({
             type="button"
             onClick={() => setActiveFilterTab('ALL')}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'ALL'
-                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-                : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
             All Returned ({filteredData.length})
@@ -263,8 +290,8 @@ export default function ReturnedWinnings({
             type="button"
             onClick={() => setActiveFilterTab('UNREMITTED')}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'UNREMITTED'
-                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-                : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
             Unremitted ({unremittedTotalTickets.length})
@@ -274,10 +301,10 @@ export default function ReturnedWinnings({
             type="button"
             onClick={() => setActiveFilterTab('REQUESTS')}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'REQUESTS'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : pendingDeletionRequests.length > 0
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black animate-pulse'
-                  : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : pendingDeletionRequests.length > 0
+                ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black animate-pulse'
+                : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
             <AlertTriangle size={14} className={pendingDeletionRequests.length > 0 ? 'text-amber-700' : ''} />
@@ -316,6 +343,8 @@ export default function ReturnedWinnings({
             <Download size={15} />
             <span className="hidden sm:inline">Export CSV</span>
           </button>
+
+          {/* Sync Claimed Button removed since it is real-time via App.jsx now */}
         </div>
       </div>
 
@@ -401,7 +430,7 @@ export default function ReturnedWinnings({
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
                               <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                              <span>USER / ACCOUNT: @{username}</span>
+                              <span>SUPERVISOR: {SUPERVISOR_NAMES[username?.toLowerCase()] ? SUPERVISOR_NAMES[username?.toLowerCase()] : `@${username}`}</span>
                             </div>
                             <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-slate-300">
                               {items.length} records ({unremittedInGroup.length} unremitted) • Subtotal: ₱{subtotalWin.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -485,28 +514,23 @@ export default function ReturnedWinnings({
                                       Pending Approval
                                     </span>
                                   )
-                                ) : isClaimedInSourceSystem && !isUnderSettlement ? (
-                                  canApprove ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedForDelete({ ...item, computedTransId: transId })}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-300 hover:border-rose-600 rounded-xs transition-all cursor-pointer"
-                                    >
-                                      <Trash2 size={12} /> Delete
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-300 hover:border-rose-600 rounded-xs transition-all cursor-pointer"
-                                      title={isRemitted ? "Request admin/staff to delete and deduct from Collections" : "Request deletion of this ticket"}
-                                    >
-                                      <Trash2 size={12} /> Request Delete
-                                    </button>
-                                  )
-                                ) : isRemitted ? (
-                                  <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
-                                ) : null}
+                                ) : (
+                                  <>
+                                    {isRemitted && !isClaimedInSourceSystem && (
+                                      <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
+                                    )}
+                                    {isClaimedInSourceSystem && !isUnderSettlement && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer shadow-2xs"
+                                        title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                      >
+                                        <Trash2 size={12} /> Request Delete
+                                      </button>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -666,25 +690,20 @@ export default function ReturnedWinnings({
                                 Awaiting Approval
                               </span>
                             )
-                          ) : isClaimedInSourceSystem && !isUnderSettlement ? (
-                            canApprove ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedForDelete({ ...item, computedTransId: transId })}
-                                className="px-2.5 py-1 text-rose-600 border border-rose-300 rounded-lg text-[10px] font-bold uppercase"
-                              >
-                                Delete
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-300 rounded-lg text-[10px] font-bold uppercase"
-                              >
-                                Request Delete
-                              </button>
-                            )
-                          ) : null}
+                          ) : (
+                            <>
+                              {isClaimedInSourceSystem && !isUnderSettlement && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                  className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase shadow-2xs"
+                                  title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                >
+                                  Request Delete
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     );

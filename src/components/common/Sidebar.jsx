@@ -28,7 +28,6 @@ export default function Sidebar({
     navItems = [
       { id: 'dashboard', label: 'Dashboard', Icon: ShieldCheck },
       { id: 'collections', label: 'Collections & Commissions', Icon: Coins },
-      { id: 'verification', label: 'Verification', Icon: CheckCircle2, badge: pendingReceiptsCount },
       { id: 'pending', label: 'Unclaimed Winnings', Icon: CalendarCheck },
       { id: 'returned', label: 'Returned Winnings', Icon: ArrowLeftRight, badge: returnedCount },
       { id: 'receipts', label: 'Remittance Proofs', Icon: Receipt, badge: receiptsCount },
@@ -47,7 +46,6 @@ export default function Sidebar({
   } else {
     navItems = [
       { id: 'collections', label: 'Collections & Commissions', Icon: Coins },
-      { id: 'verification', label: 'Verification', Icon: CheckCircle2, badge: pendingReceiptsCount },
       { id: 'pending', label: 'Unclaimed Winnings', Icon: CalendarCheck },
       { id: 'returned', label: 'Returned Winnings', Icon: ArrowLeftRight, badge: returnedCount },
       { id: 'receipts', label: 'Remittance Proofs', Icon: Receipt, badge: receiptsCount },
