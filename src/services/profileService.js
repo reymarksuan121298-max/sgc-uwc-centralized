@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabaseClient';
+import { EMAILJS_CONFIG } from '../config/emailjsConfig';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function generateToken(length = 64) {
@@ -96,10 +97,15 @@ export const profileService = {
     const token = generateToken(64);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
 
-    // Store token
+    // Store token – delete existing token for user first to prevent 409 Conflict
+    await supabase
+      .from('password_reset_tokens')
+      .delete()
+      .eq('user_id', userId);
+
     const { error: tokenError } = await supabase
       .from('password_reset_tokens')
-      .upsert([{
+      .insert([{
         user_id: userId,
         username,
         token,
@@ -107,7 +113,7 @@ export const profileService = {
         expires_at: expiresAt,
         used: false,
         created_at: new Date().toISOString(),
-      }], { onConflict: 'user_id' });
+      }]);
 
     if (tokenError) throw tokenError;
 
@@ -186,21 +192,19 @@ export const profileService = {
 
   // 6. Send email via EmailJS REST API (no backend needed)
   async sendPasswordChangeEmail({ to_email, to_name, confirm_link, message, expires_in }) {
-    const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
-    const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
-    const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+    const { serviceId, templateId, publicKey } = EMAILJS_CONFIG;
 
-    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
-      throw new Error('EmailJS not configured. Set VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_TEMPLATE_ID, and VITE_EMAILJS_PUBLIC_KEY in your .env file.');
+    if (!serviceId || !templateId || !publicKey) {
+      throw new Error('EmailJS not configured. Set VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_TEMPLATE_ID, and VITE_EMAILJS_PUBLIC_KEY in environment variables.');
     }
 
     const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ID,
-        user_id: EMAILJS_PUBLIC_KEY,
+        service_id: serviceId,
+        template_id: templateId,
+        user_id: publicKey,
         template_params: {
           to_email,
           to_name,

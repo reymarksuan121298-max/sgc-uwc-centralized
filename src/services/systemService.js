@@ -11,9 +11,14 @@ export const systemService = {
   },
 
   async updateSetting(key, value, actorUser) {
+    await supabase
+      .from('system_settings')
+      .delete()
+      .eq('key', key);
+
     const { data, error } = await supabase
       .from('system_settings')
-      .upsert({ key, value, updated_at: new Date().toISOString() })
+      .insert([{ key, value, updated_at: new Date().toISOString() }])
       .select();
 
     if (error) throw error;
