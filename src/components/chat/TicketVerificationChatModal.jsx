@@ -5,12 +5,14 @@ import {
   Trash2, UploadCloud, Clock, Search, 
   FileText, Sparkles, Copy, ThumbsUp, Smile,
   Minus, Maximize2, Minimize2, Users, ChevronDown,
-  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck
+  MessageSquare, ChevronLeft, Plus, Building2, CheckCheck,
+  CornerUpLeft, Heart
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { canApproveDeletionRequests, isAdminRole, formatRoleName, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 import CreateGroupChatModal from './CreateGroupChatModal';
+import ViewUserProfileModal from '../common/ViewUserProfileModal';
 
 // Deterministic Color Generator for User Initials per Sub-Office / Name
 const getAvatarColor = (name = '', subOffice = '') => {
@@ -67,6 +69,12 @@ export default function TicketVerificationChatModal({
   const [isProcessingVerify, setIsProcessingVerify] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  // New Messenger Features: Reply, Reactions, Profile Viewing, Group Seen Receipts
+  const [replyingToMessage, setReplyingToMessage] = useState(null);
+  const [activeReactionPickerId, setActiveReactionPickerId] = useState(null);
+  const [viewingUserProfile, setViewingUserProfile] = useState(null);
+  const [groupSeenMap, setGroupSeenMap] = useState({});
 
   // Active contact / room state
   const [activeContact, setActiveContact] = useState(null);
@@ -397,13 +405,31 @@ export default function TicketVerificationChatModal({
         }
       })
       .on('broadcast', { event: 'message_seen' }, ({ payload }) => {
-        if (payload && payload.userId !== (currentUser?.id || currentUser?.username)) {
+        if (payload && payload.userId && String(payload.userId) !== String(currentUser?.id || currentUser?.username)) {
           setPartnerSeenInfo({
             userId: payload.userId,
             name: payload.name || 'Partner',
             at: payload.seenAt || new Date().toISOString(),
             lastMsgId: payload.lastMsgId
           });
+
+          setGroupSeenMap((prev) => ({
+            ...prev,
+            [payload.userId]: {
+              userId: payload.userId,
+              name: payload.name || payload.username || 'Member',
+              avatar_url: payload.avatar_url || null,
+              lastMsgId: payload.lastMsgId,
+              seenAt: payload.seenAt || new Date().toISOString()
+            }
+          }));
+        }
+      })
+      .on('broadcast', { event: 'message_reaction' }, ({ payload }) => {
+        if (payload && payload.messageId) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === payload.messageId ? { ...m, reactions: payload.reactions } : m))
+          );
         }
       })
       .subscribe();
@@ -420,13 +446,17 @@ export default function TicketVerificationChatModal({
     scrollToBottom();
   }, [messages, windowMode, activeContact]);
 
-  // 3. Central Image Processor
+  // 3. Central Image Processor (Converts File to Data URL to avoid blob: loading errors)
   const processImageFile = async (file) => {
     if (!file) return;
 
     setSelectedFile(file);
-    const previewUrl = URL.createObjectURL(file);
-    setFilePreview(previewUrl);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFilePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
 
     setIsOcrScanning(true);
     try {
@@ -601,17 +631,56 @@ export default function TicketVerificationChatModal({
   useEffect(() => {
     if (!isOpen || !activeContact || displayedMessages.length === 0) return;
     const lastMsg = displayedMessages[displayedMessages.length - 1];
-    const isFromOther = lastMsg && (lastMsg.sender_id !== (currentUser?.id || currentUser?.username) && lastMsg.sender_name !== currentUser?.full_name);
-    
-    if (isFromOther) {
-      sendBroadcastSafe(realtimeChannelRef.current, 'message_seen', {
-        userId: currentUser?.id || currentUser?.username,
-        name: currentUser?.full_name || currentUser?.username,
-        lastMsgId: lastMsg.id,
-        seenAt: new Date().toISOString()
-      });
-    }
+    if (!lastMsg) return;
+
+    sendBroadcastSafe(realtimeChannelRef.current, 'message_seen', {
+      userId: currentUser?.id || currentUser?.username,
+      name: currentUser?.full_name || currentUser?.username,
+      avatar_url: currentUser?.avatar_url || null,
+      lastMsgId: lastMsg.id,
+      seenAt: new Date().toISOString()
+    });
   }, [isOpen, displayedMessages, activeContact, currentUser]);
+
+  // Handle Toggling Emoji Reaction on Message
+  const handleToggleReaction = async (msg, emoji) => {
+    const myKey = String(currentUser?.username || currentUser?.id || officerName).toLowerCase().trim();
+    const currentReactions = msg.reactions || msg.ocr_data?.reactions || {};
+    const userList = currentReactions[emoji] || [];
+
+    let updatedList;
+    if (userList.includes(myKey)) {
+      updatedList = userList.filter((u) => u !== myKey);
+    } else {
+      updatedList = [...userList, myKey];
+    }
+
+    const newReactions = { ...currentReactions, [emoji]: updatedList };
+
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, reactions: newReactions } : m))
+    );
+    setActiveReactionPickerId(null);
+
+    sendBroadcastSafe(realtimeChannelRef.current, 'message_reaction', {
+      messageId: msg.id,
+      reactions: newReactions
+    });
+
+    try {
+      await supabase
+        .from('ticket_verification_chats')
+        .update({
+          ocr_data: {
+            ...(msg.ocr_data || {}),
+            reactions: newReactions
+          }
+        })
+        .eq('id', msg.id);
+    } catch (err) {
+      console.warn('Reaction update warning:', err);
+    }
+  };
 
   // 5. Send Message (Handles 1-on-1 Direct Messages and Group Channels)
   const handleSendMessage = async (textToSend = null) => {
@@ -623,6 +692,15 @@ export default function TicketVerificationChatModal({
     const roomId = isGroupChat ? activeContact.id : directRoomId;
     const recipientId = isGroupChat ? null : (contactUser?.id || activeContact?.id || activeContact?.username || null);
     const recipientName = isGroupChat ? null : (contactUser?.full_name || activeContact?.full_name || activeContact?.name || activeContact?.username || null);
+
+    const replyPayload = replyingToMessage
+      ? {
+          id: replyingToMessage.id,
+          sender_name: replyingToMessage.sender_name,
+          message_text: replyingToMessage.message_text,
+          image_url: replyingToMessage.image_url
+        }
+      : null;
 
     const newMsg = {
       id: crypto.randomUUID(),
@@ -642,7 +720,9 @@ export default function TicketVerificationChatModal({
         sender_username: currentUser?.username || currentUser?.id,
         groupName: isGroupChat ? chatHeaderName : null,
         recipient_id: recipientId,
-        recipient_name: recipientName
+        recipient_name: recipientName,
+        reply_to: replyPayload,
+        reactions: {}
       },
       verification_status: filePreview ? 'PENDING' : 'INFO',
       matched_transaction_id: ocrResult?.transactionId || null,
@@ -673,6 +753,7 @@ export default function TicketVerificationChatModal({
       setSelectedFile(null);
       setFilePreview(null);
       setOcrResult(null);
+      setReplyingToMessage(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
 
       if (realtimeChannelRef.current) {
@@ -862,8 +943,16 @@ export default function TicketVerificationChatModal({
         {/* MESSENGER TOP BAR */}
         <div className="bg-white border-b border-slate-200/90 px-3 py-2 flex items-center justify-between gap-1.5 shrink-0 shadow-2xs">
           
-          {/* Contact identity */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          {/* Contact identity (Clickable to view profile) */}
+          <div 
+            onClick={() => {
+              if (!isGroupChat) {
+                setViewingUserProfile(contactUser || activeContact);
+              }
+            }}
+            className={`flex items-center gap-2 min-w-0 flex-1 ${!isGroupChat ? 'cursor-pointer group' : ''}`}
+            title={!isGroupChat ? 'Click to view profile' : ''}
+          >
             <div className="relative shrink-0">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black font-mono border border-white shadow-2xs overflow-hidden ${chatHeaderAvatarUrl ? 'bg-slate-100' : chatHeaderAvatarClass}`}>
                 {chatHeaderAvatarUrl ? (
@@ -877,7 +966,7 @@ export default function TicketVerificationChatModal({
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1">
-                <h3 className="text-[12.5px] font-extrabold text-slate-900 truncate leading-tight">{chatHeaderName}</h3>
+                <h3 className="text-[12.5px] font-extrabold text-slate-900 truncate leading-tight group-hover:text-[#0084FF] transition-colors">{chatHeaderName}</h3>
                 {isGroupChat && (
                   <span className="text-[8px] font-black px-1.5 py-0.2 rounded uppercase shrink-0 bg-[#FFD700] text-[#002B66]">
                     GROUP
@@ -993,10 +1082,14 @@ export default function TicketVerificationChatModal({
                   const partnerDisplayName = activeContact?.name || activeContact?.full_name || activeContact?.username || 'Partner';
                   const partnerInitial = partnerDisplayName ? partnerDisplayName[0].toUpperCase() : 'P';
 
+                  const replyTo = msg.reply_to || msg.ocr_data?.reply_to;
+                  const reactions = msg.reactions || msg.ocr_data?.reactions || {};
+                  const reactionEmojis = Object.keys(reactions).filter(e => reactions[e] && reactions[e].length > 0);
+
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} space-y-1`}
+                      className={`group/msg relative flex flex-col ${isMine ? 'items-end' : 'items-start'} space-y-1`}
                     >
                       {/* Timestamp & Sent/Seen Status Metadata Bar */}
                       <div className={`flex items-center gap-1 text-[10px] font-medium text-slate-400 px-1 font-mono ${isMine ? 'justify-end' : 'justify-start'}`}>
@@ -1010,10 +1103,14 @@ export default function TicketVerificationChatModal({
                         )}
                       </div>
 
-                      <div className={`flex items-end gap-1.5 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <div className={`flex items-end gap-1.5 max-w-[88%] relative ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                         
                         {!isMine && (
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black font-mono border border-slate-200 shrink-0 mb-1 shadow-2xs overflow-hidden ${senderAvatarUrl ? 'bg-slate-100' : senderColor}`}>
+                          <div 
+                            onClick={() => setViewingUserProfile(senderUser || { full_name: msg.sender_name, role: msg.sender_role, sub_office: msg.sub_office })}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black font-mono border border-slate-200 shrink-0 mb-1 shadow-2xs overflow-hidden cursor-pointer hover:ring-2 hover:ring-[#0084FF] transition-all ${senderAvatarUrl ? 'bg-slate-100' : senderColor}`}
+                            title={`Click to view ${msg.sender_name}'s profile`}
+                          >
                             {senderAvatarUrl ? (
                               <img src={senderAvatarUrl} alt="Contact" className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} />
                             ) : (
@@ -1022,11 +1119,24 @@ export default function TicketVerificationChatModal({
                           </div>
                         )}
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 relative">
+                          
+                          {/* QUOTED REPLY PARENT BOX */}
+                          {replyTo && (
+                            <div className={`text-[10.5px] p-2 rounded-xl border-l-3 bg-slate-100 border-[#0084FF] space-y-0.5 max-w-full ${isMine ? 'rounded-tr-xs' : 'rounded-tl-xs'}`}>
+                              <span className="font-bold text-[#002B66] block leading-none">
+                                {replyTo.sender_name}
+                              </span>
+                              <p className="text-slate-600 truncate font-medium">
+                                {replyTo.message_text || (replyTo.image_url ? '📷 Ticket Receipt Photo' : 'Attachment')}
+                              </p>
+                            </div>
+                          )}
+
                           {/* Text bubble */}
                           {msg.message_text && (
                             <div
-                              className={`rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-snug font-medium break-words shadow-2xs ${
+                              className={`rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-snug font-medium break-words shadow-2xs whitespace-pre-wrap ${
                                 isMine
                                   ? 'bg-[#0084FF] text-white rounded-br-xs'
                                   : 'bg-[#E4E6EB] text-[#050505] rounded-bl-xs'
@@ -1130,25 +1240,125 @@ export default function TicketVerificationChatModal({
                             </div>
                           )}
 
-                          {/* Sent / Seen Status Indicator for latest outgoing message */}
-                          {isMine && (isLastMessage || isLatestMyMessage) && (
-                            <div className="flex items-center justify-end gap-1.5 text-[9.5px] font-bold font-mono pr-1 -mt-0.5 animate-in fade-in duration-150">
-                              {isMessageSeen ? (
-                                <>
-                                  <div className="w-3.5 h-3.5 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center text-[7.5px] font-black font-mono shadow-2xs" title={`Seen by ${partnerDisplayName}`}>
-                                    {partnerInitial}
-                                  </div>
-                                  <span className="text-[#0084FF] font-sans font-bold">Seen</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCheck size={11} className="text-slate-400 stroke-[2]" />
-                                  <span className="text-slate-400 font-sans">Sent</span>
-                                </>
-                              )}
+                          {/* REACTION COUNTER BADGES */}
+                          {reactionEmojis.length > 0 && (
+                            <div className={`flex items-center gap-1 flex-wrap ${isMine ? 'justify-end' : 'justify-start'}`}>
+                              {reactionEmojis.map((emoji) => {
+                                const count = reactions[emoji].length;
+                                return (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={() => handleToggleReaction(msg, emoji)}
+                                    className="bg-white border border-slate-200 text-slate-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-2xs hover:bg-slate-50 cursor-pointer flex items-center gap-0.5"
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="text-[9px] text-slate-500">{count}</span>
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
+
+                          {/* Sent / Seen Status Indicator for messages (Group Chat Multi-Avatar Receipts or 1-on-1 Direct Chat Indicator) */}
+                          {isGroupChat ? (
+                            (() => {
+                              const seenUsers = Object.values(groupSeenMap).filter(
+                                (u) => u.lastMsgId === msg.id && String(u.userId) !== String(currentUser?.id || currentUser?.username)
+                              );
+
+                              if (seenUsers.length === 0) return null;
+
+                              return (
+                                <div className="flex items-center justify-end -space-x-1 pt-1 animate-in fade-in">
+                                  {seenUsers.map((seenUser) => {
+                                    const sName = seenUser.name || 'Member';
+                                    const sInitial = sName[0].toUpperCase();
+                                    const sUserObj = activeUsers?.find(
+                                      (au) => String(au.id) === String(seenUser.userId) || au.username === seenUser.userId
+                                    );
+                                    const sAvatar = sUserObj?.avatar_url || seenUser.avatar_url;
+                                    const sColor = getAvatarColor(sName);
+
+                                    return (
+                                      <div
+                                        key={seenUser.userId}
+                                        onClick={() => setViewingUserProfile(sUserObj || { full_name: sName })}
+                                        className={`w-4 h-4 rounded-full border-2 border-white shadow-2xs flex items-center justify-center text-[7.5px] font-black font-mono overflow-hidden cursor-pointer hover:scale-125 transition-transform z-10 ${
+                                          sAvatar ? 'bg-slate-100' : sColor
+                                        }`}
+                                        title={`Seen by ${sName}`}
+                                      >
+                                        {sAvatar ? (
+                                          <img src={sAvatar} alt={sName} className="w-full h-full object-cover" />
+                                        ) : (
+                                          sInitial
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            isMine && (isLastMessage || isLatestMyMessage) && (
+                              <div className="flex items-center justify-end gap-1.5 text-[9.5px] font-bold font-mono pr-1 -mt-0.5 animate-in fade-in duration-150">
+                                {isMessageSeen ? (
+                                  <>
+                                    <div className="w-3.5 h-3.5 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center text-[7.5px] font-black font-mono shadow-2xs" title={`Seen by ${partnerDisplayName}`}>
+                                      {partnerInitial}
+                                    </div>
+                                    <span className="text-[#0084FF] font-sans font-bold">Seen</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCheck size={11} className="text-slate-400 stroke-[2]" />
+                                    <span className="text-slate-400 font-sans">Sent</span>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          )}
                         </div>
+
+                        {/* MESSENGER QUICK ACTION FLOATING HOVER BAR (REPLY & REACTION EMOJIS) */}
+                        <div className={`opacity-0 group-hover/msg:opacity-100 transition-opacity flex items-center gap-0.5 bg-white border border-slate-200 rounded-full px-1 py-0.5 shadow-md shrink-0 self-center ${isMine ? 'mr-1' : 'ml-1'}`}>
+                          <button
+                            type="button"
+                            onClick={() => setReplyingToMessage(msg)}
+                            className="p-1 text-slate-400 hover:text-[#0084FF] rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Reply to message"
+                          >
+                            <CornerUpLeft size={13} />
+                          </button>
+
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setActiveReactionPickerId(activeReactionPickerId === msg.id ? null : msg.id)}
+                              className="p-1 text-slate-400 hover:text-amber-500 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="React to message"
+                            >
+                              <Smile size={13} />
+                            </button>
+
+                            {activeReactionPickerId === msg.id && (
+                              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-white border border-slate-200 rounded-full shadow-xl px-2 py-1 flex items-center gap-1.5 z-30 animate-in fade-in zoom-in-95">
+                                {['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={() => handleToggleReaction(msg, emoji)}
+                                    className="hover:scale-125 transition-transform cursor-pointer text-sm"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
                       </div>
                     </div>
                   );
@@ -1183,6 +1393,30 @@ export default function TicketVerificationChatModal({
 
               <div ref={messagesEndRef} />
             </div>
+
+            {/* QUOTED REPLY BANNER */}
+            {replyingToMessage && (
+              <div className="bg-slate-100 border-t border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CornerUpLeft size={15} className="text-[#0084FF] shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold text-slate-500 block leading-none">
+                      Replying to <strong className="text-slate-900">{replyingToMessage.sender_name}</strong>
+                    </span>
+                    <p className="text-[11px] text-slate-700 truncate font-medium leading-tight mt-0.5">
+                      {replyingToMessage.message_text || (replyingToMessage.image_url ? '📷 Ticket Receipt Photo' : 'Attachment')}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyingToMessage(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             {/* ATTACHED IMAGE PREVIEW BAR */}
             {filePreview && (
@@ -1226,7 +1460,7 @@ export default function TicketVerificationChatModal({
               </div>
             )}
 
-            {/* MESSENGER INPUT BAR */}
+            {/* MESSENGER INPUT BAR WITH SHIFT+ENTER MULTILINE TEXTAREA */}
             <div className="bg-white border-t border-slate-200 p-2.5 flex items-center gap-1.5 shrink-0">
               <input
                 type="file"
@@ -1257,11 +1491,11 @@ export default function TicketVerificationChatModal({
                 <Smile size={19} />
               </button>
 
-              {/* Capsule Pill Input */}
+              {/* Capsule Pill Multiline Input */}
               <div className="relative flex-1">
-                <input
-                  type="text"
-                  placeholder={`Message ${chatHeaderName}... (Ctrl+V to paste)`}
+                <textarea
+                  rows={1}
+                  placeholder={`Message ${chatHeaderName}...`}
                   value={inputText}
                   onChange={handleInputChange}
                   onPaste={handlePaste}
@@ -1271,7 +1505,7 @@ export default function TicketVerificationChatModal({
                       handleSendMessage();
                     }
                   }}
-                  className="w-full bg-[#F0F2F5] hover:bg-[#E4E6EB]/70 focus:bg-white border border-transparent focus:border-[#0084FF] rounded-full px-3.5 py-2 text-[12.5px] text-slate-900 placeholder:text-slate-500 outline-none transition-all shadow-inner"
+                  className="w-full bg-[#F0F2F5] hover:bg-[#E4E6EB]/70 focus:bg-white border border-transparent focus:border-[#0084FF] rounded-2xl px-3.5 py-2 text-[12.5px] text-slate-900 placeholder:text-slate-500 outline-none transition-all shadow-inner resize-none max-h-24 overflow-y-auto leading-tight [scrollbar-width:none] [-ms-overflow-style:none]"
                 />
               </div>
 
@@ -1323,6 +1557,17 @@ export default function TicketVerificationChatModal({
           </div>
         </div>
       )}
+
+      {/* VIEW USER PROFILE MODAL */}
+      <ViewUserProfileModal
+        user={viewingUserProfile}
+        isOpen={Boolean(viewingUserProfile)}
+        onClose={() => setViewingUserProfile(null)}
+        onStartChat={(user) => {
+          setActiveContact(user);
+          setChatCategory('direct');
+        }}
+      />
 
       {/* CREATE GROUP CHAT MODAL */}
       <CreateGroupChatModal
