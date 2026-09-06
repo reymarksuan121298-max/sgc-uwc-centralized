@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { LogIn, User, Lock, ShieldCheck, Sparkles, Bot } from 'lucide-react';
+import { LogIn, User, Lock, ShieldCheck, Sparkles, KeyRound, Mail, X, CheckCircle2, AlertTriangle, Send } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
+import { hashPassword, verifyPassword } from '../../utils/cryptoUtils';
+import { profileService } from '../../services/profileService';
 import AnimeBackgroundAnimation from '../../components/common/AnimeBackgroundAnimation';
 import Robot3DScene from '../../components/common/Robot3DScene';
 
@@ -9,6 +11,13 @@ export default function Login({ onLoginSuccess }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Forgot Password Modal State
+  const [isForgotOpen, setIsForgotOpen] = useState(false);
+  const [forgotInput, setForgotInput] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
 
   // Lamp Interactive States
   const [isPulling, setIsPulling] = useState(false);
@@ -58,15 +67,32 @@ export default function Login({ onLoginSuccess }) {
         .from('app_users')
         .select('*')
         .eq('username', username.trim().toLowerCase())
-        .eq('password', password)
         .maybeSingle();
 
       if (error || !data) {
         throw new Error('Invalid username or password.');
       }
 
+      // Verify hashed or plain text password
+      const isMatch = await verifyPassword(password, data.password);
+      if (!isMatch) {
+        throw new Error('Invalid username or password.');
+      }
+
       if (data.is_active === false) {
         throw new Error('This account has been disabled. Please contact your Super Administrator.');
+      }
+
+      // Auto-migrate legacy plain text passwords in database to SHA-256 hash
+      const hashedInput = await hashPassword(password);
+      if (data.password !== hashedInput) {
+        try {
+          await supabase
+            .from('app_users')
+            .update({ password: hashedInput })
+            .eq('id', data.id);
+          data.password = hashedInput;
+        } catch { }
       }
 
       // Update last_login_at timestamp only if column is supported
@@ -88,6 +114,22 @@ export default function Login({ onLoginSuccess }) {
       setErrorMessage(err.message || 'An error occurred during authentication.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    setForgotLoading(true);
+    setForgotError('');
+    setForgotSuccess('');
+
+    try {
+      const res = await profileService.initiateForgotPassword(forgotInput);
+      setForgotSuccess(`Reset link sent to ${res.sentTo}! Check your email inbox to set a new password.`);
+    } catch (err) {
+      setForgotError(err.message || 'Failed to send password reset link.');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -212,9 +254,23 @@ export default function Login({ onLoginSuccess }) {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider block">
-                  Password
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider block">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotInput(username);
+                      setForgotError('');
+                      setForgotSuccess('');
+                      setIsForgotOpen(true);
+                    }}
+                    className="text-[11px] text-[#FFD700] hover:underline font-semibold cursor-pointer transition-colors"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
                 <div className="relative group">
                   <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#FFD700] transition-colors" />
                   <input
@@ -253,6 +309,101 @@ export default function Login({ onLoginSuccess }) {
         </div>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* FORGOT PASSWORD MODAL (GLASSMORPHIC DIALOG) */}
+      {/* ========================================================================= */}
+      {isForgotOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-md bg-gradient-to-b from-slate-900/95 via-slate-900/98 to-slate-950/95 border border-white/20 rounded-3xl p-6 sm:p-8 shadow-2xl relative text-white animate-in zoom-in-95">
+            <button
+              type="button"
+              onClick={() => setIsForgotOpen(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-3 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-2xl text-[#FFD700]">
+                <KeyRound size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white tracking-tight">Forgot Password</h3>
+                <p className="text-xs text-slate-300">We'll send a password reset link to your email</p>
+              </div>
+            </div>
+
+            {forgotError && (
+              <div className="mb-4 bg-rose-950/70 border border-rose-500/50 text-rose-200 text-xs p-3.5 rounded-2xl flex items-center gap-2 backdrop-blur-md">
+                <AlertTriangle size={15} className="shrink-0 text-rose-400" />
+                <span>{forgotError}</span>
+              </div>
+            )}
+
+            {forgotSuccess ? (
+              <div className="space-y-4 text-center py-2">
+                <div className="w-12 h-12 bg-emerald-500/20 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-emerald-400">
+                  <CheckCircle2 size={24} />
+                </div>
+                <p className="text-sm font-bold text-emerald-400">Reset Email Sent!</p>
+                <p className="text-xs text-slate-300 leading-relaxed">{forgotSuccess}</p>
+                <button
+                  type="button"
+                  onClick={() => setIsForgotOpen(false)}
+                  className="w-full mt-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs py-3 rounded-xl transition-all cursor-pointer"
+                >
+                  Back to Login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit} className="space-y-4 text-xs">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider block mb-1.5">
+                    Username or Registered Email
+                  </label>
+                  <div className="relative group">
+                    <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#FFD700] transition-colors" />
+                    <input
+                      type="text"
+                      required
+                      autoFocus
+                      placeholder="Enter username or email address"
+                      value={forgotInput}
+                      onChange={(e) => setForgotInput(e.target.value)}
+                      className="w-full bg-white/[0.06] hover:bg-white/[0.09] focus:bg-white/[0.12] border border-white/15 focus:border-[#FFD700]/80 focus:ring-2 focus:ring-[#FFD700]/25 rounded-2xl pl-10 pr-3.5 py-3 text-white font-semibold outline-none transition-all placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsForgotOpen(false)}
+                    className="w-1/3 bg-white/10 hover:bg-white/15 text-slate-300 py-3 rounded-2xl font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={forgotLoading}
+                    className="w-2/3 bg-gradient-to-r from-[#002B66] to-[#003882] hover:from-blue-900 hover:to-blue-800 border border-blue-400/40 text-[#FFD700] py-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-lg"
+                  >
+                    {forgotLoading ? (
+                      <div className="w-4 h-4 border-2 border-[#FFD700] border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Send size={15} />
+                        <span>Send Reset Link</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabaseClient';
+import { hashPassword } from '../utils/cryptoUtils';
 
 export const userService = {
   async fetchUsers() {
@@ -13,11 +14,12 @@ export const userService = {
 
   async createUser(userData, actorUser) {
     const finalSubOffice = (userData.subOffice === 'All' || !userData.subOffice) ? null : userData.subOffice;
+    const hashedPassword = await hashPassword(userData.password);
     const { data, error } = await supabase
       .from('app_users')
       .insert([{
         username: userData.username.trim(),
-        password: userData.password,
+        password: hashedPassword,
         full_name: userData.fullName.trim() || null,
         role: userData.role,
         sub_office: finalSubOffice,
@@ -52,7 +54,7 @@ export const userService = {
       updated_at: new Date().toISOString()
     };
     if (userData.password) {
-      updatePayload.password = userData.password;
+      updatePayload.password = await hashPassword(userData.password);
     }
 
     const { data, error } = await supabase

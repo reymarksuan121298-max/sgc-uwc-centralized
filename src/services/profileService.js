@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabaseClient';
 import { EMAILJS_CONFIG } from '../config/emailjsConfig';
+import { hashPassword, verifyPassword } from '../utils/cryptoUtils';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function generateToken(length = 64) {
@@ -79,7 +80,70 @@ export const profileService = {
     return `${urlData.publicUrl}?t=${Date.now()}`;
   },
 
-  // 4. Initiate password change – generates token, stores in DB, sends email via EmailJS
+  // 4. Initiate password reset from Login screen (Forgot Password)
+  async initiateForgotPassword(usernameOrEmail) {
+    const input = String(usernameOrEmail || '').trim().toLowerCase();
+    if (!input) throw new Error('Please enter your username or registered email address.');
+
+    // Query app_users by username or email
+    const { data: user, error: fetchErr } = await supabase
+      .from('app_users')
+      .select('id, username, email, is_active')
+      .or(`username.eq.${input},email.eq.${input}`)
+      .maybeSingle();
+
+    if (fetchErr || !user) {
+      throw new Error('No account found matching that username or email address.');
+    }
+
+    if (user.is_active === false) {
+      throw new Error('This account has been disabled. Please contact your Super Administrator.');
+    }
+
+    if (!user.email) {
+      throw new Error(`Account "${user.username}" has no email address registered on file. Please contact an Administrator.`);
+    }
+
+    const token = generateToken(64);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 mins
+
+    // Clear existing reset tokens for user
+    await supabase
+      .from('password_reset_tokens')
+      .delete()
+      .eq('user_id', user.id);
+
+    // Insert new token
+    const { error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .insert([{
+        user_id: user.id,
+        username: user.username,
+        token,
+        email: user.email,
+        expires_at: expiresAt,
+        used: false,
+        created_at: new Date().toISOString(),
+      }]);
+
+    if (tokenError) throw tokenError;
+
+    // Send reset email via EmailJS
+    const appUrl = window.location.origin;
+    const confirmLink = `${appUrl}/?pw_token=${token}`;
+
+    await profileService.sendPasswordChangeEmail({
+      to_email: user.email,
+      to_name: user.username,
+      confirm_link: confirmLink,
+      message: `You requested a password reset for account "${user.username}". Click here to set a new password: ${confirmLink}`,
+      expires_in: '30 minutes',
+    });
+
+    return { sentTo: user.email, username: user.username };
+  },
+
+  // 5. Initiate password change when logged in – requires current password confirmation
   async initiatePasswordChange(userId, username, email, currentPassword) {
     // Verify current password first
     const { data: user, error: authError } = await supabase
@@ -89,7 +153,9 @@ export const profileService = {
       .maybeSingle();
 
     if (authError || !user) throw new Error('User not found.');
-    if (user.password !== currentPassword) throw new Error('Current password is incorrect.');
+
+    const isValidPassword = await verifyPassword(currentPassword, user.password);
+    if (!isValidPassword) throw new Error('Current password is incorrect.');
 
     const resolvedEmail = email || user.email;
     if (!resolvedEmail) throw new Error('No email address on file. Please update your profile with an email address first.');
@@ -117,16 +183,15 @@ export const profileService = {
 
     if (tokenError) throw tokenError;
 
-    // Send email via EmailJS (browser-side, no backend needed)
+    // Send email via EmailJS
     const appUrl = window.location.origin;
     const confirmLink = `${appUrl}/?pw_token=${token}`;
 
-    // Send email — will throw if EmailJS fails, so user sees proper error
     await profileService.sendPasswordChangeEmail({
       to_email: resolvedEmail,
       to_name: username,
       confirm_link: confirmLink,
-      message: `Here is your password reset link: ${confirmLink}`, // Added as fallback for default templates
+      message: `Here is your password reset link: ${confirmLink}`,
       expires_in: '30 minutes',
     });
 
@@ -144,7 +209,7 @@ export const profileService = {
     return { emailSent: true, sentTo: resolvedEmail };
   },
 
-  // 5. Verify token and finalize password change
+  // 6. Verify token and finalize password change with SHA-256 password hash
   async verifyAndChangePassword(token, newPassword) {
     if (!token || !newPassword) throw new Error('Invalid request.');
     if (newPassword.length < 6) throw new Error('New password must be at least 6 characters.');
@@ -162,10 +227,13 @@ export const profileService = {
     const expiresAt = new Date(tokenRow.expires_at);
     if (now > expiresAt) throw new Error('This confirmation link has expired. Please request a new one.');
 
-    // Update password
+    // Hash the new password before updating database
+    const hashedPassword = await hashPassword(newPassword);
+
+    // Update password in app_users table
     const { error: pwError } = await supabase
       .from('app_users')
-      .update({ password: newPassword, updated_at: new Date().toISOString() })
+      .update({ password: hashedPassword, updated_at: new Date().toISOString() })
       .eq('id', tokenRow.user_id);
 
     if (pwError) throw pwError;
