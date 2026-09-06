@@ -20,6 +20,13 @@ export default function ConfirmReturnModal({
   onConfirm
 }) {
   const [internalCopied, setInternalCopied] = React.useState(false);
+  const [showConfirmPrompt, setShowConfirmPrompt] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setShowConfirmPrompt(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !ticket) return null;
 
@@ -211,30 +218,63 @@ export default function ConfirmReturnModal({
             CANCEL
           </button>
           
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isSaving || isTransferDisabled}
-            className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-95 ${
-              isTransferDisabled
-                ? "bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
-                : "bg-[#002B66] hover:bg-blue-900 text-white cursor-pointer hover:shadow-lg disabled:opacity-50"
-            }`}
-            title={
-              isTransferDisabled
-                ? `Transfer is disabled because ${isQrOpened ? "QR Code modal was opened" : "Transaction ID was copied"}`
-                : "Execute transfer to returned ledger"
-            }
-          >
-            <Check size={14} className={isTransferDisabled ? "text-slate-400" : "text-[#FFD700]"} />
-            <span>
-              {isSaving
-                ? "PROCESSING..."
-                : isTransferDisabled
-                ? `TRANSFER DISABLED (${isTransIdCopied && isQrOpened ? "ID & QR" : isQrOpened ? "QR OPENED" : "ID COPIED"})`
-                : "EXECUTE TRANSFER"}
-            </span>
-          </button>
+          <div className="relative">
+            {showConfirmPrompt && (
+              <div className="absolute bottom-full right-0 mb-3 w-[360px] bg-white border border-slate-200 shadow-xl rounded-xl p-3 flex flex-col gap-3 z-50 animate-in fade-in zoom-in-95 duration-200">
+                <span className="text-sm font-bold text-slate-800 tracking-tight leading-tight">
+                  Are you sure you want to execute transfer?
+                </span>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPrompt(false)}
+                    disabled={isSaving}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-1.5 rounded-lg text-xs transition-colors flex-1"
+                  >
+                    No, Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowConfirmPrompt(false);
+                      onConfirm();
+                    }}
+                    disabled={isSaving}
+                    className="bg-[#002B66] hover:bg-blue-900 text-white px-4 py-1.5 rounded-lg text-xs font-black shadow-md flex-1"
+                  >
+                    Yes, Execute
+                  </button>
+                </div>
+                {/* Popover Arrow */}
+                <div className="absolute -bottom-2 right-12 w-4 h-4 bg-white border-b border-r border-slate-200 rotate-45 transform"></div>
+              </div>
+            )}
+            
+            <button
+              type="button"
+              onClick={() => setShowConfirmPrompt(!showConfirmPrompt)}
+              disabled={isSaving || isTransferDisabled}
+              className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-95 ${
+                isTransferDisabled
+                  ? "bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
+                  : "bg-[#002B66] hover:bg-blue-900 text-white cursor-pointer hover:shadow-lg disabled:opacity-50"
+              }`}
+              title={
+                isTransferDisabled
+                  ? `Transfer is disabled because ${isQrOpened ? "QR Code modal was opened" : "Transaction ID was copied"}`
+                  : "Execute transfer to returned ledger"
+              }
+            >
+              <Check size={14} className={isTransferDisabled ? "text-slate-400" : "text-[#FFD700]"} />
+              <span>
+                {isSaving
+                  ? "PROCESSING..."
+                  : isTransferDisabled
+                  ? `TRANSFER DISABLED (${isTransIdCopied && isQrOpened ? "ID & QR" : isQrOpened ? "QR OPENED" : "ID COPIED"})`
+                  : "EXECUTE TRANSFER"}
+              </span>
+            </button>
+          </div>
         </div>
 
       </div>

@@ -3,6 +3,7 @@ import { AlertTriangle, FileText, Printer, X, ShieldAlert } from 'lucide-react';
 import { formatDrawTime, getTicketTransId } from '../../utils/formatters';
 import { getTicketAgeInDays, getTicketDate } from '../../utils/ticketAge';
 import { openIncidentReportPrint } from '../../utils/incidentReportPrint';
+import { supabase } from '../../config/supabaseClient';
 
 export default function IncidentReportModal({ ticket, onClose }) {
   if (!ticket) return null;
@@ -11,6 +12,30 @@ export default function IncidentReportModal({ ticket, onClose }) {
   const ticketDate = getTicketDate(ticket);
   const ageInDays = getTicketAgeInDays(ticket);
   const reportNumber = `IR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(transId).replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '000000'}`;
+  
+  const [subOfficeAddress, setSubOfficeAddress] = React.useState('');
+  const [isLoadingAddress, setIsLoadingAddress] = React.useState(true);
+  
+  React.useEffect(() => {
+    const fetchAddress = async () => {
+      const officeName = ticket.sub_office || ticket.subOffice || 'Mandaue Central';
+      try {
+        const { data } = await supabase
+          .from('sub_offices')
+          .select('location')
+          .ilike('name', officeName)
+          .single();
+        if (data && data.location) {
+          setSubOfficeAddress(data.location);
+        }
+      } catch (err) {
+        console.warn('Could not fetch sub-office address', err);
+      } finally {
+        setIsLoadingAddress(false);
+      }
+    };
+    fetchAddress();
+  }, [ticket]);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
@@ -123,8 +148,9 @@ export default function IncidentReportModal({ ticket, onClose }) {
 
           <button 
             type="button" 
-            onClick={() => openIncidentReportPrint(ticket)} 
-            className="flex items-center gap-2 rounded-xl bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 text-xs font-black shadow-md transition-all active:scale-95 cursor-pointer"
+            onClick={() => openIncidentReportPrint({ ...ticket, sub_office_address: subOfficeAddress })} 
+            disabled={isLoadingAddress}
+            className="flex items-center gap-2 rounded-xl bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 text-xs font-black shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
           >
             <Printer size={15} />
             <span>Open Print Preview (A4)</span>

@@ -205,6 +205,7 @@ function AttachWeeklyProofModal({
   const [senderMobile, setSenderMobile] = useState('');
   const [bankName, setBankName] = useState('BDO Unibank');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [depositedCharges, setDepositedCharges] = useState('');
   const [notes, setNotes] = useState('');
   const [previewImage, setPreviewImage] = useState(null);
   const [formError, setFormError] = useState('');
@@ -448,6 +449,7 @@ function AttachWeeklyProofModal({
         sender_mobile: senderMobile.trim() || null,
         bank_name: (paymentChannel === 'BANK_TRANSFER' || paymentChannel === 'BANK_DEPOSIT') ? bankName : null,
         remittance_amount: parseFloat(effectiveAmount) || 0,
+        deposited_charges: parseFloat(depositedCharges) || 0,
         receipt_date: receiptDate || new Date().toISOString().split('T')[0],
         receipt_image_url: uploadedReceiptUrl || previewImage || null,
         verification_status: 'PENDING',
@@ -491,6 +493,7 @@ function AttachWeeklyProofModal({
         details: {
           referenceNumber: effectiveReferenceNumber,
           amount: effectiveAmount,
+          depositedCharges: parseFloat(depositedCharges) || 0,
           channel: paymentChannel,
           ticketsCount: transIds.length,
           batchSerial: effectiveBatchSrn || 'SRN'
@@ -636,8 +639,8 @@ function AttachWeeklyProofModal({
                 </div>
               )}
 
-              {/* Reference Number & Amount */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Reference Number, Amount, and Deposited Charges */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px] font-extrabold text-slate-700 uppercase">
@@ -682,6 +685,22 @@ function AttachWeeklyProofModal({
                     value={customRemittanceAmount}
                     onChange={(e) => setCustomRemittanceAmount(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 focus:border-[#002B66] focus:bg-white px-3 py-2 rounded-lg font-mono font-extrabold text-emerald-700 outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-extrabold text-slate-700 uppercase">
+                      Deposited Money Charges (₱)
+                    </label>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={depositedCharges}
+                    onChange={(e) => setDepositedCharges(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-[#002B66] focus:bg-white px-3 py-2 rounded-lg font-mono font-extrabold text-[#002B66] outline-none transition-all"
                   />
                 </div>
               </div>

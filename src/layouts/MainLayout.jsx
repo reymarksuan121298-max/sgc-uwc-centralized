@@ -27,6 +27,7 @@ export default function MainLayout({
   onClearNotifications = null,
   activeNotificationPopup = null,
   onDismissNotificationPopup = null,
+  onOpenProfileModal = null,
   children
 }) {
   const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
@@ -134,6 +135,7 @@ export default function MainLayout({
         pendingReceiptsCount={pendingReceiptsCount}
         pendingTicketsChatCount={pendingTicketsChatCount}
         onOpenTicketChat={onOpenTicketChat}
+        onOpenProfileModal={onOpenProfileModal}
       />
 
       {/* Main Content Viewport */}
@@ -153,6 +155,7 @@ export default function MainLayout({
           onMarkNotificationRead={onMarkNotificationRead}
           onMarkAllNotificationsRead={onMarkAllNotificationsRead}
           onClearNotifications={onClearNotifications}
+          onOpenProfileModal={onOpenProfileModal}
         />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 md:p-6 bg-slate-100 w-full min-w-0">

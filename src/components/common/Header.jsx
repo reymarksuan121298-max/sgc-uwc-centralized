@@ -3,7 +3,7 @@ import {
   Menu, RefreshCw, MessageSquare, Bell, Search, 
   CheckCircle2, ArrowRight, X, Sparkles, ExternalLink,
   Users, Building2, ShieldCheck, UserCheck, Circle,
-  ChevronDown, LogOut, User, Shield, Plus,
+  ChevronDown, LogOut, User, Shield, Plus, UserCircle,
   Volume2, VolumeX, ShieldAlert, CheckCheck, Trash2,
   Sliders, BellOff, Info, Check, FileText, AlertTriangle,
   Download, Smartphone
@@ -48,7 +48,8 @@ export default function Header({
   notifications = [],
   onMarkNotificationRead = null,
   onMarkAllNotificationsRead = null,
-  onClearNotifications = null
+  onClearNotifications = null,
+  onOpenProfileModal = null
 }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMiniWidgetOpen, setIsMiniWidgetOpen] = useState(false);
@@ -992,8 +993,16 @@ export default function Header({
             }`}
             title="Toggle User Profile"
           >
-            <div className="w-8 h-8 rounded-full bg-[#002B66] text-[#FFD700] border-2 border-white shadow-xs flex items-center justify-center font-black text-xs font-mono shrink-0">
-              {(currentUser?.full_name || currentUser?.username || 'U')[0].toUpperCase()}
+            <div className="w-8 h-8 rounded-full bg-[#002B66] text-[#FFD700] border-2 border-white shadow-xs flex items-center justify-center font-black text-xs font-mono shrink-0 overflow-hidden relative">
+              <span>{(currentUser?.full_name || currentUser?.username || 'U')[0].toUpperCase()}</span>
+              {currentUser?.avatar_url && (
+                <img
+                  src={currentUser.avatar_url}
+                  alt="Profile"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              )}
             </div>
             <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isProfileOpen ? 'rotate-180 text-[#002B66]' : ''}`} />
           </button>
@@ -1004,8 +1013,16 @@ export default function Header({
               
               {/* Profile Header */}
               <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                <div className="w-11 h-11 rounded-full bg-[#002B66] text-[#FFD700] border-2 border-[#FFD700]/50 shadow-sm flex items-center justify-center font-black text-base font-mono shrink-0">
-                  {(currentUser?.full_name || currentUser?.username || 'U')[0].toUpperCase()}
+                <div className="w-11 h-11 rounded-full bg-[#002B66] text-[#FFD700] border-2 border-[#FFD700]/50 shadow-sm flex items-center justify-center font-black text-base font-mono shrink-0 overflow-hidden relative">
+                  <span>{(currentUser?.full_name || currentUser?.username || 'U')[0].toUpperCase()}</span>
+                  {currentUser?.avatar_url && (
+                    <img
+                      src={currentUser.avatar_url}
+                      alt="Profile"
+                      className="absolute inset-0 w-full h-full object-cover"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <h4 className="font-black text-slate-900 text-sm truncate uppercase tracking-tight">
@@ -1045,6 +1062,23 @@ export default function Header({
                   </span>
                 </div>
               </div>
+
+              {/* Account & Security Settings Action Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsProfileOpen(false);
+                  if (onOpenProfileModal) {
+                    onOpenProfileModal();
+                  } else if (onSelectTab) {
+                    onSelectTab('profile');
+                  }
+                }}
+                className="w-full bg-blue-50 hover:bg-blue-100 text-[#002B66] border border-blue-200/80 font-black py-2 px-3 rounded-xl text-center text-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-2xs"
+              >
+                <UserCircle size={14} className="text-[#002B66]" />
+                <span>ACCOUNT & SECURITY SETTINGS</span>
+              </button>
 
               {/* Logout Action Button */}
               {onLogout && (

@@ -107,13 +107,14 @@ export default function SubOfficeReceipts({ currentUser }) {
 
   const exportCSV = () => {
     if (!filteredReceipts.length) return alert('No receipts to export.');
-    const headers = ['SRN / Trans ID', 'Sub-Office', 'Channel', 'Ref No.', 'Amount', 'Date', 'Status', 'Officer Full Name', 'Uploaded By', 'Verified By'];
+    const headers = ['SRN / Trans ID', 'Sub-Office', 'Channel', 'Ref No.', 'Amount', 'Charges', 'Date', 'Status', 'Officer Full Name', 'Uploaded By', 'Verified By'];
     const rows = filteredReceipts.map(r => [
       `"${r.batch_serial_no || r.transactionId || r.reference_number || 'N/A'}"`,
       `"${r.sub_office}"`,
       `"${r.payment_channel}"`,
       `"${r.reference_number}"`,
       parseFloat(r.remittance_amount || 0).toFixed(2),
+      parseFloat(r.deposited_charges || 0).toFixed(2),
       `"${r.receipt_date}"`,
       `"${r.verification_status}"`,
       `"${getOfficerName(r)}"`,
@@ -253,6 +254,7 @@ export default function SubOfficeReceipts({ currentUser }) {
                 <th className="px-4 py-3 border-r border-blue-900">Payment Channel</th>
                 <th className="px-4 py-3 border-r border-blue-900">Reference No.</th>
                 <th className="px-4 py-3 border-r border-blue-900 text-right">Amount (₱)</th>
+                <th className="px-4 py-3 border-r border-blue-900 text-right leading-tight">Charges (₱)</th>
                 <th className="px-4 py-3 border-r border-blue-900 text-center">Status</th>
                 <th className="px-4 py-3 border-r border-blue-900">Date & Officer</th>
                 <th className="px-4 py-3 text-center">Proof Image</th>
@@ -294,6 +296,9 @@ export default function SubOfficeReceipts({ currentUser }) {
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 font-mono font-extrabold text-emerald-700 text-right">
                       ₱{parseFloat(item.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 border-r border-slate-100 font-mono font-bold text-rose-500 text-right">
+                      {item.deposited_charges > 0 ? `-₱${parseFloat(item.deposited_charges).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 text-center">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${

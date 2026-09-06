@@ -10,7 +10,9 @@ import SubOfficeReceipts from '../pages/Receipts/SubOfficeReceipts';
 import UnclaimedRegistry from '../pages/Winnings/UnclaimedRegistry';
 import ReturnedWinnings from '../pages/Winnings/ReturnedWinnings';
 import SettlementAgreement from '../pages/Winnings/SettlementAgreement';
+import ProfileSettings from '../pages/Profile/ProfileSettings';
 import NotFound from '../pages/NotFound/NotFound';
+
 
 export default function AppRoutes({
   activeTab,
@@ -57,7 +59,9 @@ export default function AppRoutes({
   onSaveAgreement,
   onSyncLedger,
   onSyncClaimedTickets,
-  liveClaimedTransactionIds
+  liveClaimedTransactionIds,
+  // Profile props
+  onUserUpdated,
 }) {
   switch (activeTab) {
     case 'superadmin':
@@ -190,7 +194,18 @@ export default function AppRoutes({
         />
       );
 
+    case 'profile':
+    case 'settings':
+      return (
+        <ProfileSettings
+          currentUser={currentUser}
+          onUserUpdated={onUserUpdated}
+        />
+      );
+
     default:
+
+
       return (
         <NotFound
           onGoHome={() => setActiveTab(isSuperAdmin ? 'dashboard' : 'returned')}

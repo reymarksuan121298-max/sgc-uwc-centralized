@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { 
-  FileText, 
-  Save, 
-  Printer, 
-  ListOrdered, 
-  PlusCircle, 
-  Calendar, 
-  ChevronLeft, 
-  ChevronRight, 
-  CreditCard, 
-  X, 
-  ChevronDown, 
+import {
+  FileText,
+  Save,
+  Printer,
+  ListOrdered,
+  PlusCircle,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  X,
+  ChevronDown,
   ChevronUp,
   Building2
 } from 'lucide-react';
@@ -242,7 +242,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     const name = currentUser.full_name || currentUser.fullName || currentUser.name || currentUser.username;
     return name ? name.toUpperCase() : 'SALES SUPERVISOR';
   });
-  
+
   const [installments, setInstallments] = useState(() =>
     createInstallmentRows({
       count: 10,
@@ -279,7 +279,18 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     }
   }, [selectedTicket, currentUser]);
 
-  const ticketSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || selectedTicket.branch || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
+  const ticketSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || selectedTicket.branch || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Central Office'));
+
+  // Helper: resolve physical address from dbSubOffices by name
+  const getSubOfficeAddress = (name) => {
+    if (!name || !dbSubOffices.length) return 'Address not listed – please update sub-office configuration';
+    const match = dbSubOffices.find(
+      (so) => (so.name || '').toLowerCase().trim() === (name || '').toLowerCase().trim()
+    );
+    return match?.location || match?.address || 'Address not listed – please update sub-office configuration';
+  };
+
+  const ticketSubOfficeAddress = getSubOfficeAddress(ticketSubOffice);
 
   const getSelectedTicketId = (ticket) => ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
   const getWinAmount = (ticket) => parseFloat(ticket?.winAmount || 5000);
@@ -289,7 +300,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     if (!dateString) return 'August 16, 2026';
     try {
       const dateObj = new Date(dateString);
-      if (isNaN(dateObj.getTime())) return dateString; 
+      if (isNaN(dateObj.getTime())) return dateString;
       return dateObj.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
@@ -386,7 +397,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     if (onSaveAgreement) {
       const totalAmountVal = installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0);
       const chosenSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
-      
+
       onSaveAgreement({
         transactionId: selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no,
         ticket: { ...selectedTicket, sub_office: chosenSubOffice },
@@ -403,11 +414,11 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           supervisor: supervisorName
         },
         isUnderSettlement: true,
-        settlementTerms: JSON.stringify({ 
-          reason, 
-          frequency, 
+        settlementTerms: JSON.stringify({
+          reason,
+          frequency,
           sub_office: chosenSubOffice,
-          installmentsCount: installments.length, 
+          installmentsCount: installments.length,
           installments,
           signatories: {
             claimant: selectedTicket.fullName || selectedTicket.username || 'Accountable Payer',
@@ -620,17 +631,16 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   return (
     <div className="space-y-4 w-full pb-12 print:max-w-none print:pb-0 print:space-y-0">
-      
+
       {/* SUB-TABS NAVIGATION & SUB-OFFICE FILTER (Hidden when printing) */}
       <div className="print:hidden flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveSubTab('create')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeSubTab === 'create'
-                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSubTab === 'create'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
           >
             <PlusCircle size={16} />
             <span>Create Agreement</span>
@@ -638,11 +648,10 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
           <button
             onClick={() => setActiveSubTab('list')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              activeSubTab === 'list'
-                ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSubTab === 'list'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
           >
             <ListOrdered size={16} />
             <span>Saved Agreements List</span>
@@ -772,13 +781,6 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                       <div className="flex items-end justify-start sm:justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => setViewFormItem(item)}
-                          className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-indigo-700 shadow-sm transition-all hover:bg-indigo-100 cursor-pointer border border-indigo-200"
-                        >
-                          <FileText size={14} /> View Form
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => openPaymentForm(item)}
                           className="flex items-center gap-1.5 rounded-lg bg-[#002B66] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#FFD700] shadow-sm transition-all hover:bg-blue-900 cursor-pointer"
                         >
@@ -828,231 +830,6 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
             </div>
           )}
 
-          {viewFormItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" role="dialog" aria-modal="true">
-              <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-2xl flex flex-col">
-                <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex items-center justify-between z-10 rounded-t-xl">
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-[#002B66]">Settlement Agreement Details</h3>
-                    <p className="text-xs text-slate-500">{viewFormItem.transactionId}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => {
-                      const prevId = document.getElementById('settlement-agreement-print-area')?.id;
-                      const printArea = document.getElementById(`saved-agreement-print-area-${viewFormItem.id}`);
-                      if (printArea) {
-                        printArea.id = 'settlement-agreement-print-area';
-                        openSettlementAgreementPrint();
-                        printArea.id = `saved-agreement-print-area-${viewFormItem.id}`;
-                      }
-                    }} className="flex items-center gap-1.5 rounded-lg bg-[#002B66] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#FFD700] shadow-sm hover:bg-blue-900 cursor-pointer">
-                      <Printer size={14} /> Print
-                    </button>
-                    <button type="button" onClick={() => setViewFormItem(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 cursor-pointer" aria-label="Close form">
-                      <X size={18} />
-                    </button>
-                  </div>
-                </div>
-                <div className="p-6">
-                  {(() => {
-                    const parsedTerms = parseSettlementTerms(viewFormItem.settlementTerms) || {};
-                    let signatories = {};
-                    try {
-                      const sigsSource = parsedTerms.signatories || viewFormItem.signatories;
-                      signatories = sigsSource ? (typeof sigsSource === 'string' ? JSON.parse(sigsSource) : sigsSource) : {};
-                    } catch { }
-                    const viewInsts = parsedTerms.installments || [];
-                    const vTotal = parseFloat(viewFormItem.totalInstallmentAmount || viewFormItem.winAmount || 0);
-                    return (
-                      <div id={`saved-agreement-print-area-${viewFormItem.id}`} className="bg-white border border-slate-300 rounded-xl shadow-md p-6 sm:p-8 max-w-4xl mx-auto space-y-6 text-slate-900 font-sans w-full">
-                        {/* HEADER WITH LOGOS */}
-                        <div className="flex justify-between items-center border-b-2 border-[#002B66] pb-1">
-                          <div className="flex items-center gap-3">
-                            <img src="/lbp.png" alt="Centralized Logo" className="w-12 h-12 object-contain rounded" />
-                            <div>
-                              <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
-                              <p className="text-[9.5px] text-slate-700 font-bold uppercase tracking-wider">SUB-OFFICE: {parsedTerms.sub_office || viewFormItem.sub_office || 'Mandaue Central'}</p>
-                              <p className="text-[8.5px] text-slate-400 font-semibold">#257 BARLAPS, A.S. FORTUNA STREET, BAKILID, MANDAUE CITY, CEBU 6014</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <img src="/stl.jpg" alt="STL Logo" className="w-10 h-10 object-contain rounded border border-slate-200 shadow-sm" />
-                          </div>
-                        </div>
-
-                        <div className="text-center space-y-1">
-                          <h2 className="text-sm font-black text-[#002B66] tracking-wider uppercase">SETTLEMENT AGREEMENT</h2>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">UNCLAIMED WINNING & PAYMENT SCHEDULE</p>
-                        </div>
-
-                        <p className="text-xs text-slate-700 leading-relaxed">
-                            This Settlement Agreement ("Agreement") is made on{' '}
-                          <input type="date" value={parsedTerms.agreementDate || (viewFormItem.created_at ? viewFormItem.created_at.split('T')[0] : '')} readOnly className="border-b border-slate-400 px-1 font-bold text-slate-900 bg-slate-50 outline-none text-xs" />
-                          {' '}regarding the accountable party's repayment of company liability described below.
-                        </p>
-
-                        {/* 1. DETAILS OF ACCOUNTABILITY */}
-                        <div className="space-y-2">
-                          <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
-                            1. DETAILS OF ACCOUNTABILITY
-                          </h3>
-                          <table className="w-full text-xs border-collapse border border-slate-300">
-                            <tbody>
-                              <tr>
-                                <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50 w-1/3">Transaction ID</td>
-                                <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">{viewFormItem.transactionId || viewFormItem.transId || viewFormItem.receipt_no}</td>
-                              </tr>
-                              <tr>
-                                <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Transaction Date</td>
-                                <td className="border border-slate-300 px-3 py-1.5 font-mono text-slate-900">{formatTransactionDate(viewFormItem.drawDate || viewFormItem.transactionDate || viewFormItem.created_at)}</td>
-                              </tr>
-                              <tr>
-                                <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Winning Combination / Bet No.</td>
-                                <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">{viewFormItem.betNo || viewFormItem.CombiNo || 'N/A'}</td>
-                              </tr>
-                              <tr>
-                                <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Total Winning Amount</td>
-                                <td className="border border-slate-300 px-3 py-1.5 font-mono font-extrabold text-emerald-700">PHP {vTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* 2. SUMMARY / REASON FOR SETTLEMENT */}
-                        <div className="space-y-2">
-                          <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
-                            2. SUMMARY / REASON FOR SETTLEMENT
-                          </h3>
-                          <div className="bg-amber-50/90 border border-amber-300 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm">
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-black text-amber-950 uppercase">Reason:</span>
-                              </div>
-                              <textarea
-                                value={parsedTerms.reason || ''}
-                                readOnly
-                                rows={2}
-                                className="w-full bg-white border border-amber-300 p-2.5 text-xs font-medium rounded-lg text-slate-800 outline-none leading-relaxed shadow-inner"
-                              />
-                              <p className="text-[10px] text-slate-500 italic">
-                                (The original ticket was lost, damaged, or expired, preventing standard automated terminal validation).
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 3. PAYMENT SCHEDULE & BREAKDOWN */}
-                        <div className="space-y-3">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                            <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
-                              3. PAYMENT SCHEDULE & BREAKDOWN
-                            </h3>
-                          </div>
-                          
-                          <div className="bg-blue-50/80 border border-blue-200 p-4 rounded-xl space-y-3 shadow-sm">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                              <div>
-                                <label className="block text-[11px] font-black uppercase tracking-wider text-[#002B66] mb-1">Payment Frequency</label>
-                                <select disabled value={parsedTerms.frequency} className="w-full bg-white border border-blue-200 px-3 py-2 rounded-lg font-bold text-slate-800 outline-none opacity-80 cursor-not-allowed appearance-none">
-                                  <option value={parsedTerms.frequency}>{getFrequencyLabel(parsedTerms.frequency)}</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-[11px] font-black uppercase tracking-wider text-[#002B66] mb-1">Amount per Payment (₱)</label>
-                                <div className="relative">
-                                  <span className="absolute left-3 top-2 text-slate-400 font-mono font-bold text-xs">₱</span>
-                                  <input type="text" readOnly value={viewInsts.length > 0 ? parseFloat(viewInsts[0].amountDue).toFixed(2) : '0.00'} className="w-full bg-white border border-blue-200 pl-7 pr-3 py-2 rounded-lg font-mono font-bold text-slate-800 outline-none opacity-80 cursor-not-allowed" />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[11px] font-black uppercase tracking-wider text-[#002B66] mb-1">Installments Count</label>
-                                <input type="number" readOnly value={viewInsts.length} className="w-full bg-white border border-blue-200 px-3 py-2 rounded-lg font-mono font-bold text-center text-slate-800 outline-none opacity-80 cursor-not-allowed" />
-                              </div>
-                            </div>
-                          </div>
-
-                          <p className="text-xs text-slate-700">
-                            The total winning liability of <span className="font-bold">PHP {vTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> will be paid in <span className="font-bold">{viewInsts.length} installments</span> ({getFrequencyLabel(parsedTerms.frequency)}) scheduled accordingly below:
-                          </p>
-
-                          <table className="w-full text-xs border-collapse border border-slate-300 text-center">
-                            <thead>
-                              <tr className="bg-[#002B66] text-white font-black text-[11px]">
-                                <th className="border border-blue-950 p-2 w-16">Installment #</th>
-                                <th className="border border-blue-950 p-2">Due Date</th>
-                                <th className="border border-blue-950 p-2">Amount Due (PHP)</th>
-                                <th className="border border-blue-950 p-2">Signature / Received By</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200">
-                              {viewInsts.map((inst, index) => (
-                                <tr key={index} className="odd:bg-white even:bg-slate-50">
-                                  <td className="border border-slate-300 p-2 font-bold font-mono">{inst.id || index + 1}</td>
-                                  <td className="border border-slate-300 p-1.5"><input type="date" value={inst.dueDate} readOnly className="w-full bg-transparent font-mono text-xs text-center outline-none cursor-not-allowed opacity-80" /></td>
-                                  <td className="border border-slate-300 p-1.5"><input type="text" value={parseFloat(inst.amountDue||0).toFixed(2)} readOnly className="w-full bg-transparent font-mono font-bold text-center outline-none text-emerald-800 cursor-not-allowed opacity-80" /></td>
-                                  <td className="border border-slate-300 p-1.5"><input type="text" value={inst.status || ''} readOnly placeholder="Signature / Date" className="w-full bg-transparent text-center outline-none text-slate-700 text-[11px] placeholder:text-slate-300 cursor-not-allowed opacity-80" /></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* 4. TERMS & ACKNOWLEDGMENT */}
-                        <div className="space-y-1 text-xs text-slate-700">
-                          <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2 mb-2">4. TERMS & ACKNOWLEDGMENT</h3>
-                          <p>1. Payments shall be remitted strictly according to the schedule specified above.</p>
-                          <p>2. Upon full receipt of the final payment, the entire liability amount of **PHP {vTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}** shall be deemed fully satisfied and settled.</p>
-                        </div>
-
-                        {/* 5. SIGNATURES & ACKNOWLEDGMENT */}
-                        <div className="space-y-4 pt-4 border-t border-slate-300">
-                          <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">5. SIGNATURES & ACKNOWLEDGMENT</h3>
-                          <div className="grid grid-cols-2 gap-8 pt-6 text-center text-xs">
-                            <div className="space-y-8">
-                              <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
-                                {signatories.claimant || viewFormItem.fullName || viewFormItem.username || 'Accountable Payer Name'}
-                              </div>
-                              <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                                ACCOUNTABLE PAYER<br />
-                                <span className="font-normal normal-case text-slate-500">Signature over Printed Name</span><br />
-                                <span className="font-mono mt-1 block">Date: {formatTransactionDate(parsedTerms.agreementDate || viewFormItem.created_at)}</span>
-                              </div>
-                            </div>
-                            <div className="space-y-8">
-                              <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
-                                {signatories.hrManager && signatories.hrManager !== 'Authorized HR / Management' ? signatories.hrManager : 'QUENNIE CAPUYAN'}
-                              </div>
-                              <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                                AUTHORIZED COMPANY REPRESENTATIVE<br />
-                                <span className="font-normal normal-case text-slate-500">Company Representative / Signature over Printed Name</span><br />
-                                <span className="font-mono mt-1 block">Date: {formatTransactionDate(parsedTerms.agreementDate || viewFormItem.created_at)}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="w-1/2 mx-auto pt-6 text-center text-xs">
-                            <div className="space-y-8">
-                              <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
-                                {signatories.supervisor && signatories.supervisor !== 'Sales Supervisor' ? signatories.supervisor : (
-                                  viewFormItem.supervisor && SUPERVISORS[viewFormItem.supervisor] 
-                                    ? SUPERVISORS[viewFormItem.supervisor]
-                                    : (currentUser?.full_name || currentUser?.fullName || currentUser?.name || currentUser?.username || 'SALES SUPERVISOR').toUpperCase()
-                                )}
-                              </div>
-                              <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                                SALES SUPERVISOR<br />
-                                <span className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</span><br />
-                                <span className="font-mono mt-1 block">Date: {formatTransactionDate(parsedTerms.agreementDate || viewFormItem.created_at)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       ) : (
         /* CREATE AGREEMENT VIEW */
@@ -1071,9 +848,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                   key={step.number}
                   type="button"
                   onClick={() => setCurrentStep(step.number)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer ${
-                    currentStep === step.number ? 'bg-[#FFD700] text-[#002B66] shadow-md' : 'bg-white/10 text-blue-100 hover:bg-white/20'
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer ${currentStep === step.number ? 'bg-[#FFD700] text-[#002B66] shadow-md' : 'bg-white/10 text-blue-100 hover:bg-white/20'
+                    }`}
                 >
                   <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center shrink-0">{step.number}</span>
                   <span>{step.label}</span>
@@ -1142,26 +918,26 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
           {/* PRINTABLE DOCUMENT CONTAINER / STEP CARD CONTAINER */}
           <div id="settlement-agreement-print-area" className={`${currentStep === 4 ? 'bg-white border border-slate-300 rounded-xl shadow-md p-6 sm:p-8 max-w-4xl mx-auto' : 'bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs'} space-y-6 text-slate-900 font-sans w-full print:w-full print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0`}>
-            
+
             {/* HEADER WITH LOGOS */}
             <div className={`${currentStep === 4 ? '' : 'hidden'} flex justify-between items-center border-b-2 border-[#002B66] pb-1`}>
               <div className="flex items-center gap-3">
-                <img 
-                  src="/lbp.png" 
-                  alt="Centralized Logo" 
-                  className="w-12 h-12 object-contain rounded" 
+                <img
+                  src="/lbp.png"
+                  alt="Centralized Logo"
+                  className="w-12 h-12 object-contain rounded"
                 />
                 <div>
                   <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
                   <p className="text-[9.5px] text-slate-700 font-bold uppercase tracking-wider">SUB-OFFICE: {ticketSubOffice}</p>
-                  <p className="text-[8.5px] text-slate-400 font-semibold">#257 BARLAPS, A.S. FORTUNA STREET, BAKILID, MANDAUE CITY, CEBU 6014</p>
+                  <p className="text-[8.5px] text-slate-400 font-semibold">{ticketSubOfficeAddress}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <img 
-                  src="/stl.jpg" 
-                  alt="STL Logo" 
-                  className="w-10 h-10 object-contain rounded border border-slate-200 shadow-sm" 
+                <img
+                  src="/stl.jpg"
+                  alt="STL Logo"
+                  className="w-10 h-10 object-contain rounded border border-slate-200 shadow-sm"
                 />
               </div>
             </div>
@@ -1172,7 +948,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
             </div>
 
             <p className={`${currentStep === 2 || currentStep === 4 ? '' : 'hidden'} print:block text-xs text-slate-700 leading-relaxed`}>
-                This Settlement Agreement ("Agreement") is made on{' '}
+              This Settlement Agreement ("Agreement") is made on{' '}
               <input
                 type="date"
                 value={agreementDate}
@@ -1223,7 +999,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 2. SUMMARY / REASON FOR SETTLEMENT
               </h3>
               <div className="bg-amber-50/90 border border-amber-300 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm">
-                
+
                 {/* QUICK CLICKABLE TEMPLATES (Hidden when printing) */}
                 <div className="print:hidden space-y-1.5 border-b border-amber-200/80 pb-2.5">
                   <div className="flex items-center justify-between">
@@ -1242,11 +1018,10 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                           key={idx}
                           type="button"
                           onClick={() => setReason(tmpl.text)}
-                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                            isSelected
-                              ? 'bg-amber-700 text-white border-amber-800 shadow-sm ring-2 ring-amber-400/50'
-                              : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:text-amber-950'
-                          }`}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${isSelected
+                            ? 'bg-amber-700 text-white border-amber-800 shadow-sm ring-2 ring-amber-400/50'
+                            : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:text-amber-950'
+                            }`}
                         >
                           {tmpl.label}
                         </button>

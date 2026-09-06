@@ -37,7 +37,7 @@ export const openSettlementAgreementPrint = () => {
     }
   }).join('');
 
-  reportWindow.document.write(`<!doctype html><html><head><title>Settlement Agreement</title>${styles}<style>
+  reportWindow.document.write(`<!doctype html><html><head><base href="${window.location.origin}/"><title>Settlement Agreement</title>${styles}<style>
     html, body { margin: 0; background: #e9eff7; }
     .preview-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 22px; background: #002b66; color: white; font: 700 12px Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
     .preview-toolbar button { border: 0; border-radius: 6px; padding: 9px 14px; background: #ffd700; color: #002b66; font-weight: 800; cursor: pointer; }

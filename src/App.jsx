@@ -10,6 +10,7 @@ import ConfirmReturnModal from './components/winnings/ConfirmReturnModal';
 import TicketQrModal from './components/winnings/TicketQrModal';
 import TicketVerificationChatModal from './components/chat/TicketVerificationChatModal';
 import TicketVerificationBotModal from './components/chat/TicketVerificationBotModal';
+import ProfileSettingsModal from './components/common/ProfileSettingsModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
 import { notificationService } from './services/notificationService';
 import { MessageSquare, Sparkles, Bot } from 'lucide-react';
@@ -78,6 +79,7 @@ export default function App() {
   // Modals & Image Capture States
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -1152,11 +1154,28 @@ export default function App() {
       console.warn('Could not persist session:', e);
     }
     setCurrentUser(user);
+    // If there's a pw_token in the URL, redirect to profile page for password confirmation
+    const params = new URLSearchParams(window.location.search);
+    const pwToken = params.get('pw_token');
+    if (pwToken) {
+      setIsProfileModalOpen(true);
+    }
     const targetTab = isSuperAdminRole(user?.role) ? 'superadmin' : 'unclaimed';
     setActiveTab(targetTab);
     try {
       localStorage.setItem('stl_active_tab', targetTab);
     } catch { }
+  };
+
+  const handleUserUpdated = (updatedUser) => {
+    const merged = { ...currentUser, ...updatedUser };
+    setCurrentUser(merged);
+    try {
+      localStorage.setItem('stl_user_session', JSON.stringify(merged));
+    } catch (e) {
+      console.warn('Could not persist updated session:', e);
+    }
+    showToast('Profile updated successfully!');
   };
 
   const handleLogout = () => {
@@ -1359,6 +1378,7 @@ export default function App() {
         onClearNotifications={handleClearNotifications}
         activeNotificationPopup={activeNotificationPopup}
         onDismissNotificationPopup={() => setActiveNotificationPopup(null)}
+        onOpenProfileModal={() => setIsProfileModalOpen(true)}
       >
         <AppRoutes
           activeTab={activeTab}
@@ -1405,6 +1425,7 @@ export default function App() {
           onSyncLedger={fetchReturnedFromSupabase}
           onSyncClaimedTickets={syncClaimedTickets}
           liveClaimedTransactionIds={liveClaimedTransactionIds}
+          onUserUpdated={handleUserUpdated}
         />
       </MainLayout>
 
@@ -1475,6 +1496,14 @@ export default function App() {
         ticket={qrModalTicket}
         copiedTransIds={copiedTransIds}
         onCopyTransId={handleCopyTransId}
+      />
+
+      {/* Standalone Reusable Profile & Account Security Modal */}
+      <ProfileSettingsModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        currentUser={currentUser}
+        onUserUpdated={handleUserUpdated}
       />
     </>
   );

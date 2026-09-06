@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Landmark, X, ShieldCheck, LogOut, Coins, CheckCircle2, 
   CalendarCheck, ArrowLeftRight, Receipt, FileText, Users, Settings, Clock, CreditCard, Building2,
-  MessageSquare, Sparkles
+  MessageSquare, Sparkles, UserCircle
 } from 'lucide-react';
 import { isSuperAdminRole, isSSRRole, isAdminRole, formatRoleName } from '../../utils/permissions';
 
@@ -17,7 +17,8 @@ export default function Sidebar({
   receiptsCount = 0,
   pendingReceiptsCount = 0,
   pendingTicketsChatCount = 0,
-  onOpenTicketChat = null
+  onOpenTicketChat = null,
+  onOpenProfileModal = null
 }) {
   const isSuperAdmin = isSuperAdminRole(currentUser?.role);
   const isAdmin = isAdminRole(currentUser?.role);
@@ -52,6 +53,8 @@ export default function Sidebar({
       { id: 'settlement', label: 'Settlement Agreements', Icon: FileText },
     ];
   }
+
+  // Profile & Settings accessible via Header profile dropdown / footer card
 
   const isItemActive = (id) => {
     if (activeTab === id) return true;
@@ -138,13 +141,34 @@ export default function Sidebar({
               );
             })}
           </nav>
+
+
         </div>
 
         {/* Footer Profile Designation Section */}
         <div className="p-3.5 border-t border-blue-900/60 bg-[#001D47] shrink-0">
-          <div className="bg-blue-950/80 p-3 rounded-2xl border border-blue-900/70 shadow-inner flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#002B66] border border-[#FFD700]/40 flex items-center justify-center text-[#FFD700] font-mono font-black text-sm shrink-0 shadow-xs">
-              {(currentUser?.full_name || currentUser?.fullName || currentUser?.username || 'Aizah Condrado')[0].toUpperCase()}
+          <div 
+            onClick={() => {
+              if (onOpenProfileModal) {
+                onOpenProfileModal();
+              } else {
+                onSelectTab('profile');
+              }
+              onClose();
+            }}
+            className="bg-blue-950/80 hover:bg-blue-900/90 transition-all p-3 rounded-2xl border border-blue-900/70 shadow-inner flex items-center gap-3 cursor-pointer group"
+            title="Open Account & Security Settings"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#002B66] border border-[#FFD700]/40 flex items-center justify-center text-[#FFD700] font-mono font-black text-sm shrink-0 shadow-xs overflow-hidden relative">
+              <span>{(currentUser?.full_name || currentUser?.fullName || currentUser?.username || 'U')[0].toUpperCase()}</span>
+              {currentUser?.avatar_url && (
+                <img
+                  src={currentUser.avatar_url}
+                  alt="Profile"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-xs font-black text-white block truncate tracking-tight">

@@ -11,6 +11,7 @@ import { winningsService } from '../../services/winningsService';
 import AttachWeeklyProofModal from '../../components/receipts/AttachWeeklyProofModal';
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
+import SettlementDetailsModal from '../../components/winnings/SettlementDetailsModal';
 import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole } from '../../utils/permissions';
 
@@ -45,6 +46,7 @@ export default function ReturnedWinnings({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isWeeklyModalOpen, setIsWeeklyModalOpen] = useState(false);
   const [activeFilterTab, setActiveFilterTab] = useState('ALL'); // 'ALL' | 'UNREMITTED' | 'REQUESTS'
+  const [selectedSettlementItem, setSelectedSettlementItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
@@ -471,9 +473,17 @@ export default function ReturnedWinnings({
                                   <CheckCircle2 size={10} /> IN COLLECTIONS
                                 </span>
                               ) : isUnderSettlement ? (
-                                <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-amber-300">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedSettlementItem(item);
+                                  }}
+                                  className={`inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full border transition-colors bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 cursor-pointer`}
+                                  title="View Settlement Details"
+                                >
                                   <Clock size={10} /> UNDER SETTLEMENT
-                                </span>
+                                </button>
                               ) : isClaimedInSourceSystem ? (
                                 <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-emerald-300">
                                   <CheckCircle size={10} /> ALREADY CLAIMED
@@ -648,9 +658,17 @@ export default function ReturnedWinnings({
                                 <CheckCircle2 size={9} /> IN COLLECTIONS
                               </span>
                             ) : isUnderSettlement ? (
-                              <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedSettlementItem(item);
+                                }}
+                                className={`inline-flex items-center gap-1 font-bold text-[9px] px-2 py-0.5 rounded-full border transition-colors bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 cursor-pointer`}
+                                title="View Settlement Details"
+                              >
                                 <Clock size={9} /> SETTLEMENT
-                              </span>
+                              </button>
                             ) : isClaimedInSourceSystem ? (
                               <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300">
                                 <CheckCircle size={9} /> CLAIMED
@@ -864,6 +882,14 @@ export default function ReturnedWinnings({
           </div>
         </div>
       )}
+
+      {/* SETTLEMENT DETAILS MODAL */}
+      <SettlementDetailsModal
+        isOpen={Boolean(selectedSettlementItem)}
+        onClose={() => setSelectedSettlementItem(null)}
+        item={selectedSettlementItem}
+        onDataUpdated={onDataUpdated}
+      />
     </div>
   );
 }

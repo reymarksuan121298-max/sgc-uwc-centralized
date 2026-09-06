@@ -136,7 +136,7 @@ export default function TicketVerificationChatModal({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, username, full_name, role, sub_office, is_active, last_login_at')
+        .select('id, username, full_name, role, sub_office, is_active, last_login_at, avatar_url')
         .eq('is_active', true)
         .order('full_name', { ascending: true });
 
@@ -220,6 +220,8 @@ export default function TicketVerificationChatModal({
   const chatHeaderAvatarClass = isGroupChat
     ? 'bg-[#002B66] text-[#FFD700]'
     : getAvatarColor(chatHeaderName, chatHeaderSubOffice);
+
+  const chatHeaderAvatarUrl = isGroupChat ? null : (contactUser?.avatar_url || activeContact?.avatar_url || null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -800,8 +802,12 @@ export default function TicketVerificationChatModal({
           className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 rounded-t-xl px-3.5 py-2 shadow-2xl text-xs font-bold text-slate-800 cursor-pointer transition-all hover:-translate-y-0.5"
         >
           <div className="relative shrink-0">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black font-mono shadow-xs ${chatHeaderAvatarClass}`}>
-              {chatHeaderInitials}
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black font-mono shadow-xs overflow-hidden ${chatHeaderAvatarUrl ? 'bg-slate-100' : chatHeaderAvatarClass}`}>
+              {chatHeaderAvatarUrl ? (
+                <img src={chatHeaderAvatarUrl} alt="Contact" className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} />
+              ) : (
+                chatHeaderInitials
+              )}
             </div>
             <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
           </div>
@@ -859,8 +865,12 @@ export default function TicketVerificationChatModal({
           {/* Contact identity */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="relative shrink-0">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black font-mono border border-white shadow-2xs ${chatHeaderAvatarClass}`}>
-                {chatHeaderInitials}
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black font-mono border border-white shadow-2xs overflow-hidden ${chatHeaderAvatarUrl ? 'bg-slate-100' : chatHeaderAvatarClass}`}>
+                {chatHeaderAvatarUrl ? (
+                  <img src={chatHeaderAvatarUrl} alt="Contact" className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} />
+                ) : (
+                  chatHeaderInitials
+                )}
               </div>
               <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
             </div>
@@ -961,6 +971,8 @@ export default function TicketVerificationChatModal({
                   
                   const senderInitials = (msg.sender_name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
                   const senderColor = getAvatarColor(msg.sender_name, msg.sub_office);
+                  const senderUser = (activeUsers || []).find(u => String(u.id) === String(msg.sender_id) || String(u.username).toLowerCase() === String(msg.sender_id).toLowerCase() || (msg.ocr_data?.sender_username && String(u.username).toLowerCase() === String(msg.ocr_data?.sender_username).toLowerCase()));
+                  const senderAvatarUrl = senderUser?.avatar_url;
                   const isLastMessage = idx === displayedMessages.length - 1;
 
                   const lastMyMsgIndex = displayedMessages.map((m, i) => {
@@ -1001,8 +1013,12 @@ export default function TicketVerificationChatModal({
                       <div className={`flex items-end gap-1.5 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                         
                         {!isMine && (
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black font-mono border border-slate-200 shrink-0 mb-1 shadow-2xs ${senderColor}`}>
-                            {senderInitials}
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black font-mono border border-slate-200 shrink-0 mb-1 shadow-2xs overflow-hidden ${senderAvatarUrl ? 'bg-slate-100' : senderColor}`}>
+                            {senderAvatarUrl ? (
+                              <img src={senderAvatarUrl} alt="Contact" className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} />
+                            ) : (
+                              senderInitials
+                            )}
                           </div>
                         )}
 

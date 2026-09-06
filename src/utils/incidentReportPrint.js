@@ -25,8 +25,11 @@ const controlValue = (label, value) => `
   </div>
 `;
 
-export const openIncidentReportPrint = (ticket) => {
+export const openIncidentReportPrint = async (ticket) => {
   if (!ticket) return;
+
+  // Open window immediately to prevent browser popup blockers from blocking async popups
+  const reportWindow = window.open('', '_blank', 'width=950,height=950');
 
   const transId = ticket.computedTransId || ticket.transactionId || ticket.transId || ticket.receipt_no || ticket.ticket_no || 'N/A';
   const ticketDate = getTicketDate(ticket);
@@ -36,16 +39,30 @@ export const openIncidentReportPrint = (ticket) => {
   const drawSchedule = formatDrawTime(ticket.drawTime || ticket.draw, ticket.drawDate || ticket.created_at);
   const betCombination = `${ticket.betNo || ticket.CombiNo || ticket.SoldOutCombiNo || 'N/A'} (${ticket.betCode || (ticket.rambolito ? 'RS3' : 'TS3')})`;
   
-  const reportWindow = window.open('', '_blank', 'width=950,height=950');
+  const subOffice = ticket.sub_office || ticket.subOffice || ticket.branch || 'Central Office';
+  let subOfficeAddress = ticket.sub_office_address || 'Address not listed, please update sub-office configuration';
+
+  try {
+    const { supabase } = await import('../config/supabaseClient');
+    const { data } = await supabase
+      .from('sub_offices')
+      .select('*')
+      .ilike('name', subOffice)
+      .maybeSingle();
+
+    if (data && (data.location || data.address)) {
+      subOfficeAddress = data.location || data.address;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch dynamic sub-office address for IR Print Preview:', err);
+  }
 
   if (!reportWindow) {
     window.print();
     return;
   }
 
-  const subOffice = ticket.sub_office || ticket.subOffice || ticket.branch || 'Mandaue Central';
-
-  reportWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(reportNumber)} - Incident Report</title><style>
+  reportWindow.document.write(`<!doctype html><html><head><base href="${window.location.origin}/"><meta charset="utf-8"><title>${escapeHtml(reportNumber)} - Incident Report</title><style>
     :root { color: #172033; font-family: Arial, sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #e9eff7; }
@@ -114,7 +131,7 @@ export const openIncidentReportPrint = (ticket) => {
       }
     }
   </style></head><body><div class="toolbar"><strong>Incident Report Print Preview</strong><button onclick="window.print()">Print Report</button></div><main class="paper">
-    <header class="letterhead"><div class="brand"><img class="brand-logo" src="${window.location.origin}/lbp.png" alt="Centralized Logo"><div><div class="company">CENTRALIZED UNCLAIMED WINNINGS</div><div class="company-detail">SUB-OFFICE: ${escapeHtml(subOffice)}<br>#257 Barlaps, A.S. Fortuna Street, Bakilid, Mandaue City</div></div></div><div class="brand"><div class="classification">Confidential<br>Internal Use</div><img class="stl-logo" src="${window.location.origin}/stl.jpg" alt="STL"></div></header>
+    <header class="letterhead"><div class="brand"><img class="brand-logo" src="${window.location.origin}/lbp.png" alt="Centralized Logo"><div><div class="company">CENTRALIZED UNCLAIMED WINNINGS</div><div class="company-detail">SUB-OFFICE: ${escapeHtml(subOffice)}<br>${escapeHtml(subOfficeAddress)}</div></div></div><div class="brand"><div class="classification">Confidential<br>Internal Use</div><img class="stl-logo" src="${window.location.origin}/stl.jpg" alt="STL"></div></header>
     <header class="heading"><div><p class="eyebrow">Compliance and Operations • ${escapeHtml(subOffice)}</p><h1>Incident Report Issuance</h1></div><div class="report-number">REPORT NO.<br>${escapeHtml(reportNumber)}<br><br>DATE ISSUED<br>${escapeHtml(issuedDate)}</div></header>
     <div class="document-control">${controlValue('Document Type', 'Operational Incident Report')}${controlValue('Sub-Office Branch', subOffice)}${controlValue('Status', 'For Review and Appropriate Action')}</div>
     <div class="status">This ticket has remained unclaimed for <strong>${escapeHtml(ageInDays)} days</strong> and is eligible for incident report issuance.</div>
