@@ -80,6 +80,14 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Auto-open Profile Settings Modal if password reset token (pw_token) is present in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('pw_token')) {
+      setIsProfileModalOpen(true);
+    }
+  }, []);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -1321,9 +1329,19 @@ export default function App() {
     }
   }, [currentUser, activeTab]);
 
-  // If not logged in, render Login page
+  // If not logged in, render Login page (along with ProfileSettingsModal if reset token exists)
   if (!currentUser) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <>
+        <Login onLoginSuccess={handleLoginSuccess} />
+        <ProfileSettingsModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          currentUser={currentUser}
+          onUserUpdated={handleUserUpdated}
+        />
+      </>
+    );
   }
 
   const handleCopyTransId = (transId) => {
