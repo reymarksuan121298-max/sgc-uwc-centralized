@@ -66,6 +66,7 @@ export default function Header({
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [chatCategory, setChatCategory] = useState('all'); // 'all' | 'groups' | 'direct'
   const [latestMessages, setLatestMessages] = useState({});
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
 
   const isCallNotification = (n) => {
     if (!n) return false;
@@ -435,9 +436,35 @@ export default function Header({
       })
       .subscribe();
 
+    const presenceChannel = supabase.channel('global_presence', {
+      config: {
+        presence: {
+          key: String(currentUser?.id || currentUser?.username),
+        },
+      },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        const online = new Set();
+        Object.keys(state).forEach((key) => {
+          online.add(String(key).toLowerCase());
+        });
+        setOnlineUserIds(online);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
     return () => {
       supabase.removeChannel(channelUsers);
       supabase.removeChannel(channelChats);
+      supabase.removeChannel(presenceChannel);
     };
   }, [currentUser]);
 
@@ -783,6 +810,8 @@ export default function Header({
                         const lastRead = readTimes[userKey] || readTimes[user.username] || (user.id ? readTimes[user.id] : null);
                         const isUnread = latestMsg && !isMeSender && (!lastRead || new Date(latestMsg.created_at).getTime() > new Date(lastRead).getTime());
 
+                        const isOnline = onlineUserIds.has(String(user.id).toLowerCase()) || onlineUserIds.has(String(user.username).toLowerCase());
+
                         return (
                           <div
                             key={user.id || user.username}
@@ -802,7 +831,7 @@ export default function Header({
                                 <div className={`w-9 h-9 rounded-full ${avatarBg} flex items-center justify-center font-mono font-black text-xs border-2 border-white shadow-xs`}>
                                   {initial}
                                 </div>
-                                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+                                <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} title={isOnline ? 'Online' : 'Offline'} />
                                 {isUnread && (
                                   <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-[#0084FF] border-2 border-white animate-pulse" />
                                 )}
