@@ -55,7 +55,8 @@ export default function TicketVerificationChatModal({
   selectedContact = null,
   unclaimedData = [], 
   returnedData = [],
-  onTicketVerified = null 
+  onTicketVerified = null,
+  onlineUserIds = new Set()
 }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -174,6 +175,17 @@ export default function TicketVerificationChatModal({
   };
 
   const isGroupChat = Boolean(activeContact?.isGroup || activeContact?.member_ids || String(activeContact?.id || '').startsWith('group-'));
+
+  // Compute Global Presence for Partner directly from the prop
+  const isPartnerOnlineGlobally = useMemo(() => {
+    if (!activeContact || isGroupChat) return true; // Groups show as active
+    
+    const pId = String(activeContact.id || '').toLowerCase();
+    const pUser = String(activeContact.username || '').toLowerCase();
+    const pName = String(activeContact.full_name || '').toLowerCase();
+    
+    return onlineUserIds.has(pId) || onlineUserIds.has(pUser) || onlineUserIds.has(pName);
+  }, [activeContact, isGroupChat, onlineUserIds]);
 
   // Find matching full user profile for active contact and current user from activeUsers
   const contactUser = useMemo(() => {
@@ -890,12 +902,13 @@ export default function TicketVerificationChatModal({
                 chatHeaderInitials
               )}
             </div>
-            <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
+            <span className={`absolute bottom-0 right-0 w-2 h-2 rounded-full ring-1 ring-white ${isPartnerOnlineGlobally ? 'bg-emerald-500' : 'bg-slate-300'}`} />
           </div>
           <div className="text-left max-w-[130px] min-w-0">
             <span className="font-extrabold text-[#002B66] block leading-tight truncate">{chatHeaderName}</span>
-            <span className="text-[9px] text-emerald-600 font-bold leading-none flex items-center gap-1 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" /> Active now
+            <span className={`text-[9px] font-bold leading-none flex items-center gap-1 mt-0.5 ${isPartnerOnlineGlobally ? 'text-emerald-600' : 'text-slate-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full inline-block ${isPartnerOnlineGlobally ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} /> 
+              {isPartnerOnlineGlobally ? 'Active now' : 'Offline'}
             </span>
           </div>
           <button
@@ -961,7 +974,7 @@ export default function TicketVerificationChatModal({
                   chatHeaderInitials
                 )}
               </div>
-              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+              <span className={`absolute bottom-0 right-0 w-2 h-2 rounded-full ring-2 ring-white ${isPartnerOnlineGlobally ? 'bg-emerald-500' : 'bg-slate-300'}`} />
             </div>
 
             <div className="min-w-0 flex-1">
@@ -991,8 +1004,10 @@ export default function TicketVerificationChatModal({
                   </span>
                 ) : (
                   <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 inline-block animate-pulse" />
-                    <span className="text-emerald-600">Active now</span>
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 inline-block ${isPartnerOnlineGlobally ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className={isPartnerOnlineGlobally ? 'text-emerald-600' : 'text-slate-500 font-medium'}>
+                      {isPartnerOnlineGlobally ? 'Active now' : 'Offline'}
+                    </span>
                     <span className="text-slate-300">•</span>
                     <span className="text-slate-400 font-medium truncate">{chatHeaderSubOffice}</span>
                   </>

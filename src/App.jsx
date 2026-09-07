@@ -105,6 +105,9 @@ export default function App() {
   const [isBotOpen, setIsBotOpen] = useState(false);
   const [pendingTicketsChatCount, setPendingTicketsChatCount] = useState(0);
 
+  // Global Presence State
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+
   // In-App Heads-Up Notification Banner Popup State (Mobile & Desktop)
   const [activeNotificationPopup, setActiveNotificationPopup] = useState(null);
   const activePopupTimerRef = useRef(null);
@@ -1397,6 +1400,7 @@ export default function App() {
         activeNotificationPopup={activeNotificationPopup}
         onDismissNotificationPopup={() => setActiveNotificationPopup(null)}
         onOpenProfileModal={() => setIsProfileModalOpen(true)}
+        onlineUserIds={onlineUserIds}
       >
         <AppRoutes
           activeTab={activeTab}
@@ -1463,6 +1467,7 @@ export default function App() {
               unclaimedData={data}
               returnedData={returnedData}
               onTicketVerified={handleTicketVerifiedFromChat}
+              onlineUserIds={onlineUserIds}
             />
           );
         })}
