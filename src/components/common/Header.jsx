@@ -397,12 +397,16 @@ export default function Header({
           } else {
             // Direct 1-on-1: determine conversation partner
             const isSenderMe = sId === myId || sUsername === myId || sName === myName;
-            const partnerKeys = isSenderMe ? [rId, rName] : [sId, sUsername, sName];
+            const isRecipientMe = rId === myId || rName === myName;
 
-            partnerKeys.filter(Boolean).forEach((key) => {
-              if (!map[key]) map[key] = msg;
-            });
-            if (roomId && !map[roomId]) map[roomId] = msg;
+            if (isSenderMe || isRecipientMe) {
+              const partnerKeys = isSenderMe ? [rId, rName] : [sId, sUsername, sName];
+
+              partnerKeys.filter(Boolean).forEach((key) => {
+                if (!map[key]) map[key] = msg;
+              });
+              if (roomId && !map[roomId]) map[roomId] = msg;
+            }
           }
         });
         setLatestMessages(map);
@@ -452,14 +456,25 @@ export default function Header({
     }
 
     const q = userSearch.toLowerCase().trim();
-    if (!q) return list;
+    
+    // If no search query, ONLY display users with existing direct messages
+    if (!q) {
+      return list.filter(u => {
+        const uId = String(u.id).toLowerCase();
+        const uUser = String(u.username).toLowerCase();
+        const uName = String(u.full_name || '').toLowerCase();
+        return latestMessages[uId] || latestMessages[uUser] || latestMessages[uName];
+      });
+    }
+
+    // If there is a search query, allow finding any active user to start a new chat
     return list.filter(u => 
       (u.full_name || '').toLowerCase().includes(q) ||
       (u.username || '').toLowerCase().includes(q) ||
       (formatRoleName(u.role) || '').toLowerCase().includes(q) ||
       (u.sub_office || '').toLowerCase().includes(q)
     );
-  }, [activeUsers, userSearch, currentUser]);
+  }, [activeUsers, userSearch, currentUser, latestMessages]);
 
   // Filter groups visible to the current user
   const filteredGroups = useMemo(() => {
@@ -599,7 +614,7 @@ export default function Header({
                     <h4 className="font-black text-slate-900 uppercase tracking-wide">Cashier & Team Desk</h4>
                     <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      {filteredUsers.length + filteredGroups.length} Active
+                      {activeUsers.filter(u => String(u.id) !== String(currentUser?.id) && String(u.username) !== String(currentUser?.username)).length + filteredGroups.length} Active
                     </span>
                   </div>
                 </div>
