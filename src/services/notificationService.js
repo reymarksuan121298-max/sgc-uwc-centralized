@@ -1,6 +1,13 @@
 /**
- * STL Mandaue - Web Push & Notification Service
- * Manages Browser Notifications, Web Audio alerts, Service Worker coordination, and user preferences.
+ * SGC - Unclaimed Winnings Centralized Portal
+ * Web Push & Realtime Notification Service
+ * 
+ * Features:
+ * - Awaited Service Worker Readiness for 100% Reliable Background Notifications
+ * - Synthesized Multi-Tone Web Audio Chimes with Auto-Resume Gesture Unlock
+ * - Cross-Browser Vibration API Pattern Triggering for Mobile Devices
+ * - Native PWA App Icon Badging & Dynamic Browser Tab Title Sync
+ * - Diagnostic Health Checks and One-Click End-to-End Test Notifications
  */
 
 class NotificationService {
@@ -8,14 +15,16 @@ class NotificationService {
     this.swRegistration = null;
     this.audioCtx = null;
     this.actionListeners = new Set();
+    this.baseDocumentTitle = typeof document !== 'undefined' ? document.title : 'SGC - Unclaimed Winnings Centralized Portal';
     this.initServiceWorker();
     this.initMessageListener();
     this.initAudioUnlock();
   }
 
-  // Automatic AudioContext gesture unlock on first user interaction
+  // Automatic AudioContext gesture unlock on any user interaction
   initAudioUnlock() {
     if (typeof window === 'undefined') return;
+
     const unlock = () => {
       try {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -31,13 +40,16 @@ class NotificationService {
       window.removeEventListener('click', unlock);
       window.removeEventListener('touchstart', unlock);
       window.removeEventListener('keydown', unlock);
+      window.removeEventListener('scroll', unlock);
     };
+
     window.addEventListener('click', unlock, { passive: true, once: true });
     window.addEventListener('touchstart', unlock, { passive: true, once: true });
     window.addEventListener('keydown', unlock, { passive: true, once: true });
+    window.addEventListener('scroll', unlock, { passive: true, once: true });
   }
 
-  // Register service worker for web push and background notification support
+  // Register service worker and await readiness
   async initServiceWorker() {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
       return null;
@@ -46,23 +58,46 @@ class NotificationService {
       this.swRegistration = await navigator.serviceWorker.register('/sw.js', {
         scope: '/'
       });
+
+      // Await active readiness to eliminate showNotification race conditions
+      await navigator.serviceWorker.ready.then((reg) => {
+        this.swRegistration = reg;
+      }).catch(() => {});
+
+      // Check for updates periodically when window gains focus
+      window.addEventListener('focus', () => {
+        this.updateServiceWorker();
+      });
+
       return this.swRegistration;
     } catch (err) {
-      console.warn('Service Worker registration skipped or failed:', err);
+      console.warn('Service Worker registration notice:', err);
       return null;
     }
   }
 
-  // Listen to message posted from Service Worker on notification click
+  // Trigger manual or focus-based service worker update check
+  async updateServiceWorker() {
+    if (this.swRegistration && typeof this.swRegistration.update === 'function') {
+      try {
+        await this.swRegistration.update();
+      } catch {
+        // Safe silence for offline/restricted states
+      }
+    }
+  }
+
+  // Listen to messages posted from Service Worker on notification click or background push
   initMessageListener() {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
     navigator.serviceWorker.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'STL_NOTIFICATION_CLICK') {
         const payload = event.data.payload || {};
+        const action = event.data.action || 'default';
         this.actionListeners.forEach((listener) => {
           try {
-            listener(payload);
+            listener(payload, action);
           } catch (e) {
             console.error('Notification click listener error:', e);
           }
@@ -77,7 +112,7 @@ class NotificationService {
     return () => this.actionListeners.delete(callback);
   }
 
-  // Check current browser permission
+  // Check current browser permission status
   getPermissionStatus() {
     if (typeof window === 'undefined' || !('Notification' in window)) {
       return 'unsupported';
@@ -106,7 +141,7 @@ class NotificationService {
       sound: true,
       chatNotifications: true,
       auditNotifications: true,
-      volume: 0.7
+      volume: 0.75
     };
     try {
       const saved = localStorage.getItem(key);
@@ -133,7 +168,60 @@ class NotificationService {
     }
   }
 
-  // Web Audio API Synthesizer for high quality, reliable alert sounds
+  // Trigger mobile haptic vibration pattern
+  triggerVibration(pattern = [100, 50, 100]) {
+    if (typeof window !== 'undefined' && 'navigator' in window && typeof navigator.vibrate === 'function') {
+      try {
+        navigator.vibrate(pattern);
+      } catch {
+        // Safe silence if blocked by permissions policy
+      }
+    }
+  }
+
+  // Update App Icon Badge (PWA & Desktop browsers supporting Badging API)
+  setAppBadge(count = 0) {
+    if (typeof window === 'undefined' || !('navigator' in window)) return;
+    try {
+      if ('setAppBadge' in navigator) {
+        if (count > 0) {
+          navigator.setAppBadge(count).catch(() => {});
+        } else {
+          navigator.clearAppBadge().catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Clear App Icon Badge
+  clearAppBadge() {
+    if (typeof window === 'undefined' || !('navigator' in window)) return;
+    try {
+      if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Dynamic Browser Tab Title with unread count
+  updateTabTitle(unreadCount = 0) {
+    if (typeof document === 'undefined') return;
+    try {
+      if (unreadCount > 0) {
+        document.title = `(${unreadCount > 99 ? '99+' : unreadCount}) ${this.baseDocumentTitle}`;
+      } else {
+        document.title = this.baseDocumentTitle;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Web Audio API Synthesizer for reliable multi-tone alert sounds
   playTone(type = 'chat', userId = 'default') {
     const settings = this.getSettings(userId);
     if (!settings.sound) return;
@@ -148,14 +236,14 @@ class NotificationService {
 
       if (this.audioCtx.state === 'suspended') {
         this.audioCtx.resume().catch(() => {});
-        return; // Skip audio until unlocked by user interaction to prevent browser warnings
+        return; // Wait for gesture unlock if suspended
       }
 
       const now = this.audioCtx.currentTime;
-      const vol = settings.volume || 0.7;
+      const vol = Math.max(0.1, Math.min(1.0, settings.volume || 0.75));
 
       if (type === 'chat') {
-        // Friendly modern two-tone pop (D5 -> A5)
+        // Warm Friendly Pop Chime (D5 -> A5 with soft harmonic)
         const osc1 = this.audioCtx.createOscillator();
         const osc2 = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
@@ -168,7 +256,7 @@ class NotificationService {
         osc2.frequency.setValueAtTime(1174.66, now); // D6 harmonic
 
         gain.gain.setValueAtTime(0.01, now);
-        gain.gain.linearRampToValueAtTime(0.18 * vol, now + 0.03);
+        gain.gain.linearRampToValueAtTime(0.22 * vol, now + 0.03);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
 
         osc1.connect(gain);
@@ -179,8 +267,11 @@ class NotificationService {
         osc2.start(now);
         osc1.stop(now + 0.35);
         osc2.stop(now + 0.35);
-      } else if (type === 'audit') {
-        // Authoritative crisp corporate chime (G5 -> C6)
+
+        this.triggerVibration([80, 40, 80]);
+
+      } else if (type === 'audit' || type === 'operational') {
+        // Crisp Corporate Chime (G5 -> C6)
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
 
@@ -189,7 +280,7 @@ class NotificationService {
         osc.frequency.setValueAtTime(1046.5, now + 0.09); // C6
 
         gain.gain.setValueAtTime(0.01, now);
-        gain.gain.linearRampToValueAtTime(0.2 * vol, now + 0.04);
+        gain.gain.linearRampToValueAtTime(0.24 * vol, now + 0.04);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
 
         osc.connect(gain);
@@ -197,6 +288,29 @@ class NotificationService {
 
         osc.start(now);
         osc.stop(now + 0.45);
+
+        this.triggerVibration([100, 50, 100]);
+
+      } else if (type === 'urgent' || type === 'deletion') {
+        // High-Priority Double Pulse (E6 -> B6)
+        const osc1 = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+
+        osc1.type = 'triangle';
+        osc1.frequency.setValueAtTime(1318.51, now);
+        osc1.frequency.setValueAtTime(1975.53, now + 0.1);
+
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.3 * vol, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+        osc1.connect(gain);
+        gain.connect(this.audioCtx.destination);
+
+        osc1.start(now);
+        osc1.stop(now + 0.5);
+
+        this.triggerVibration([150, 80, 150]);
       }
     } catch (e) {
       console.warn('Web Audio playback error:', e);
@@ -227,20 +341,26 @@ class NotificationService {
       badge: '/lbp.png',
       vibrate: [100, 50, 100],
       renotify: true,
+      tag: `sgc-${Date.now()}`,
       ...options
     };
 
-    // Try service worker showNotification first
-    if (this.swRegistration && 'showNotification' in this.swRegistration) {
-      try {
-        await this.swRegistration.showNotification(title, defaultOptions);
-        return true;
-      } catch (swErr) {
-        console.warn('SW notification fallback to window Notification:', swErr);
+    // 1. Try service worker showNotification first (Works in background tabs)
+    try {
+      let reg = this.swRegistration;
+      if (!reg && 'serviceWorker' in navigator) {
+        reg = await navigator.serviceWorker.ready.catch(() => null);
       }
+
+      if (reg && 'showNotification' in reg) {
+        await reg.showNotification(title, defaultOptions);
+        return true;
+      }
+    } catch (swErr) {
+      console.warn('SW notification fallback to window Notification:', swErr);
     }
 
-    // Fallback to standard window Notification
+    // 2. Fallback to standard window Notification
     try {
       const notification = new Notification(title, defaultOptions);
       if (onClick) {
@@ -271,7 +391,7 @@ class NotificationService {
     const settings = this.getSettings(currentUserId);
     if (!settings.chatNotifications) return false;
 
-    // Play pleasant sound chime
+    // Play pleasant sound chime & mobile vibration
     this.playTone('chat', currentUserId);
 
     const title = `💬 ${senderName}${subOffice ? ` (${subOffice})` : ''}`;
@@ -280,9 +400,9 @@ class NotificationService {
 
     return await this.dispatchSystemNotification(title, {
       body,
-      tag: `stl-chat-${roomId || senderId || 'global'}`,
+      tag: `sgc-chat-${roomId || senderId || 'global'}`,
       actions: [
-        { action: 'open', title: '💬 Open Chat' }
+        { action: 'open_chat', title: '💬 Open Chat' }
       ],
       data: {
         type: 'CHAT_MESSAGE',
@@ -295,7 +415,7 @@ class NotificationService {
     }, onClick);
   }
 
-  // Send real-time Audit Log web push notification
+  // Send real-time Audit / Operational Log web push notification
   async sendAuditNotification({
     actorUsername = 'System',
     actorRole = '',
@@ -319,12 +439,14 @@ class NotificationService {
       return false;
     }
 
-    // Play subtle chime
-    this.playTone('audit', currentUserId);
+    const isUrgent = action.includes('DELETION_REQUEST') || action.includes('URGENT');
 
-    // Humanize action
+    // Play subtle chime
+    this.playTone(isUrgent ? 'urgent' : 'audit', currentUserId);
+
+    // Humanize action label
     const actionLabel = action.replace(/_/g, ' ');
-    const title = `🛡️ STL Audit: ${actionLabel}`;
+    const title = isUrgent ? `⚠️ SGC Urgent: ${actionLabel}` : `🛡️ SGC System: ${actionLabel}`;
     const details = [
       targetType ? `Target: ${targetType}` : '',
       targetId ? `#${targetId}` : '',
@@ -335,7 +457,10 @@ class NotificationService {
 
     return await this.dispatchSystemNotification(title, {
       body,
-      tag: `stl-audit-${Date.now()}`,
+      tag: `sgc-audit-${Date.now()}`,
+      actions: [
+        { action: 'view_audit', title: '🛡️ View Log' }
+      ],
       data: {
         type: 'AUDIT_LOG',
         action,
@@ -346,6 +471,42 @@ class NotificationService {
         timestamp: new Date().toISOString()
       }
     }, onClick);
+  }
+
+  // End-to-End Test Notification Trigger (Audio + Desktop Banner + Verification)
+  async testNotification(userId = 'default', onClick = null) {
+    this.playTone('chat', userId);
+
+    return await this.dispatchSystemNotification('🔔 SGC Notification Test', {
+      body: 'Web Push Notifications & Sound Alerts are active and functioning properly!',
+      tag: `sgc-test-${Date.now()}`,
+      actions: [
+        { action: 'test_success', title: '✅ Working Great' }
+      ],
+      data: {
+        type: 'TEST_NOTIFICATION',
+        timestamp: new Date().toISOString()
+      }
+    }, onClick);
+  }
+
+  // System Diagnostics
+  getDiagnostics() {
+    const isBrowser = typeof window !== 'undefined';
+    return {
+      notificationSupported: isBrowser && 'Notification' in window,
+      permissionStatus: isBrowser && 'Notification' in window ? Notification.permission : 'unsupported',
+      serviceWorkerSupported: isBrowser && 'serviceWorker' in navigator,
+      serviceWorkerActive: !!(this.swRegistration && this.swRegistration.active),
+      audioContextActive: !!(this.audioCtx && this.audioCtx.state === 'running'),
+      audioContextState: this.audioCtx ? this.audioCtx.state : 'uninitialized',
+      isPWAStandalone: isBrowser && (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true
+      ),
+      badgingSupported: isBrowser && 'setAppBadge' in navigator,
+      vibrationSupported: isBrowser && 'vibrate' in navigator
+    };
   }
 }
 

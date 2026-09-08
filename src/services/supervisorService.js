@@ -11,9 +11,7 @@ export const ILIGAN_ALLOWED_SUPERVISORS = [
   "rielmpizon@gfldn",
   "ianjohnmbalala@gfldn",
   "ivankennethg.agcopra@gfldn",
-  "coor@gfldn",
-  "ssrwild@stl.com",
-  "ssrwild"
+  "coor@gfldn"
 ];
 
 // ─── ILIGAN SET A ────────────────────────────────────────────────────────────
@@ -22,7 +20,6 @@ export const ILIGAN_SET_A_ALLOWED_SUPERVISORS = [
   // From supervisor?id=8
   "edmondgonzaga@gfldn",
   "steverodriguez@gfldn",
-  "lanaospvr@gfldn",
   // From supervisor?id=5
   "camilojayminoza@gfldn",
   "cristianagaton@gfldn",
@@ -174,15 +171,23 @@ export function isBaloiOfficeAllowedSupervisor(key) {
 const supervisorCache = new Map();
 
 /**
- * Resolve the Bearer auth header from any Iligan-related gateway endpoint.
+ * Resolve the Bearer auth header from gateway endpoints.
+ * Prefers an Iligan/LDN-labeled endpoint; falls back to any active endpoint
+ * since all endpoints share the same token.
  */
 function getIliganAuthHeader(gatewayEndpoints = []) {
-  const ep = (gatewayEndpoints || []).find(e => {
-    if (!e || e.is_active === false) return false;
+  const eps = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
+
+  // Prefer an endpoint explicitly labeled for Iligan/LDN
+  let ep = eps.find(e => {
     const sub = (e.sub_office || e.name || '').toLowerCase();
     const url = (e.baseUrl || '').toLowerCase();
     return sub.includes('iligan') || url.includes('stl-ldn-api') || sub.includes('ldn');
   });
+
+  // Fall back to any active endpoint (all share the same token)
+  if (!ep && eps.length > 0) ep = eps.find(e => e.token) || eps[0];
+
   const rawToken = (ep?.token || '').trim();
   return rawToken
     ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`)
@@ -197,11 +202,16 @@ function getIliganAuthHeader(gatewayEndpoints = []) {
  * @returns {Promise<Object>}
  */
 async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
+  if (!authHeader) {
+    console.warn('[SupervisorService] Skipping supervisor fetch: Missing or invalid auth token for Iligan endpoint.');
+    return {};
+  }
+
   const headers = {
     'Accept': 'application/json, text/plain, */*',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Authorization': authHeader
   };
-  if (authHeader) headers['Authorization'] = authHeader;
 
   const merged = {};
 

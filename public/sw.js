@@ -1,8 +1,8 @@
-// STL Mandaue - Progressive Web Application (PWA) Service Worker
-// Provides Offline Caching, Background Web Push & App Lifecycle Management
+// SGC Portal - Progressive Web Application (PWA) Service Worker
+// Provides Offline Caching, Background Web Push, Action Buttons & Cross-Tab Coordination
 /* eslint-disable no-restricted-globals */
 
-const CACHE_NAME = 'sgc-portal-v2.0';
+const CACHE_NAME = 'sgc-portal-v2.1';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -22,27 +22,43 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate Event: Clean up legacy caches & take control of clients
+// Activate Event: Clean up legacy caches & take immediate control of clients
 self.addEventListener('activate', (event) => {
+  const isDev = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => isDev || name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       );
     }).then(() => self.clients.claim())
   );
 });
 
-// Fetch Event: Stale-While-Revalidate for static assets; Network-First for API calls
+// Message Event: Allow clients to control service worker lifecycle
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// Fetch Event: Stale-While-Revalidate for static assets; Network-First for API & navigation
 self.addEventListener('fetch', (event) => {
   const request = event.request;
 
-  // Skip non-GET requests, chrome-extensions, and Supabase REST/WebSocket realtime calls
+  // In local development or Vite HMR, bypass SW fetch handling entirely
+  const isDev = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
   if (
+    isDev ||
     request.method !== 'GET' ||
     !request.url.startsWith('http') ||
+    request.headers.get('upgrade') === 'websocket' ||
+    request.url.includes('/@vite/') ||
+    request.url.includes('/@fs/') ||
+    request.url.includes('/@id/') ||
+    request.url.includes('node_modules') ||
+    request.url.includes('token=') ||
     request.url.includes('supabase.co') ||
     request.url.includes('/rest/v1/') ||
     request.url.includes('turn:') ||
@@ -85,7 +101,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Handle Background Push Events
+// Handle Background Web Push Events
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -104,39 +120,61 @@ self.addEventListener('push', (event) => {
     body: data.body || 'New system activity recorded.',
     icon: data.icon || '/lbp.png',
     badge: data.badge || '/lbp.png',
-    vibrate: [100, 50, 100],
+    vibrate: data.vibrate || [100, 50, 100],
     data: data.data || {},
-    tag: data.tag || 'sgc-notification',
-    renotify: true,
-    requireInteraction: data.requireInteraction || false
+    tag: data.tag || `sgc-${Date.now()}`,
+    renotify: data.renotify !== false,
+    requireInteraction: data.requireInteraction || false,
+    actions: data.actions || [
+      { action: 'open', title: '👁️ Open Portal' }
+    ]
   };
+
+  // Optional App Badge synchronization if provided in push payload
+  if (typeof data.badgeCount === 'number' && 'setAppBadge' in self.navigator) {
+    self.navigator.setAppBadge(data.badgeCount).catch(() => {});
+  }
 
   event.waitUntil(
     self.registration.showNotification(title, options)
   );
 });
 
-// Handle Notification Click
+// Handle Notification Clicks (Focuses existing window or opens target URL)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const notificationData = event.notification.data || {};
+  const action = event.action;
   const targetUrl = notificationData.url || '/';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If a window is already open, focus it and dispatch event
       for (const client of clientList) {
         if ('focus' in client) {
           client.focus();
           client.postMessage({
             type: 'STL_NOTIFICATION_CLICK',
+            action: action || 'default',
             payload: notificationData
           });
           return;
         }
       }
+      // If no window is currently open, open a new window
       if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
+        return self.clients.openWindow(targetUrl).then((newClient) => {
+          if (newClient) {
+            setTimeout(() => {
+              newClient.postMessage({
+                type: 'STL_NOTIFICATION_CLICK',
+                action: action || 'default',
+                payload: notificationData
+              });
+            }, 1000);
+          }
+        });
       }
     })
   );

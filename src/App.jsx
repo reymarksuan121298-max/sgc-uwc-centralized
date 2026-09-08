@@ -220,12 +220,23 @@ export default function App() {
     setPendingTicketsChatCount(0);
   }, [currentUser]);
 
-  // Handle incoming notification clicks (Service Worker or browser push events)
+  // Sync Unread Count to App Icon Badge & Browser Tab Title
+  const totalUnreadCount = useMemo(() => {
+    const unreadNotifs = (notifications || []).filter(n => !n.read).length;
+    return unreadNotifs + (pendingTicketsChatCount || 0);
+  }, [notifications, pendingTicketsChatCount]);
+
+  useEffect(() => {
+    notificationService.setAppBadge(totalUnreadCount);
+    notificationService.updateTabTitle(totalUnreadCount);
+  }, [totalUnreadCount]);
+
+  // Handle incoming notification clicks (Service Worker, browser push events, or action buttons)
   useEffect(() => {
     notificationService.initServiceWorker();
-    const unsubscribe = notificationService.onNotificationAction((payload) => {
+    const unsubscribe = notificationService.onNotificationAction((payload, action) => {
       if (!payload) return;
-      if (payload.type === 'CHAT_MESSAGE') {
+      if (payload.type === 'CHAT_MESSAGE' || action === 'open_chat') {
         if (payload.roomId) {
           handleOpenTicketChat({
             id: payload.roomId,
@@ -241,12 +252,14 @@ export default function App() {
             sub_office: payload.subOffice || ''
           });
         }
-      } else if (payload.type === 'AUDIT_LOG') {
+      } else if (payload.type === 'AUDIT_LOG' || action === 'view_audit') {
         setActiveTab('audit_logs');
       }
     });
     return () => unsubscribe();
   }, [handleOpenTicketChat]);
+
+
 
   const handleNavigateToSettlement = (ticketOrId) => {
     const transId = typeof ticketOrId === 'string'
@@ -574,6 +587,35 @@ export default function App() {
     }
   }, [fromDate, toDate, selectedEndpointFilter, currentUser, gatewayConfig, gatewayEndpoints]);
 
+  // App Lifecycle Catch-Up: Re-fetch pending items when tab gains visibility or network reconnects
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPendingChatCount();
+        fetchReturnedFromSupabase();
+        notificationService.updateServiceWorker();
+      }
+    };
+
+    const handleOnline = () => {
+      fetchPendingChatCount();
+      fetchReturnedFromSupabase();
+      if (gatewayEndpoints.length > 0 || gatewayConfig?.baseUrl) {
+        fetchData(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [currentUser, fetchPendingChatCount, fetchReturnedFromSupabase, fetchData, gatewayEndpoints, gatewayConfig]);
+
   // Parallel Initial Load to eliminate waterfall delays
   useEffect(() => {
     if (!currentUser) return;
@@ -593,34 +635,6 @@ export default function App() {
 
     return () => { isMounted = false; };
   }, [currentUser]);
-
-  // Service Worker and Notification Action Listener initialization
-  useEffect(() => {
-    notificationService.initServiceWorker();
-    const unsub = notificationService.onNotificationAction((payload) => {
-      if (payload.type === 'CHAT_MESSAGE') {
-        if (payload.roomId) {
-          handleOpenTicketChat({
-            id: payload.roomId,
-            name: payload.senderName || 'SSR',
-            sub_office: payload.subOffice || '',
-            isGroup: String(payload.roomId).startsWith('group-')
-          });
-        } else {
-          handleOpenTicketChat({
-            id: payload.senderId || payload.senderName,
-            username: payload.senderName,
-            full_name: payload.senderName,
-            sub_office: payload.subOffice || ''
-          });
-        }
-      } else if (payload.type === 'AUDIT_LOG') {
-        setActiveTab('audit_logs');
-      }
-    });
-
-    return () => unsub();
-  }, [handleOpenTicketChat, setActiveTab]);
 
   // Re-fetch on filter changes
   useEffect(() => {
@@ -728,36 +742,31 @@ export default function App() {
               }
 
               // Dispatch Web Push / Browser notification + audio chime
-              if (!isSSRRole(currentUser?.role)) {
-                notificationService.sendChatNotification({
-                  senderName: sender,
-                  senderId,
-                  roomId,
-                  subOffice,
-                  message: msgSnippet,
-                  currentUserId: currentUser?.id || currentUser?.username,
-                  onClick: () => {
-                    if (roomId) {
-                      handleOpenTicketChat({
-                        id: roomId,
-                        name: sender,
-                        sub_office: subOffice,
-                        isGroup: String(roomId).startsWith('group-')
-                      });
-                    } else {
-                      handleOpenTicketChat({
-                        id: senderId || sender,
-                        username: sender,
-                        full_name: sender,
-                        sub_office: subOffice
-                      });
-                    }
+              notificationService.sendChatNotification({
+                senderName: sender,
+                senderId,
+                roomId,
+                subOffice,
+                message: msgSnippet,
+                currentUserId: currentUser?.id || currentUser?.username,
+                onClick: () => {
+                  if (roomId) {
+                    handleOpenTicketChat({
+                      id: roomId,
+                      name: sender,
+                      sub_office: subOffice,
+                      isGroup: String(roomId).startsWith('group-')
+                    });
+                  } else {
+                    handleOpenTicketChat({
+                      id: senderId || sender,
+                      username: sender,
+                      full_name: sender,
+                      sub_office: subOffice
+                    });
                   }
-                });
-              } else {
-                // On SSR side, play local audio chime
-                notificationService.playTone('chat', currentUser?.id || currentUser?.username);
-              }
+                }
+              });
             }
           } else {
             fetchPendingChatCount();
@@ -882,8 +891,8 @@ export default function App() {
           // 1. Append to notification center feed
           appendNotification(auditNotif);
 
-          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self and not SSR)
-          if (!isMe && !isSSRRole(currentUser?.role)) {
+          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self)
+          if (!isMe) {
             triggerNotificationPopup(auditNotif);
             notificationService.sendAuditNotification({
               actorUsername: actorName,

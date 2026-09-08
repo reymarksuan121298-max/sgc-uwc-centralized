@@ -237,6 +237,21 @@ export default function Header({
     }
   };
 
+  // Test Notification & Audio chimes
+  const [isTestingNotif, setIsTestingNotif] = useState(false);
+  const handleTestNotification = async () => {
+    setIsTestingNotif(true);
+    try {
+      await notificationService.testNotification(userKey, () => {
+        setIsNotificationOpen(false);
+      });
+    } catch {
+      // safe fallback
+    } finally {
+      setTimeout(() => setIsTestingNotif(false), 800);
+    }
+  };
+
   // Toggle notification settings
   const handleToggleSound = () => {
     const nextVal = !notifSettings.sound;
@@ -897,17 +912,17 @@ export default function Header({
             )}
           </button>
 
-          {/* NOTIFICATION CENTER DROPDOWN PANEL (Matches UI Mockup) */}
+          {/* NOTIFICATION CENTER DROPDOWN PANEL */}
           {isNotificationOpen && (
-            <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[380px] bg-white border border-slate-100 rounded-3xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col max-h-[82vh] sm:max-h-[520px]">
+            <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[390px] bg-white border border-slate-100 rounded-3xl shadow-2xl overflow-hidden z-[10002] animate-in fade-in zoom-in-95 flex flex-col max-h-[82vh] sm:max-h-[540px]">
               
-              {/* Clean Mockup Header */}
+              {/* Header */}
               <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100/90 bg-white shrink-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
                     Notifications
                   </h3>
-                  {!isSSR && permissionStatus === 'granted' && (
+                  {permissionStatus === 'granted' && (
                     <span className="bg-emerald-50 text-emerald-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Push On
@@ -915,20 +930,30 @@ export default function Header({
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {onMarkAllNotificationsRead && (
+                  <button
+                    type="button"
+                    onClick={handleTestNotification}
+                    disabled={isTestingNotif}
+                    className="text-xs font-bold text-[#002B66] hover:text-blue-700 bg-blue-50/80 hover:bg-blue-100/80 px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 active:scale-95 disabled:opacity-50"
+                    title="Send an end-to-end test notification with sound"
+                  >
+                    <Sparkles size={11} className={isTestingNotif ? "animate-spin text-[#FFD700]" : "text-[#002B66]"} />
+                    <span>{isTestingNotif ? "Testing..." : "Test"}</span>
+                  </button>
+                  {onMarkAllNotificationsRead && cleanNotifications.some(n => !n.read) && (
                     <button
                       type="button"
                       onClick={onMarkAllNotificationsRead}
                       className="text-xs font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                     >
-                      Mark all as read
+                      Mark read
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Web Push Permission Banner (Hidden on SSR Side) */}
-              {!isSSR && permissionStatus !== 'granted' && (
+              {/* Web Push Permission Banner (Default State) */}
+              {permissionStatus === 'default' && (
                 <div className="bg-blue-50/90 border-b border-blue-100 p-2.5 px-4 flex items-center justify-between gap-2 shrink-0 animate-in fade-in">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-2 h-2 rounded-full bg-[#0084FF] animate-ping shrink-0" />
@@ -946,8 +971,18 @@ export default function Header({
                 </div>
               )}
 
+              {/* Web Push Permission Banner (Blocked/Denied State) */}
+              {permissionStatus === 'denied' && (
+                <div className="bg-amber-50 border-b border-amber-100 p-2 px-4 flex items-center gap-2 shrink-0 text-amber-800 text-[11px] font-medium">
+                  <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                  <p className="truncate">
+                    Push blocked by browser. Click the lock icon in the URL bar to allow.
+                  </p>
+                </div>
+              )}
+
               {/* Notification Items List */}
-              <div className="p-3 space-y-2.5 overflow-y-auto max-h-[440px]">
+              <div className="p-3 space-y-2.5 overflow-y-auto max-h-[400px]">
                 {(!cleanNotifications || cleanNotifications.length === 0) ? (
                   <div className="py-12 px-4 text-center space-y-2">
                     <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
@@ -994,6 +1029,35 @@ export default function Header({
                       </div>
                     );
                   })
+                )}
+              </div>
+
+              {/* Bottom Quick Settings Toolbar */}
+              <div className="p-2.5 px-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleSound}
+                    className={`p-1.5 rounded-lg flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
+                      notifSettings.sound
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-200/80 text-slate-600'
+                    }`}
+                    title={notifSettings.sound ? "Sound is ON (Click to Mute)" : "Sound is MUTED (Click to Enable)"}
+                  >
+                    {notifSettings.sound ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                    <span className="text-[10px]">{notifSettings.sound ? 'Sound On' : 'Muted'}</span>
+                  </button>
+                </div>
+                {onClearNotifications && cleanNotifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClearNotifications}
+                    className="text-[11px] font-bold text-slate-400 hover:text-rose-600 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 size={11} />
+                    <span>Clear all</span>
+                  </button>
                 )}
               </div>
 
