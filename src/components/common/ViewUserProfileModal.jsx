@@ -1,14 +1,19 @@
 import React from 'react';
 import { X, Mail, Phone, Building2, Shield, Calendar, CheckCircle2, MessageSquare, User } from 'lucide-react';
 import { formatRoleName } from '../../utils/permissions';
+import { presenceService } from '../../services/presenceService';
 
-export default function ViewUserProfileModal({ user, isOpen, onClose, onStartChat }) {
+export default function ViewUserProfileModal({ user, isOpen, onClose, onStartChat, isOnline, onlineUserIds = null }) {
   if (!isOpen || !user) return null;
 
   const fullName = user.full_name || user.fullName || user.username || 'User Profile';
   const username = user.username ? `@${user.username}` : '';
   const roleName = formatRoleName(user.role);
   const subOffice = user.sub_office || user.subOffice || 'All Branches';
+
+  const isUserCurrentlyOnline = isOnline !== undefined 
+    ? isOnline 
+    : (onlineUserIds ? presenceService.isUserOnline(user, onlineUserIds) : false);
 
   const initials = (fullName || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
@@ -39,13 +44,20 @@ export default function ViewUserProfileModal({ user, isOpen, onClose, onStartCha
                 {initials}
               </div>
             )}
-            <span className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${user.is_active !== false ? 'bg-emerald-500' : 'bg-slate-400'}`} title={user.is_active !== false ? 'Active' : 'Offline'} />
+            <span 
+              className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white shadow-xs ${isUserCurrentlyOnline ? 'bg-emerald-500 ring-2 ring-emerald-300' : 'bg-slate-400'}`} 
+              title={isUserCurrentlyOnline ? 'Active now' : 'Offline'} 
+            />
           </div>
 
           <h3 className="text-lg font-black text-slate-900">{fullName}</h3>
           {username && <p className="text-xs text-slate-500 font-semibold">{username}</p>}
 
           <div className="mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+            <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full border ${isUserCurrentlyOnline ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isUserCurrentlyOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              {isUserCurrentlyOnline ? 'Active now' : 'Offline'}
+            </span>
             <span className="bg-blue-50 text-[#002B66] border border-blue-200 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
               {roleName}
             </span>

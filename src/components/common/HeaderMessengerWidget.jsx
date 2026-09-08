@@ -1,6 +1,7 @@
 import React from 'react';
 import { Users, Search, Plus, ArrowRight } from 'lucide-react';
 import { formatRoleName } from '../../utils/permissions';
+import { presenceService } from '../../services/presenceService';
 
 export default function HeaderMessengerWidget({
   isMiniWidgetOpen,
@@ -19,8 +20,11 @@ export default function HeaderMessengerWidget({
   markAsRead,
   onOpenTicketChat,
   formatMsgTime,
-  getUserAvatarColor
+  getUserAvatarColor,
+  onlineUserIds = new Set()
 }) {
+  const onlineCount = (filteredUsers || []).filter(u => presenceService.isUserOnline(u, onlineUserIds)).length + (currentUser ? 1 : 0);
+
   return (
     <>
       {/* MESSENGER ACTIVE USERS DROPDOWN */}
@@ -34,7 +38,7 @@ export default function HeaderMessengerWidget({
                     <h4 className="font-black text-slate-900 uppercase tracking-wide">Cashier & Team Desk</h4>
                     <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      {filteredUsers.length + filteredGroups.length} Active
+                      {onlineCount} Active Now
                     </span>
                   </div>
                 </div>

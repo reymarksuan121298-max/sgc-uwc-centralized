@@ -13,7 +13,9 @@ import TicketVerificationBotModal from './components/chat/TicketVerificationBotM
 import ProfileSettingsModal from './components/common/ProfileSettingsModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
 import { notificationService } from './services/notificationService';
+import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { MessageSquare, Sparkles, Bot } from 'lucide-react';
+import { isIliganAllowedSupervisor, isIliganSetAAllowedSupervisor, isLalaOfficeAllowedSupervisor, isBaloiOfficeAllowedSupervisor } from './services/supervisorService';
 
 const DEFAULT_COMMISSIONS = {
   adminPercent: 50,
@@ -105,8 +107,8 @@ export default function App() {
   const [isBotOpen, setIsBotOpen] = useState(false);
   const [pendingTicketsChatCount, setPendingTicketsChatCount] = useState(0);
 
-  // Global Presence State
-  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  // Real-time Global Presence State
+  const { onlineUserIds } = useGlobalPresence(currentUser);
 
   // In-App Heads-Up Notification Banner Popup State (Mobile & Desktop)
   const [activeNotificationPopup, setActiveNotificationPopup] = useState(null);
@@ -364,29 +366,42 @@ export default function App() {
 
   const fetchReturnedFromSupabase = useCallback(async () => {
     try {
-      const { data: sData, error } = await supabase
+      let query = supabase
         .from('returned_winnings')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
+
+      // If user is a restricted SSR, filter returned winnings by their assigned sub-office
+      const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
+      if (isRestrictedBranchSSR) {
+        query = query.eq('sub_office', currentUser.sub_office);
+      }
+
+      const { data: sData, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
       if (sData) setReturnedData(sData);
     } catch (err) {
       console.warn("Returned winnings fetch:", err.message);
     }
-  }, []);
+  }, [currentUser, isSSR]);
 
   const fetchReceiptsFromSupabase = useCallback(async () => {
     try {
-      const { data: rData, error } = await supabase
+      let query = supabase
         .from('remittance_receipts')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
+        
+      const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
+      if (isRestrictedBranchSSR) {
+        query = query.eq('sub_office', currentUser.sub_office);
+      }
+
+      const { data: rData, error } = await query.order('created_at', { ascending: false });
       if (error) return;
       if (rData) setReceipts(rData);
     } catch (err) {
       // Gracefully silent if optional table is not present
     }
-  }, []);
+  }, [currentUser, isSSR]);
 
   const handleTicketVerifiedFromChat = useCallback(async (transId) => {
     if (transId) {
@@ -431,12 +446,16 @@ export default function App() {
         const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
 
         if (isRestrictedBranchSSR) {
-          const match = activeEndpoints.find(e => e.sub_office === currentUser.sub_office);
-          targetEndpoints = match ? [match] : [activeEndpoints.find(e => e.sub_office === 'All' || e.is_default) || activeEndpoints[0]].filter(Boolean);
+          const match = activeEndpoints.find(e => e.sub_office && e.sub_office.includes(currentUser.sub_office));
+          targetEndpoints = match ? [{ ...match, requestedSubOffice: currentUser.sub_office }] : [activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0]].filter(Boolean);
         } else {
           if (selectedEndpointFilter !== 'ALL') {
-            const match = activeEndpoints.find(e => e.id === selectedEndpointFilter);
-            targetEndpoints = match ? [match] : activeEndpoints;
+            // Support composite key format: "endpointId__subOfficeName" from broken-down dropdown
+            const parts = selectedEndpointFilter.split('__');
+            const resolvedId = parts[0];
+            const requestedSubOffice = parts[1] || '';
+            const match = activeEndpoints.find(e => e.id === resolvedId);
+            targetEndpoints = match ? [{ ...match, requestedSubOffice }] : activeEndpoints;
           } else {
             targetEndpoints = activeEndpoints;
           }
@@ -479,10 +498,46 @@ export default function App() {
         if (!res.ok) throw new Error(`[${cfg.name || cfg.sub_office || 'Gateway'}] HTTP ${res.status}`);
         const result = await res.json();
         const deepData = result?.data?.data || result?.data || result;
-        const arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+        let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+
+        // If gateway endpoint is ILIGAN, filter strictly to the correct sub-office whitelist
+        const endpointLabel = (cfg.sub_office || cfg.name || '').toLowerCase();
+        const isIliganEndpoint = endpointLabel.includes('iligan') ||
+                                 (cfg.baseUrl || '').toLowerCase().includes('stl-ldn-api');
+
+        let fallbackSubOffice = cfg.requestedSubOffice || (cfg.sub_office && cfg.sub_office !== 'All' ? cfg.sub_office : 'Mandaue Central');
+        let isSetA = false;
+        let isLala = false;
+        let isBaloi = false;
+        
+        if (isIliganEndpoint) {
+          if (cfg.requestedSubOffice) {
+            const req = cfg.requestedSubOffice.toLowerCase();
+            isSetA = req.includes('set a');
+            isLala = req.includes('lala');
+            isBaloi = req.includes('baloi');
+            fallbackSubOffice = cfg.requestedSubOffice;
+          } else {
+            isSetA = endpointLabel.includes('set a');
+            isLala = endpointLabel.includes('lala');
+            isBaloi = endpointLabel.includes('baloi');
+            // If the gateway doesn't explicitly have a sub_office name but is an Iligan endpoint,
+            // we force the sub_office fallback.
+            if (!cfg.sub_office || cfg.sub_office === 'All' || endpointLabel === 'stl-ldn') {
+              fallbackSubOffice = isBaloi ? 'BALOI OFFICE' : (isLala ? 'LALA OFFICE' : (isSetA ? 'ILIGAN SET A' : 'ILIGAN SET B'));
+            }
+          }
+          arr = arr.filter(item => {
+            const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
+            if (isBaloi) return isBaloiOfficeAllowedSupervisor(uName);
+            if (isLala) return isLalaOfficeAllowedSupervisor(uName);
+            return isSetA ? isIliganSetAAllowedSupervisor(uName) : isIliganAllowedSupervisor(uName);
+          });
+        }
+
         return arr.map(item => ({
           ...item,
-          sub_office: item.sub_office || (cfg.sub_office && cfg.sub_office !== 'All' ? cfg.sub_office : item.location || 'Mandaue Central')
+          sub_office: item.sub_office || item.location || fallbackSubOffice
         }));
       });
 
@@ -644,12 +699,35 @@ export default function App() {
 
             if (!isMe) {
               const sender = payload.new?.sender_name || 'SSR Agent';
-              const msgSnippet = payload.new?.message_text || payload.new?.message || payload.new?.text || 'Sent a new message';
+              const msgSnippet = payload.new?.image_url 
+                ? '📷 Sent a ticket photo' 
+                : (payload.new?.message_text || payload.new?.message || payload.new?.text || 'Sent a new message');
               const roomId = payload.new?.room_id || null;
               const subOffice = payload.new?.sub_office || '';
               const senderId = payload.new?.sender_id || null;
 
-              // Dispatch Web Push / Browser notification + audio chime only for incoming messages from other users
+              // Check if window is already open in active docked multi-chats
+              const isOpenInDock = openChats.some(c => 
+                (c.id && (c.id === roomId || String(c.id).toLowerCase() === String(senderId).toLowerCase())) ||
+                (c.username && String(c.username).toLowerCase() === String(senderUsername).toLowerCase())
+              );
+
+              // In-app heads-up floating banner popup if not currently focused
+              if (!isOpenInDock) {
+                triggerNotificationPopup({
+                  id: `chat_${payload.new?.id || Date.now()}`,
+                  type: 'chat',
+                  title: sender,
+                  message: msgSnippet,
+                  senderName: sender,
+                  senderId,
+                  roomId,
+                  subOffice
+                });
+                setPendingTicketsChatCount(prev => prev + 1);
+              }
+
+              // Dispatch Web Push / Browser notification + audio chime
               if (!isSSRRole(currentUser?.role)) {
                 notificationService.sendChatNotification({
                   senderName: sender,
@@ -677,16 +755,8 @@ export default function App() {
                   }
                 });
               } else {
-                // On SSR side, play local audio chime only (no system web push popup)
+                // On SSR side, play local audio chime
                 notificationService.playTone('chat', currentUser?.id || currentUser?.username);
-              }
-
-              if (openChats.length > 0) {
-                const userKey = currentUser?.id || currentUser?.username || 'user';
-                localStorage.setItem(`stl_chat_last_read_${userKey}`, new Date().toISOString());
-                setPendingTicketsChatCount(0);
-              } else {
-                setPendingTicketsChatCount(prev => prev + 1);
               }
             }
           } else {
@@ -848,6 +918,24 @@ export default function App() {
       const uName = String(i.username || '').trim().toUpperCase();
       const sName = String(i.supervisor || '').trim().toUpperCase();
       if (uName.includes('-SK') || sName.includes('-SK')) return false;
+
+      // If item belongs to an ILIGAN or LALA sub-office, filter by the correct SET whitelist
+      const subOffice = String(i.sub_office || '').toLowerCase();
+      if (subOffice.includes('iligan') || subOffice.includes('ldn') || subOffice.includes('lala') || subOffice.includes('baloi')) {
+        const u = String(i.username || i.supervisor || i.user || '').toLowerCase().trim();
+        const isSetA = subOffice.includes('set a');
+        const isLala = subOffice.includes('lala');
+        const isBaloi = subOffice.includes('baloi');
+        if (isBaloi) {
+          if (!isBaloiOfficeAllowedSupervisor(u)) return false;
+        } else if (isLala) {
+          if (!isLalaOfficeAllowedSupervisor(u)) return false;
+        } else if (isSetA) {
+          if (!isIliganSetAAllowedSupervisor(u)) return false;
+        } else {
+          if (!isIliganAllowedSupervisor(u)) return false;
+        }
+      }
 
       const isReturned = returnedTransIds.has(String(i.transactionId || i.transId || i.receipt_no || i.ticket_no || '').trim().toLowerCase());
       if (isReturned) return false;

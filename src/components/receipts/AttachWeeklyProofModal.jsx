@@ -112,7 +112,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
               <th className="px-3 py-1.5 border-r border-slate-200 text-center">Draw</th>
               <th className="px-3 py-1.5 border-r border-slate-200 text-center">Bet & Code</th>
               <th className="px-3 py-1.5 border-r border-slate-200 text-right">Bet Amount</th>
-              <th className="px-3 py-1.5 border-r border-slate-200 text-right">Win Liability</th>
+              <th className="px-3 py-1.5 border-r border-slate-200 text-right">Win Amount</th>
               <th className="px-3 py-1.5 text-center">Date Returned</th>
             </tr>
           </thead>
@@ -558,7 +558,7 @@ function AttachWeeklyProofModal({
                 </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
-                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Win Liability</span>
+                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Win Amount</span>
                 <span className="font-extrabold text-emerald-700 text-xs mt-0.5 block">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>

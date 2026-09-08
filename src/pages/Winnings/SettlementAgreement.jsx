@@ -18,6 +18,7 @@ import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPri
 import { supabase } from '../../config/supabaseClient';
 
 const SUPERVISORS = {
+  // Numeric IDs from backend database
   "21": "ARLFRED SABERON",
   "22": "RAFFY BAGUIO",
   "23": "ROEL CATALAN",
@@ -29,7 +30,37 @@ const SUPERVISORS = {
   "29": "NYOR SESALDO",
   "30": "NARCISO TAGUD JR.",
   "31": "MOLLY BATUBALANOS",
-  "32": "COORDINATOR - APPLEGROUP"
+  "32": "COORDINATOR - APPLEGROUP",
+
+  // Username and handle keys
+  "spvr-arlfred": "ARLFRED SABERON",
+  "spvr-raffy": "RAFFY BAGUIO",
+  "spvr-roel": "ROEL CATALAN",
+  "spvr-michael": "MICHAEL DE GUZMAN",
+  "spvr-joel": "JOEL ESTORCO",
+  "spvr-eya": "HARRY EYA",
+  "spvr-carl": "CARL MANGRUBAN",
+  "spvr-jed": "JED MELENDREZ",
+  "spvr-nyor": "NYOR SESALDO",
+  "spvr-jason": "NARCISO TAGUD JR.",
+  "spvr-molly": "MOLLY BATUBALANOS",
+  "spvr-apple": "COORDINATOR - APPLEGROUP",
+
+  // ILIGAN SET B Supervisors
+  "jasonmabini@gfldn": "JASON F. MABINI",
+  "jasonmabini": "JASON F. MABINI",
+  "jessentpizon@gfldn": "JESSENT M. PIZON",
+  "jessentpizon": "JESSENT M. PIZON",
+  "jacksonslimpangog@gfldn": "JACKSON S. LIMPANGOG",
+  "jacksonslimpangog": "JACKSON S. LIMPANGOG",
+  "rielmpizon@gfldn": "RIEL M. PIZON",
+  "rielmpizon": "RIEL M. PIZON",
+  "ianjohnmbalala@gfldn": "IAN JOHN M. BALALA",
+  "ianjohnmbalala": "IAN JOHN M. BALALA",
+  "ivankennethg.agcopra@gfldn": "IVAN KENNETH G. AGCOPRA",
+  "ivankennethg.agcopra": "IVAN KENNETH G. AGCOPRA",
+  "coor@gfldn": "AGENTS UNDER COORDINATOR",
+  "coor": "AGENTS UNDER COORDINATOR"
 };
 
 const getSemiMonthlyDueDate = (startDateStr, installmentIndex) => {
@@ -875,10 +906,6 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                   <Save size={14} />
                   <span>Save Agreement</span>
                 </button>
-                <button onClick={handlePrint} className="flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm transition-all cursor-pointer active:scale-95">
-                  <Printer size={14} />
-                  <span>Print Form</span>
-                </button>
               </div>
             )}
           </div>
@@ -953,7 +980,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 type="date"
                 value={agreementDate}
                 onChange={(e) => handleAgreementDateChange(e.target.value)}
-                className="border-b border-slate-400 px-1 font-bold text-slate-900 bg-slate-50 outline-none text-xs"
+                className="border-b border-slate-400 px-1 font-bold text-slate-900 bg-transparent outline-none text-xs"
               />{' '}
               regarding the accountable party's repayment of company liability described below.
             </p>
@@ -1177,50 +1204,50 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
                 5. SIGNATURES & ACKNOWLEDGMENT
               </h3>
-              <div className="grid grid-cols-2 gap-8 pt-6 text-center text-xs">
+              <div className="grid grid-cols-2 gap-8 pt-4 text-center text-xs items-start">
                 {/* Accountable Payer Signature */}
-                <div className="space-y-8">
-                  <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
+                <div className="pt-8 space-y-1 flex flex-col items-stretch">
+                  <div className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center">
                     {selectedTicket.fullName || selectedTicket.username || 'Accountable Payer Name'}
                   </div>
-                  <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    ACCOUNTABLE PAYER<br />
-                    <span className="font-normal normal-case text-slate-500">Signature over Printed Name</span><br />
-                    <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
+                  <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
+                    <div>ACCOUNTABLE PAYER</div>
+                    <div className="font-normal normal-case text-slate-500">Signature over Printed Name</div>
+                    <div className="font-mono text-[9px]">Date: {formatTransactionDate(agreementDate)}</div>
                   </div>
                 </div>
 
                 {/* HR / Management Signature (Editable) */}
-                <div className="space-y-8">
+                <div className="pt-8 space-y-1 flex flex-col items-stretch">
                   <input
                     type="text"
                     value={hrManagerName}
                     onChange={(e) => setHrManagerName(e.target.value)}
-                    className="w-full border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900 text-center bg-slate-50 outline-none"
+                    className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center bg-transparent outline-none"
                     placeholder="Enter Representative Name"
                   />
-                  <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    AUTHORIZED COMPANY REPRESENTATIVE<br />
-                    <span className="font-normal normal-case text-slate-500">Company Representative / Signature over Printed Name</span><br />
-                    <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
+                  <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
+                    <div>AUTHORIZED COMPANY REPRESENTATIVE</div>
+                    <div className="font-normal normal-case text-slate-500">Company Representative / Signature over Printed Name</div>
+                    <div className="font-mono text-[9px]">Date: {formatTransactionDate(agreementDate)}</div>
                   </div>
                 </div>
               </div>
 
               {/* Supervisor Signature (Editable) */}
-              <div className="w-1/2 mx-auto pt-6 text-center text-xs">
-                <div className="space-y-8">
+              <div className="w-1/2 mx-auto pt-4 text-center text-xs">
+                <div className="pt-8 space-y-1 flex flex-col items-stretch">
                   <input
                     type="text"
                     value={supervisorName}
                     onChange={(e) => setSupervisorName(e.target.value)}
-                    className="w-full border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900 text-center bg-slate-50 outline-none"
+                    className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center bg-transparent outline-none"
                     placeholder="Enter Supervisor Name"
                   />
-                  <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    SALES SUPERVISOR<br />
-                    <span className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</span><br />
-                    <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
+                  <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
+                    <div>SALES SUPERVISOR</div>
+                    <div className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</div>
+                    <div className="font-mono text-[9px]">Date: {formatTransactionDate(agreementDate)}</div>
                   </div>
                 </div>
               </div>
@@ -1247,7 +1274,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 Continue <ChevronRight size={14} />
               </button>
             ) : (
-              <span className="rounded-lg bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-wider text-emerald-700">Ready to Save or Print</span>
+              <span className="rounded-lg bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-wider text-emerald-700">Ready to Save Agreement</span>
             )}
           </div>
         </>

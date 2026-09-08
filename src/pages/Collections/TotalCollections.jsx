@@ -178,7 +178,7 @@ export default function TotalCollections({
     if (!filteredList.length) return alert('No collection records to export.');
     const headers = [
       'SRN / Trans ID', 'Branch / Sub-Office', 'Supervisor / Account', 'Teller / Outlet', 
-      'Draw Schedule', 'Bet Combination', 'Win Liability (₱)', 'Return Amount Out (₱)', 
+      'Draw Schedule', 'Bet Combination', 'Win Amount (₱)', 'Return Amount Out (₱)', 
       'Admin 50% Share (₱)', 'Agent/Teller 30% Share (₱)', 'Staff 10% Share (₱)', 'Collector 10% Share (₱)', 
       'Remittance Status', 'Date Returned'
     ];
@@ -450,7 +450,7 @@ export default function TotalCollections({
                 </div>
               </div>
               <span className="bg-slate-100 text-[#002B66] px-3 py-1 rounded-full text-xs font-black font-mono border border-slate-200 shrink-0">
-                Total Win Liability: ₱{totals.totalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                Total Win Amount: ₱{totals.totalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
 
@@ -622,7 +622,7 @@ export default function TotalCollections({
                   <th className="px-3.5 py-3 border-r border-blue-900">Branch</th>
                   <th className="px-3.5 py-3 border-r border-blue-900">Teller / Outlet</th>
                   <th className="px-3.5 py-3 border-r border-blue-900 text-center">Bet & Code</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Win Liability</th>
+                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Win Amount</th>
                   <th className="px-3.5 py-3 border-r border-blue-900 text-right">Return Out</th>
                   <th className="px-3.5 py-3 border-r border-blue-900 text-right">Admin (50%)</th>
                   <th className="px-3.5 py-3 border-r border-blue-900 text-right">Agent (30%)</th>

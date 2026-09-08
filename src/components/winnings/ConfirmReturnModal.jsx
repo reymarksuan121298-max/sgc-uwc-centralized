@@ -193,10 +193,10 @@ export default function ConfirmReturnModal({
               </span>
             </div>
 
-            {/* Row 7: Win Liability */}
+            {/* Row 7: Win Amount */}
             <div className="flex items-center justify-between pt-1 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
-                WIN LIABILITY:
+                WIN AMOUNT:
               </span>
               <span className="font-mono font-black text-[#047857] text-sm sm:text-base">
                 ₱{winAmt.toFixed(2)}

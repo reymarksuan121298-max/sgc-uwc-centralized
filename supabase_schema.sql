@@ -303,7 +303,9 @@ ADD COLUMN IF NOT EXISTS deletion_request_status TEXT,
 ADD COLUMN IF NOT EXISTS deletion_request_reason TEXT,
 ADD COLUMN IF NOT EXISTS deletion_request_by TEXT,
 ADD COLUMN IF NOT EXISTS deletion_request_at TIMESTAMPTZ,
-ADD COLUMN IF NOT EXISTS deletion_rejected_reason TEXT;
+ADD COLUMN IF NOT EXISTS deletion_rejected_reason TEXT,
+ADD COLUMN IF NOT EXISTS deletion_request_attachment TEXT,
+ADD COLUMN IF NOT EXISTS hard_copy_ticket_url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_returned_winnings_deletion_status ON public.returned_winnings(deletion_request_status);
 

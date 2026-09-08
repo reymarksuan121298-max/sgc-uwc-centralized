@@ -11,6 +11,7 @@ import {
 import { supabase } from '../../config/supabaseClient';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { canApproveDeletionRequests, isAdminRole, formatRoleName, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
+import { presenceService } from '../../services/presenceService';
 import CreateGroupChatModal from './CreateGroupChatModal';
 import ViewUserProfileModal from '../common/ViewUserProfileModal';
 
@@ -35,6 +36,47 @@ const getAvatarColor = (name = '', subOffice = '') => {
 };
 
 const getUserAvatarColor = getAvatarColor;
+
+// Client-side image compressor for rapid, lightweight ticket transfers
+const compressImageForChat = (file, maxWidth = 1280, maxHeight = 1280, quality = 0.8) => {
+  return new Promise((resolve) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) {
+      resolve(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(event.target.result);
+      img.src = event.target.result;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+};
 
 // Safe Realtime Broadcaster that avoids REST API fallback warnings
 const sendBroadcastSafe = (channel, event, payload) => {
@@ -176,15 +218,10 @@ export default function TicketVerificationChatModal({
 
   const isGroupChat = Boolean(activeContact?.isGroup || activeContact?.member_ids || String(activeContact?.id || '').startsWith('group-'));
 
-  // Compute Global Presence for Partner directly from the prop
+  // Compute Global Presence for Partner reliably using presenceService
   const isPartnerOnlineGlobally = useMemo(() => {
     if (!activeContact || isGroupChat) return true; // Groups show as active
-    
-    const pId = String(activeContact.id || '').toLowerCase();
-    const pUser = String(activeContact.username || '').toLowerCase();
-    const pName = String(activeContact.full_name || '').toLowerCase();
-    
-    return onlineUserIds.has(pId) || onlineUserIds.has(pUser) || onlineUserIds.has(pName);
+    return presenceService.isUserOnline(activeContact, onlineUserIds);
   }, [activeContact, isGroupChat, onlineUserIds]);
 
   // Find matching full user profile for active contact and current user from activeUsers
@@ -254,14 +291,15 @@ export default function TicketVerificationChatModal({
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  // 1. Fetch initial chat history
+  // 1. Fetch initial chat history with limit
   const fetchMessages = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('ticket_verification_chats')
         .select('*')
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(300);
 
       if (error) {
         const local = localStorage.getItem('stl_tv_chat_fallback');
@@ -271,7 +309,9 @@ export default function TicketVerificationChatModal({
 
       if (data) {
         setMessages(data);
-        localStorage.setItem('stl_tv_chat_fallback', JSON.stringify(data));
+        try {
+          localStorage.setItem('stl_tv_chat_fallback', JSON.stringify(data.slice(-100)));
+        } catch {}
       }
     } catch (err) {
       console.warn('Chat fetch warning:', err);
@@ -302,6 +342,22 @@ export default function TicketVerificationChatModal({
     }, 1000);
     return () => clearInterval(interval);
   }, [partnerTyping]);
+
+  // Catch-up sync on window focus / network recovery
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleCatchUp = () => {
+      fetchMessages();
+    };
+
+    window.addEventListener('focus', handleCatchUp);
+    window.addEventListener('online', handleCatchUp);
+    return () => {
+      window.removeEventListener('focus', handleCatchUp);
+      window.removeEventListener('online', handleCatchUp);
+    };
+  }, [isOpen]);
 
   // Global AFK Activity Tracker for local user (Throttled to avoid unnecessary socket traffic)
   const lastPresenceStateRef = useRef('active');
@@ -357,7 +413,7 @@ export default function TicketVerificationChatModal({
     }
   }, [isOpen, activeContact?.id, activeContact?.username]);
 
-  // 2. Real-time Subscription for Incoming Tickets, Live Verifications, and Typing/AFK Broadcasts
+  // 2. Real-time Dual Subscription (Instant Broadcast + Postgres CDC Sync)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -381,19 +437,32 @@ export default function TicketVerificationChatModal({
         (payload) => {
           if (payload.eventType === 'INSERT') {
             setMessages((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) return prev;
+              if (prev.some((m) => m.id === payload.new.id)) {
+                return prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m));
+              }
               return [...prev, payload.new];
             });
             scrollToBottom();
           } else if (payload.eventType === 'UPDATE') {
             setMessages((prev) =>
-              prev.map((m) => (m.id === payload.new.id ? payload.new : m))
+              prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m))
             );
           } else if (payload.eventType === 'DELETE') {
             setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
           }
         }
       )
+      .on('broadcast', { event: 'new_message' }, ({ payload }) => {
+        if (payload && payload.id) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.id)) {
+              return prev.map((m) => (m.id === payload.id ? { ...m, ...payload } : m));
+            }
+            return [...prev, payload];
+          });
+          scrollToBottom();
+        }
+      })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload && payload.userId !== currentUser?.id && payload.username !== currentUser?.username) {
           if (payload.isTyping) {
@@ -458,24 +527,26 @@ export default function TicketVerificationChatModal({
     scrollToBottom();
   }, [messages, windowMode, activeContact]);
 
-  // 3. Central Image Processor (Converts File to Data URL to avoid blob: loading errors)
+  // 3. Central Optimized Image Processor (Compresses high-res photos for instant transmission)
   const processImageFile = async (file) => {
     if (!file) return;
 
     setSelectedFile(file);
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFilePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-
     setIsOcrScanning(true);
+
     try {
+      // Compress image client-side to ensure small footprint & rapid delivery
+      const compressedDataUrl = await compressImageForChat(file, 1280, 1280, 0.82);
+      setFilePreview(compressedDataUrl || null);
+
       const scanRes = await scanTicketImage(file);
       setOcrResult(scanRes);
     } catch (err) {
-      console.error('OCR Error:', err);
+      console.error('OCR / Image Processing Error:', err);
+      // Fallback to basic file reader if compression fails
+      const reader = new FileReader();
+      reader.onloadend = () => setFilePreview(reader.result);
+      reader.readAsDataURL(file);
     } finally {
       setIsOcrScanning(false);
     }
@@ -742,46 +813,46 @@ export default function TicketVerificationChatModal({
       created_at: new Date().toISOString()
     };
 
+    // 1. Optimistically add message to UI immediately for instant feedback
+    setMessages((prev) => {
+      if (prev.some(m => m.id === newMsg.id)) return prev;
+      return [...prev, newMsg];
+    });
+
+    // 2. Clear inputs immediately so UI is snappy
+    setInputText('');
+    setSelectedFile(null);
+    setFilePreview(null);
+    setOcrResult(null);
+    setReplyingToMessage(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    // 3. Send instant Realtime Broadcast over active room channel (<30ms peer delivery)
+    sendBroadcastSafe(realtimeChannelRef.current, 'new_message', newMsg);
+
+    // Stop typing state
+    sendBroadcastSafe(realtimeChannelRef.current, 'typing', {
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      name: currentUser?.full_name || currentUser?.username,
+      isTyping: false,
+      status: 'active'
+    });
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+
     try {
+      // 4. Persist to Postgres database in background
       const { error } = await supabase
         .from('ticket_verification_chats')
         .insert([newMsg]);
 
       if (error) {
         console.warn('Realtime chat write fallback:', error);
-        setMessages((prev) => {
-          const updated = [...prev, newMsg];
-          localStorage.setItem('stl_tv_chat_fallback', JSON.stringify(updated));
-          return updated;
-        });
-      } else {
-        setMessages((prev) => {
-          if (prev.some(m => m.id === newMsg.id)) return prev;
-          return [...prev, newMsg];
-        });
+        try {
+          const currentSaved = JSON.parse(localStorage.getItem('stl_tv_chat_fallback') || '[]');
+          localStorage.setItem('stl_tv_chat_fallback', JSON.stringify([...currentSaved.slice(-100), newMsg]));
+        } catch {}
       }
-
-      setInputText('');
-      setSelectedFile(null);
-      setFilePreview(null);
-      setOcrResult(null);
-      setReplyingToMessage(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-
-      if (realtimeChannelRef.current) {
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'typing',
-          payload: {
-            userId: currentUser?.id,
-            username: currentUser?.username,
-            name: currentUser?.full_name || currentUser?.username,
-            isTyping: false,
-            status: 'active'
-          }
-        });
-      }
-      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     } catch (err) {
       console.error('Send error:', err);
     } finally {
@@ -1578,6 +1649,7 @@ export default function TicketVerificationChatModal({
         user={viewingUserProfile}
         isOpen={Boolean(viewingUserProfile)}
         onClose={() => setViewingUserProfile(null)}
+        isOnline={presenceService.isUserOnline(viewingUserProfile, onlineUserIds)}
         onStartChat={(user) => {
           setActiveContact(user);
           setChatCategory('direct');
@@ -1590,6 +1662,7 @@ export default function TicketVerificationChatModal({
         onClose={() => setIsCreateGroupOpen(false)}
         currentUser={currentUser}
         activeUsers={activeUsers}
+        onlineUserIds={onlineUserIds}
         onCreateGroup={handleCreateGroup}
       />
     </div>

@@ -100,7 +100,7 @@ export default function TicketQrModal({
 
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
               <span className="text-slate-500 font-semibold text-[11px]">
-                Win Liability:
+                Win Amount:
               </span>
               <span className="font-mono font-black text-[#047857] text-sm">
                 ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}

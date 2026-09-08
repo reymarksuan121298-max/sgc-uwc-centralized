@@ -28,6 +28,7 @@ export default function MainLayout({
   activeNotificationPopup = null,
   onDismissNotificationPopup = null,
   onOpenProfileModal = null,
+  onlineUserIds = new Set(),
   children
 }) {
   const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
@@ -156,6 +157,7 @@ export default function MainLayout({
           onMarkAllNotificationsRead={onMarkAllNotificationsRead}
           onClearNotifications={onClearNotifications}
           onOpenProfileModal={onOpenProfileModal}
+          onlineUserIds={onlineUserIds}
         />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 md:p-6 bg-slate-100 w-full min-w-0">

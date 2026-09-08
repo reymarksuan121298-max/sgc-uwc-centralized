@@ -1,16 +1,16 @@
 import { useMemo, useState, useEffect } from 'react';
-import { 
-  ShieldCheck, ArrowLeftRight, CreditCard, Users, CheckCircle2, 
-  Clock, AlertTriangle, TrendingUp, Building2, Smartphone, Landmark, 
-  Coins, FileText, ChevronRight, Activity, Percent 
+import {
+  ShieldCheck, ArrowLeftRight, CreditCard, Users, CheckCircle2,
+  Clock, AlertTriangle, TrendingUp, Building2, Smartphone, Landmark,
+  Coins, FileText, ChevronRight, Activity, Percent
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 
-export default function SuperadminDashboard({ 
-  returnedData = [], 
-  unclaimedData = [], 
-  receipts = [], 
-  onNavigateTab 
+export default function SuperadminDashboard({
+  returnedData = [],
+  unclaimedData = [],
+  receipts = [],
+  onNavigateTab
 }) {
   // Load official sub-offices directly from database table
   const [dbSubOffices, setDbSubOffices] = useState([]);
@@ -92,9 +92,9 @@ export default function SuperadminDashboard({
       returnedData.forEach((i) => {
         const itemOffice = (i.sub_office || '').toLowerCase().trim();
         const targetOffice = officeName.toLowerCase().trim();
-        
+
         // Match ticket if it references this sub-office name, or if Mandaue Central is default
-        const isMatch = itemOffice === targetOffice || 
+        const isMatch = itemOffice === targetOffice ||
           (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === itemOffice)));
 
         if (isMatch) {
@@ -145,10 +145,10 @@ export default function SuperadminDashboard({
 
   return (
     <div className="w-full space-y-6">
-      
+
       {/* Top Executive KPI Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-        
+
         {/* Total Return Liability */}
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div className="min-w-0 pr-2">
@@ -204,7 +204,7 @@ export default function SuperadminDashboard({
         </div>
 
         {/* Pending Verifications */}
-        <div 
+        <div
           onClick={() => onNavigateTab && onNavigateTab('verification')}
           className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between cursor-pointer hover:border-blue-400 transition-all group"
         >
@@ -309,18 +309,16 @@ export default function SuperadminDashboard({
           <table className="w-full text-left border-collapse min-w-[750px]">
             <thead>
               <tr className="bg-[#002B66] text-white text-[11px] font-black uppercase tracking-wider">
-                <th className="px-4 py-3 border-r border-blue-900">Sub-Office / Branch</th>
-                <th className="px-4 py-3 border-r border-blue-900 text-center">Returned Count</th>
-                <th className="px-4 py-3 border-r border-blue-900 text-right">Total Win Liability</th>
-                <th className="px-4 py-3 border-r border-blue-900 text-right">Return Amount Out</th>
-                <th className="px-4 py-3 border-r border-blue-900 text-center">Receipts Status</th>
-                <th className="px-4 py-3 text-center">Action</th>
+                <th className="px-4 py-3 border-r border-yellow-900">Sub-Office / Branch</th>
+                <th className="px-4 py-3 border-r border-yellow-900 text-center">Returned Tickets Count</th>
+                <th className="px-4 py-3 border-r border-yellow-900 text-right">Total Win Amount</th>
+                <th className="px-4 py-3 text-center">Receipts Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
               {!stats.subOffices.length ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 font-bold uppercase tracking-wider">
+                  <td colSpan={4} className="p-8 text-center text-slate-500 font-bold uppercase tracking-wider">
                     No sub-office activity recorded.
                   </td>
                 </tr>
@@ -336,22 +334,10 @@ export default function SuperadminDashboard({
                     <td className="px-4 py-3 border-r border-slate-100 font-mono font-bold text-slate-800 text-right">
                       ₱{sub.totalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-4 py-3 border-r border-slate-100 font-mono font-extrabold text-amber-700 text-right">
-                      ₱{sub.returnOut.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-4 py-3 border-r border-slate-100 text-center">
+                    <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300">
                         Operational
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => onNavigateTab && onNavigateTab('returned')}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#002B66] hover:underline cursor-pointer"
-                      >
-                        <span>View Ledger</span>
-                        <ChevronRight size={12} />
-                      </button>
                     </td>
                   </tr>
                 ))

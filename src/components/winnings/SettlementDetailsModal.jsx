@@ -3,6 +3,52 @@ import { X, Printer, CheckCircle } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
 
+const SUPERVISOR_NAMES = {
+  // Numeric IDs from backend database
+  "21": "ARLFRED SABERON",
+  "22": "RAFFY BAGUIO",
+  "23": "ROEL CATALAN",
+  "24": "MICHAEL DE GUZMAN",
+  "25": "JOEL ESTORCO",
+  "26": "HARRY EYA",
+  "27": "CARL MANGRUBAN",
+  "28": "JED MELENDREZ",
+  "29": "NYOR SESALDO",
+  "30": "NARCISO TAGUD JR.",
+  "31": "MOLLY BATUBALANOS",
+  "32": "COORDINATOR - APPLEGROUP",
+
+  // Username and handle keys
+  "spvr-arlfred": "ARLFRED SABERON",
+  "spvr-raffy": "RAFFY BAGUIO",
+  "spvr-roel": "ROEL CATALAN",
+  "spvr-michael": "MICHAEL DE GUZMAN",
+  "spvr-joel": "JOEL ESTORCO",
+  "spvr-eya": "HARRY EYA",
+  "spvr-carl": "CARL MANGRUBAN",
+  "spvr-jed": "JED MELENDREZ",
+  "spvr-nyor": "NYOR SESALDO",
+  "spvr-jason": "NARCISO TAGUD JR.",
+  "spvr-molly": "MOLLY BATUBALANOS",
+  "spvr-apple": "COORDINATOR - APPLEGROUP",
+
+  // ILIGAN SET B Supervisors
+  "jasonmabini@gfldn": "JASON F. MABINI",
+  "jasonmabini": "JASON F. MABINI",
+  "jessentpizon@gfldn": "JESSENT M. PIZON",
+  "jessentpizon": "JESSENT M. PIZON",
+  "jacksonslimpangog@gfldn": "JACKSON S. LIMPANGOG",
+  "jacksonslimpangog": "JACKSON S. LIMPANGOG",
+  "rielmpizon@gfldn": "RIEL M. PIZON",
+  "rielmpizon": "RIEL M. PIZON",
+  "ianjohnmbalala@gfldn": "IAN JOHN M. BALALA",
+  "ianjohnmbalala": "IAN JOHN M. BALALA",
+  "ivankennethg.agcopra@gfldn": "IVAN KENNETH G. AGCOPRA",
+  "ivankennethg.agcopra": "IVAN KENNETH G. AGCOPRA",
+  "coor@gfldn": "AGENTS UNDER COORDINATOR",
+  "coor": "AGENTS UNDER COORDINATOR"
+};
+
 export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUpdated }) {
   const [payments, setPayments] = useState([]);
 
@@ -54,8 +100,49 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
     }
   };
 
-  const hrManagerName = parsedTerms?.signatories?.hrManager || 'Authorized HR / Management';
-  const supervisorName = parsedTerms?.signatories?.supervisor || 'Sales Supervisor';
+  // Robust resolution of Supervisor Full Name (guarantees no raw numbers/IDs)
+  const resolveSupervisorFullName = () => {
+    // 1. Check if parsedTerms.signatories.supervisor has an explicit name
+    const rawSignatory = String(parsedTerms?.signatories?.supervisor ?? '').trim();
+    if (rawSignatory && rawSignatory !== 'Sales Supervisor' && rawSignatory !== 'undefined' && rawSignatory !== 'null') {
+      const lowerSignatory = rawSignatory.toLowerCase();
+      if (SUPERVISOR_NAMES[lowerSignatory]) {
+        return SUPERVISOR_NAMES[lowerSignatory];
+      }
+      // If rawSignatory is pure digits (e.g. "27" or "28"), do not print raw digits
+      if (!/^\d+$/.test(rawSignatory)) {
+        return rawSignatory.toUpperCase();
+      }
+    }
+
+    // 2. Check item.username (e.g. 'spvr-carl', 'spvr-eya')
+    const userKey = String(item?.username || '').trim().toLowerCase();
+    if (SUPERVISOR_NAMES[userKey]) {
+      return SUPERVISOR_NAMES[userKey];
+    }
+
+    // 3. Check item.supervisor (e.g. 27, "27", "spvr-carl")
+    const spvrKey = String(item?.supervisor ?? '').trim().toLowerCase();
+    if (SUPERVISOR_NAMES[spvrKey]) {
+      return SUPERVISOR_NAMES[spvrKey];
+    }
+
+    // 4. Check if username has 'spvr-' prefix
+    if (userKey.startsWith('spvr-')) {
+      const cleanKey = userKey.replace('spvr-', '');
+      if (SUPERVISOR_NAMES[`spvr-${cleanKey}`]) {
+        return SUPERVISOR_NAMES[`spvr-${cleanKey}`];
+      }
+    }
+
+    return 'SALES SUPERVISOR';
+  };
+
+  const supervisorName = resolveSupervisorFullName();
+
+  const hrManagerName = parsedTerms?.signatories?.hrManager && parsedTerms.signatories.hrManager !== 'Authorized HR / Management'
+    ? parsedTerms.signatories.hrManager
+    : 'QUENNIE CAPUYAN';
   const claimantName = item.fullName || item.username || parsedTerms?.signatories?.claimant || 'Accountable Payer';
   const agreementDate = parsedTerms?.agreementDate || item.agreementDate || item.updated_at || item.created_at;
   const reason = parsedTerms?.reason || item.reason || 'No reason provided';
@@ -131,7 +218,7 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
             </div>
 
             <p className="text-xs text-slate-700 leading-relaxed">
-              This Settlement Agreement ("Agreement") is made on <strong className="border-b border-slate-400 px-1 font-bold text-slate-900 bg-slate-50">{formatTransactionDate(agreementDate)}</strong> regarding the accountable party's repayment of company liability described below.
+              This Settlement Agreement ("Agreement") is made on <strong className="border-b border-slate-400 px-1 font-bold text-slate-900 bg-transparent">{formatTransactionDate(agreementDate)}</strong> regarding the accountable party's repayment of company liability described below.
             </p>
 
             {/* 1. DETAILS OF ACCOUNTABILITY */}
@@ -251,42 +338,42 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
               <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
                 5. SIGNATURES & ACKNOWLEDGMENT
               </h3>
-              <div className="grid grid-cols-2 gap-8 pt-6 text-center text-xs">
+              <div className="grid grid-cols-2 gap-8 pt-4 text-center text-xs items-start">
                 {/* Accountable Payer */}
-                <div className="pt-8 space-y-1">
-                  <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
+                <div className="pt-8 space-y-1 flex flex-col items-stretch">
+                  <div className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center">
                     {claimantName}
                   </div>
-                  <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    ACCOUNTABLE PAYER<br />
-                    <span className="font-normal normal-case text-slate-500">Signature over Printed Name</span><br />
-                    <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
+                  <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
+                    <div>ACCOUNTABLE PAYER</div>
+                    <div className="font-normal normal-case text-slate-500">Signature over Printed Name</div>
+                    <div className="font-mono text-[9px]">Date: {formatTransactionDate(agreementDate)}</div>
                   </div>
                 </div>
 
                 {/* HR / Management */}
-                <div className="pt-8 space-y-1">
-                  <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
+                <div className="pt-8 space-y-1 flex flex-col items-stretch">
+                  <div className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center">
                     {hrManagerName}
                   </div>
-                  <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    AUTHORIZED COMPANY REPRESENTATIVE<br />
-                    <span className="font-normal normal-case text-slate-500">Company Representative / Signature over Printed Name</span><br />
-                    <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
+                  <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
+                    <div>AUTHORIZED COMPANY REPRESENTATIVE</div>
+                    <div className="font-normal normal-case text-slate-500">Company Representative / Signature over Printed Name</div>
+                    <div className="font-mono text-[9px]">Date: {formatTransactionDate(agreementDate)}</div>
                   </div>
                 </div>
               </div>
 
               {/* Supervisor Witness */}
               <div className="w-1/2 mx-auto pt-4 text-center text-xs">
-                <div className="pt-8 space-y-1">
-                  <div className="border-b border-slate-900 pb-0 leading-none font-bold uppercase text-slate-900">
+                <div className="pt-8 space-y-1 flex flex-col items-stretch">
+                  <div className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center">
                     {supervisorName}
                   </div>
-                  <div className="text-[10px] font-extrabold uppercase text-slate-600">
-                    SALES SUPERVISOR<br />
-                    <span className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</span><br />
-                    <span className="font-mono mt-1 block">Date: {formatTransactionDate(agreementDate)}</span>
+                  <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
+                    <div>SALES SUPERVISOR</div>
+                    <div className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</div>
+                    <div className="font-mono text-[9px]">Date: {formatTransactionDate(agreementDate)}</div>
                   </div>
                 </div>
               </div>

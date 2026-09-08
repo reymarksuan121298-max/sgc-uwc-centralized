@@ -118,7 +118,7 @@ export default function IncidentReportModal({ ticket, onClose }) {
             </div>
 
             <div>
-              <span className="text-[10px] font-sans font-extrabold uppercase text-slate-400 block">Win Liability</span>
+              <span className="text-[10px] font-sans font-extrabold uppercase text-slate-400 block">Win Amount</span>
               <p className="mt-0.5 font-black text-emerald-700 text-sm">
                 ₱{parseFloat(ticket.winAmount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>

@@ -11,6 +11,7 @@ import {
 import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole, isOperationalNotification } from '../../utils/permissions';
 import { notificationService } from '../../services/notificationService';
+import { presenceService } from '../../services/presenceService';
 import CreateGroupChatModal from '../chat/CreateGroupChatModal';
 import AgentMascotAvatar from '../chat/AgentMascotAvatar';
 
@@ -49,7 +50,8 @@ export default function Header({
   onMarkNotificationRead = null,
   onMarkAllNotificationsRead = null,
   onClearNotifications = null,
-  onOpenProfileModal = null
+  onOpenProfileModal = null,
+  onlineUserIds = new Set()
 }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMiniWidgetOpen, setIsMiniWidgetOpen] = useState(false);
@@ -60,13 +62,12 @@ export default function Header({
     const userKey = currentUser?.id || currentUser?.username || 'default';
     return notificationService.getSettings(userKey);
   });
-  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [userSearch, setUserSearch] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [chatCategory, setChatCategory] = useState('all'); // 'all' | 'groups' | 'direct'
   const [latestMessages, setLatestMessages] = useState({});
-  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
 
   const isCallNotification = (n) => {
     if (!n) return false;
@@ -436,35 +437,9 @@ export default function Header({
       })
       .subscribe();
 
-    const presenceChannel = supabase.channel('global_presence', {
-      config: {
-        presence: {
-          key: String(currentUser?.id || currentUser?.username),
-        },
-      },
-    });
-
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = presenceChannel.presenceState();
-        const online = new Set();
-        Object.keys(state).forEach((key) => {
-          online.add(String(key).toLowerCase());
-        });
-        setOnlineUserIds(online);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({
-            online_at: new Date().toISOString(),
-          });
-        }
-      });
-
     return () => {
       supabase.removeChannel(channelUsers);
       supabase.removeChannel(channelChats);
-      supabase.removeChannel(presenceChannel);
     };
   }, [currentUser]);
 
@@ -477,20 +452,21 @@ export default function Header({
       return !isMyUsername && !isMyId && !isMyName;
     });
 
-    // When the logged-in user is a Sales Service Representative (SSR), only Admin and Unclaimed Specialist accounts appear
-    if (isSSRRole(currentUser?.role)) {
-      list = list.filter(u => isAdminRole(u.role) || isUnclaimedSpecialistRole(u.role));
-    }
+    // Removed the restriction so SSRs can see and DM other SSRs as well
+    // if (isSSRRole(currentUser?.role)) {
+    //   list = list.filter(u => isAdminRole(u.role) || isUnclaimedSpecialistRole(u.role));
+    // }
 
     const q = userSearch.toLowerCase().trim();
     
-    // If no search query, ONLY display users with existing direct messages
+    // If no search query, ONLY display users with existing direct messages OR users who are currently online
     if (!q) {
       return list.filter(u => {
+        const isOnline = presenceService.isUserOnline(u, onlineUserIds);
         const uId = String(u.id).toLowerCase();
         const uUser = String(u.username).toLowerCase();
         const uName = String(u.full_name || '').toLowerCase();
-        return latestMessages[uId] || latestMessages[uUser] || latestMessages[uName];
+        return isOnline || latestMessages[uId] || latestMessages[uUser] || latestMessages[uName];
       });
     }
 
@@ -520,6 +496,11 @@ export default function Header({
       (g.sub_office || '').toLowerCase().includes(q)
     );
   }, [chatGroups, userSearch, currentUser]);
+
+  // Real-time count of users currently online on the dashboard
+  const onlineUsersCount = useMemo(() => {
+    return activeUsers.filter(u => presenceService.isUserOnline(u, onlineUserIds)).length;
+  }, [activeUsers, onlineUserIds]);
 
   const getTabTitle = (tab) => {
     switch (tab) {
@@ -641,7 +622,7 @@ export default function Header({
                     <h4 className="font-black text-slate-900 uppercase tracking-wide">Cashier & Team Desk</h4>
                     <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      {activeUsers.filter(u => String(u.id) !== String(currentUser?.id) && String(u.username) !== String(currentUser?.username)).length + filteredGroups.length} Active
+                      {onlineUsersCount} Active Now
                     </span>
                   </div>
                 </div>
@@ -810,7 +791,7 @@ export default function Header({
                         const lastRead = readTimes[userKey] || readTimes[user.username] || (user.id ? readTimes[user.id] : null);
                         const isUnread = latestMsg && !isMeSender && (!lastRead || new Date(latestMsg.created_at).getTime() > new Date(lastRead).getTime());
 
-                        const isOnline = onlineUserIds.has(String(user.id).toLowerCase()) || onlineUserIds.has(String(user.username).toLowerCase());
+                        const isOnline = presenceService.isUserOnline(user, onlineUserIds);
 
                         return (
                           <div
@@ -1151,6 +1132,7 @@ export default function Header({
         onClose={() => setIsCreateGroupOpen(false)}
         currentUser={currentUser}
         activeUsers={activeUsers}
+        onlineUserIds={onlineUserIds}
         onCreateGroup={handleCreateGroup}
       />
     </header>

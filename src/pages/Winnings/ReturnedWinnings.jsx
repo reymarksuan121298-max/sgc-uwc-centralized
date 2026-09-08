@@ -4,31 +4,21 @@ import {
   UploadCloud, Calendar, CheckCircle2,
   ChevronRight, Building2, Smartphone, Landmark, Image as ImageIcon, Loader2,
   ArrowRight, ShieldCheck, Filter, Search, Sparkles, QrCode, FileText,
-  FileCheck, ShieldAlert, Check, Ban
+  FileCheck, ShieldAlert, Check, Ban, Eye
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { winningsService } from '../../services/winningsService';
 import AttachWeeklyProofModal from '../../components/receipts/AttachWeeklyProofModal';
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
+import ViewHardCopyTicketModal from '../../components/winnings/ViewHardCopyTicketModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import SettlementDetailsModal from '../../components/winnings/SettlementDetailsModal';
 import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole } from '../../utils/permissions';
 
-const SUPERVISOR_NAMES = {
-  "spvr-arlfred": "ARLFRED SABERON",
-  "spvr-raffy": "RAFFY BAGUIO",
-  "spvr-roel": "ROEL CATALAN",
-  "spvr-michael": "MICHAEL DE GUZMAN",
-  "spvr-joel": "JOEL ESTORCO",
-  "spvr-eya": "HARRY EYA",
-  "spvr-carl": "CARL MANGRUBAN",
-  "spvr-jed": "JED MELENDREZ",
-  "spvr-nyor": "NYOR SESALDO",
-  "spvr-jason": "NARCISO TAGUD JR.",
-  "spvr-molly": "MOLLY BATUBALANOS",
-  "spvr-apple": "COORDINATOR - APPLEGROUP"
-};
+import { DEFAULT_SUPERVISOR_NAMES } from '../../services/supervisorService';
+
+const SUPERVISOR_NAMES = DEFAULT_SUPERVISOR_NAMES;
 
 export default function ReturnedWinnings({
   groupedData = {},
@@ -43,6 +33,7 @@ export default function ReturnedWinnings({
 }) {
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [selectedForRequestDelete, setSelectedForRequestDelete] = useState(null);
+  const [selectedViewingTicket, setSelectedViewingTicket] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isWeeklyModalOpen, setIsWeeklyModalOpen] = useState(false);
   const [activeFilterTab, setActiveFilterTab] = useState('ALL'); // 'ALL' | 'UNREMITTED' | 'REQUESTS'
@@ -497,6 +488,19 @@ export default function ReturnedWinnings({
 
                             <td className="px-3 py-2 text-center whitespace-nowrap">
                               <div className="inline-flex items-center gap-1.5 justify-center">
+                                {/* VIEW HARD COPY TICKET PROOF ICON */}
+                                {(isDeletionPending || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedViewingTicket({ ...item, computedTransId: transId })}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-[#002B66] bg-blue-50 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 hover:border-blue-400 rounded-md transition-all cursor-pointer shadow-2xs"
+                                    title="View uploaded hard copy ticket proof"
+                                  >
+                                    <Eye size={11} className="stroke-[2.5] text-blue-600" />
+                                    <span>View Ticket</span>
+                                  </button>
+                                )}
+
                                 {isDeletionPending ? (
                                   canApprove ? (
                                     <div className="flex items-center gap-1">
@@ -638,7 +642,7 @@ export default function ReturnedWinnings({
                             <span className="font-bold text-slate-800">₱{parseFloat(item.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                           </div>
                           <div className="text-right">
-                            <span className="text-[9px] font-sans font-bold text-slate-400 block uppercase">Win Liability</span>
+                            <span className="text-[9px] font-sans font-bold text-slate-400 block uppercase">Win Amount</span>
                             <span className="font-extrabold text-emerald-700">₱{parseFloat(item.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                           </div>
                         </div>
@@ -682,7 +686,20 @@ export default function ReturnedWinnings({
                         </div>
 
                         {/* Mobile Actions */}
-                        <div className="pl-2 pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                        <div className="pl-2 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+                          {/* Mobile View Hard Copy Ticket Button */}
+                          {(isDeletionPending || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image) && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedViewingTicket({ ...item, computedTransId: transId })}
+                              className="px-2.5 py-1 text-[#002B66] bg-blue-50 border border-blue-200 rounded-lg font-black uppercase text-[10px] flex items-center gap-1"
+                              title="View uploaded hard copy ticket proof"
+                            >
+                              <Eye size={11} className="stroke-[2.5] text-blue-600" />
+                              <span>View Ticket</span>
+                            </button>
+                          )}
+
                           {isDeletionPending ? (
                             canApprove ? (
                               <>
@@ -760,6 +777,17 @@ export default function ReturnedWinnings({
           showToast(`Deletion request for ${tId} submitted to Admin!`);
           if (onDataUpdated) onDataUpdated();
         }}
+      />
+
+      {/* VIEW HARD COPY TICKET PROOF MODAL */}
+      <ViewHardCopyTicketModal
+        isOpen={Boolean(selectedViewingTicket)}
+        onClose={() => setSelectedViewingTicket(null)}
+        ticket={selectedViewingTicket}
+        currentUser={currentUser}
+        onApprove={(item) => handleApproveDeletion(item)}
+        onReject={(item) => setRejectingItem(item)}
+        isProcessingAction={isProcessingAdminAction}
       />
 
       {/* ADMIN REJECT REASON MODAL */}

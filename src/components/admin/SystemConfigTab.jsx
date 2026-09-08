@@ -252,6 +252,32 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     setIsModalOpen(true);
   };
 
+  // Sub-office checkbox selection helpers
+  const selectedOffices = useMemo(() => {
+    if (!formData.sub_office || formData.sub_office === 'All') return ['All'];
+    return formData.sub_office.split(',').map(s => s.trim()).filter(Boolean);
+  }, [formData.sub_office]);
+
+  const handleToggleSubOffice = (officeName) => {
+    if (officeName === 'All') {
+      setFormData(prev => ({ ...prev, sub_office: 'All' }));
+      return;
+    }
+
+    let current = selectedOffices.filter(s => s !== 'All');
+    if (current.includes(officeName)) {
+      current = current.filter(s => s !== officeName);
+    } else {
+      current = [...current, officeName];
+    }
+
+    if (current.length === 0) {
+      setFormData(prev => ({ ...prev, sub_office: 'All' }));
+    } else {
+      setFormData(prev => ({ ...prev, sub_office: current.join(', ') }));
+    }
+  };
+
   // Save Modal Endpoint (Add / Edit)
   const handleSaveEndpointModal = async (e) => {
     e.preventDefault();
@@ -629,11 +655,6 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                         <td className="px-4 py-3.5 border-r border-slate-100 font-bold text-slate-900">
                           <div className="flex items-center gap-2">
                             <span>{endpoint.name}</span>
-                            {endpoint.is_default && (
-                              <span className="bg-[#002B66] text-[#FFD700] text-[9px] font-black px-1.5 py-0.5 rounded uppercase">
-                                Default
-                              </span>
-                            )}
                           </div>
                           <span className="text-[10px] text-slate-400 font-mono block mt-0.5 truncate max-w-[200px]">
                             Token: {endpoint.token ? `${endpoint.token.substring(0, 18)}...` : 'None'}
@@ -692,16 +713,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                               <Edit2 size={13} />
                             </button>
 
-                            {/* Set Default */}
-                            {!endpoint.is_default && (
-                              <button
-                                onClick={() => handleSetDefaultEndpoint(endpoint.id)}
-                                className="text-[10px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 cursor-pointer"
-                                title="Set as global fallback"
-                              >
-                                Make Default
-                              </button>
-                            )}
+
 
                             {/* Delete Button */}
                             {gatewayEndpoints.length > 1 && (
@@ -1072,24 +1084,60 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                 />
               </div>
 
-              {/* Sub-Office Assignment (Bound to sub_offices database table) */}
+              {/* Sub-Office Assignment (Checkboxes bound to sub_offices database table) */}
               <div>
-                <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
-                  Assigned Sub-Office Branch *
-                </label>
-                <select
-                  required
-                  value={formData.sub_office}
-                  onChange={(e) => setFormData(prev => ({ ...prev, sub_office: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg font-bold text-xs text-slate-800 focus:bg-white focus:border-[#002B66] outline-none cursor-pointer"
-                >
-                  <option value="All">All (Global Default Fallback)</option>
-                  {subOfficesList.filter(s => s !== 'All').map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block">
+                    Assigned Sub-Office Branch *
+                  </label>
+                  <span className="text-[10px] font-bold text-[#002B66]">
+                    {selectedOffices.includes('All') ? 'Global All (Default)' : `${selectedOffices.length} Selected`}
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 space-y-1.5 max-h-52 overflow-y-auto">
+                  {/* All option */}
+                  <label className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
+                    selectedOffices.includes('All')
+                      ? 'bg-blue-50/90 border-blue-300 text-[#002B66] font-extrabold'
+                      : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedOffices.includes('All')}
+                      onChange={() => handleToggleSubOffice('All')}
+                      className="w-4 h-4 text-[#002B66] rounded border-slate-300 focus:ring-[#002B66] cursor-pointer"
+                    />
+                    <span className="text-xs font-bold">
+                      All (Global Default Fallback)
+                    </span>
+                  </label>
+
+                  {/* List of individual branches */}
+                  {subOfficesList.filter(s => s !== 'All').map(office => {
+                    const isChecked = !selectedOffices.includes('All') && selectedOffices.includes(office);
+                    return (
+                      <label
+                        key={office}
+                        className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
+                          isChecked 
+                            ? 'bg-blue-50/90 border-blue-300 text-[#002B66] font-extrabold' 
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSubOffice(office)}
+                          className="w-4 h-4 text-[#002B66] rounded border-slate-300 focus:ring-[#002B66] cursor-pointer"
+                        />
+                        <span className="text-xs font-bold">{office}</span>
+                      </label>
+                    );
+                  })}
+                </div>
                 <span className="text-[10px] text-slate-400 block mt-1">
-                  When a user from this branch logs in, this gateway will be queried automatically.
+                  Select specific sub-office checkboxes to bind this gateway, or choose "All" for global default fallback.
                 </span>
               </div>
 

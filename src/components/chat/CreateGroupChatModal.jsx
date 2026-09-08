@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { X, Users, Building2, Check, Sparkles, Plus, Search, ShieldCheck } from 'lucide-react';
 import { formatRoleName, isSSRRole } from '../../utils/permissions';
+import { presenceService } from '../../services/presenceService';
 
 export default function CreateGroupChatModal({
   isOpen,
   onClose,
   currentUser,
   activeUsers = [],
+  onlineUserIds = new Set(),
   onCreateGroup = () => {}
 }) {
   const [groupName, setGroupName] = useState('');
@@ -209,6 +211,8 @@ export default function CreateGroupChatModal({
                   const uid = user.id || user.username;
                   const isSelected = selectedMemberIds.includes(uid);
 
+                  const isOnline = presenceService.isUserOnline(user, onlineUserIds);
+
                   return (
                     <div
                       key={uid}
@@ -228,11 +232,14 @@ export default function CreateGroupChatModal({
                           {isSelected && <Check size={12} className="stroke-[3]" />}
                         </div>
                         <div className="min-w-0">
-                          <span className="font-bold text-xs block truncate">
-                            {user.full_name || user.username}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs truncate">
+                              {user.full_name || user.username}
+                            </span>
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-emerald-500 ring-2 ring-emerald-200 animate-pulse' : 'bg-slate-300'}`} title={isOnline ? 'Online' : 'Offline'} />
+                          </div>
                           <span className="text-[10px] text-slate-500 font-medium block truncate">
-                            {user.sub_office || 'All Branches'} • Sales Service Representative
+                            {user.sub_office || 'All Branches'} • {isOnline ? <span className="text-emerald-600 font-bold">Active now</span> : 'Offline'}
                           </span>
                         </div>
                       </div>

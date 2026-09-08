@@ -9,21 +9,9 @@ import { isIncidentReportEligible, getTicketAgeInDays } from '../../utils/ticket
 import { getTicketTransId } from '../../utils/formatters';
 import CustomDatePicker from '../../components/common/CustomDatePicker';
 import { isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
+import { fetchAllIliganSupervisors, resolveSupervisorDisplayName, DEFAULT_SUPERVISOR_NAMES } from '../../services/supervisorService';
 
-const SUPERVISOR_NAMES = {
-  "spvr-arlfred": "ARLFRED SABERON",
-  "spvr-raffy": "RAFFY BAGUIO",
-  "spvr-roel": "ROEL CATALAN",
-  "spvr-michael": "MICHAEL DE GUZMAN",
-  "spvr-joel": "JOEL ESTORCO",
-  "spvr-eya": "HARRY EYA",
-  "spvr-carl": "CARL MANGRUBAN",
-  "spvr-jed": "JED MELENDREZ",
-  "spvr-nyor": "NYOR SESALDO",
-  "spvr-jason": "NARCISO TAGUD JR.",
-  "spvr-molly": "MOLLY BATUBALANOS",
-  "spvr-apple": "COORDINATOR - APPLEGROUP"
-};
+const SUPERVISOR_NAMES = DEFAULT_SUPERVISOR_NAMES;
 
 export default function UnclaimedRegistry({
   currentUser,
@@ -58,7 +46,43 @@ export default function UnclaimedRegistry({
 }) {
   const [incidentReportTicket, setIncidentReportTicket] = useState(null);
   const [localSearch, setLocalSearch] = useState(searchQuery || '');
+  const [dynamicSupervisors, setDynamicSupervisors] = useState({});
   const activeEndpoints = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
+
+  // Expand each endpoint's comma-separated sub_office into individual selectable options
+  const subOfficeOptions = activeEndpoints.flatMap(ep => {
+    const offices = (ep.sub_office && ep.sub_office !== 'All')
+      ? ep.sub_office.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+    if (offices.length <= 1) {
+      // Single or no sub-office — show as-is
+      return [{ id: ep.id, label: offices[0] || ep.name, endpointId: ep.id }];
+    }
+    // Multiple sub-offices — expand into individual rows, all pointing to same endpoint
+    return offices.map(office => ({ id: `${ep.id}__${office}`, label: office, endpointId: ep.id }));
+  });
+
+  // When filter is a composite key (endpointId__officeName), extract the real endpoint ID
+  const resolvedEndpointFilter = selectedEndpointFilter.includes('__')
+    ? selectedEndpointFilter.split('__')[0]
+    : selectedEndpointFilter;
+
+  // Fetch supervisors for ILIGAN SET A (id=5, id=8) and SET B (id=7)
+  React.useEffect(() => {
+    let isMounted = true;
+    const loadSupervisors = async () => {
+      try {
+        const fetched = await fetchAllIliganSupervisors(gatewayEndpoints);
+        if (isMounted && fetched && Object.keys(fetched).length > 0) {
+          setDynamicSupervisors(fetched);
+        }
+      } catch (err) {
+        console.warn('Failed to load dynamic supervisors:', err);
+      }
+    };
+    loadSupervisors();
+    return () => { isMounted = false; };
+  }, [gatewayEndpoints, selectedEndpointFilter]);
 
   // 150ms Search Debounce to reduce rendering load during fast typing
   React.useEffect(() => {
@@ -113,7 +137,7 @@ export default function UnclaimedRegistry({
             </div>
 
             {/* Sub-Office Selector (Visible for Unclaimed Specialists, Superadmin, and Centralized Admins to handle all SSRs) */}
-            {(!isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role)) && activeEndpoints.length > 0 && (
+            {(!isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role)) && subOfficeOptions.length > 0 && (
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700">
                 <Building2 size={15} className="text-[#002B66] shrink-0" />
                 <span className="text-[10px] font-black uppercase text-slate-400">Sub-Office</span>
@@ -122,10 +146,10 @@ export default function UnclaimedRegistry({
                   onChange={(e) => setSelectedEndpointFilter(e.target.value)}
                   className="bg-transparent font-bold text-[#002B66] outline-none cursor-pointer max-w-[220px] truncate"
                 >
-                  <option value="ALL">All Sub-Offices ({activeEndpoints.length})</option>
-                  {activeEndpoints.map(ep => (
-                    <option key={ep.id} value={ep.id}>
-                      {ep.sub_office && ep.sub_office !== 'All' ? ep.sub_office : ep.name}
+                  <option value="ALL">All Sub-Offices ({subOfficeOptions.length})</option>
+                  {subOfficeOptions.map(opt => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -205,7 +229,7 @@ export default function UnclaimedRegistry({
                     <div className="bg-slate-100 border-b border-slate-200 px-4 py-2.5 font-black text-[#002B66] text-xs uppercase tracking-wider font-mono flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2 truncate">
                         <UserCheck size={14} className="text-[#002B66] shrink-0" />
-                        <span className="truncate">Supervisor: {SUPERVISOR_NAMES[userKey?.toLowerCase()] ? SUPERVISOR_NAMES[userKey?.toLowerCase()] : userKey}</span>
+                        <span className="truncate">Supervisor: {resolveSupervisorDisplayName(userKey, dynamicSupervisors)}</span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] bg-blue-100 text-[#002B66] px-2 py-0.5 rounded shrink-0">{items.length} items</span>
@@ -370,7 +394,7 @@ export default function UnclaimedRegistry({
                                 </span>
                               </div>
                               <div className="text-right">
-                                <span className="text-[9px] font-sans font-bold text-slate-400 uppercase block">Win Liability</span>
+                                <span className="text-[9px] font-sans font-bold text-slate-400 uppercase block">Win Amount</span>
                                 <span className="text-xs font-black text-emerald-700">
                                   ₱{meta.winAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </span>
@@ -382,7 +406,7 @@ export default function UnclaimedRegistry({
                     </div>
 
                     <div className="bg-slate-100 px-4 py-2.5 font-black border-t border-slate-200 text-slate-900 text-xs font-mono flex items-center justify-between">
-                      <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal ({SUPERVISOR_NAMES[userKey?.toLowerCase()] ? SUPERVISOR_NAMES[userKey?.toLowerCase()] : userKey}):</span>
+                      <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal ({resolveSupervisorDisplayName(userKey, dynamicSupervisors)}):</span>
                       <div className="flex items-center gap-4">
                         <span className="text-slate-700 font-bold">Bet: ₱{groupBetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         <span className="text-emerald-700 font-extrabold">Win: ₱{groupWinTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>

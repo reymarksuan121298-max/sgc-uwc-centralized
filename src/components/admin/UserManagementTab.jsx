@@ -5,8 +5,10 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { ROLES, formatRoleName } from '../../utils/permissions';
+import { useGlobalPresence } from '../../hooks/useGlobalPresence';
 
 export default function UserManagementTab({ currentUser }) {
+  const { isUserOnline } = useGlobalPresence(currentUser);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -364,14 +366,19 @@ export default function UserManagementTab({ currentUser }) {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 border-r border-slate-100 font-mono font-black text-[#002B66]">
-                      {u.username}
-                    </td>
-                    <td className="px-4 py-3 border-r border-slate-100 font-bold text-slate-900">
-                      {u.full_name || 'N/A'}
-                    </td>
+                filteredUsers.map((u) => {
+                  const isOnline = isUserOnline(u);
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 border-r border-slate-100 font-mono font-black text-[#002B66]">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-emerald-500 ring-2 ring-emerald-200 animate-pulse' : 'bg-slate-300'}`} title={isOnline ? 'Online' : 'Offline'} />
+                          <span>{u.username}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 border-r border-slate-100 font-bold text-slate-900">
+                        {u.full_name || 'N/A'}
+                      </td>
                     <td className="px-4 py-3 border-r border-slate-100">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
                         formatRoleName(u.role) === 'Admin'
@@ -429,8 +436,9 @@ export default function UserManagementTab({ currentUser }) {
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              })
+            )}
             </tbody>
           </table>
         </div>
