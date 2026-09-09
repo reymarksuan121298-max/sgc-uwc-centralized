@@ -220,16 +220,44 @@ export default function ConfirmReturnModal({
           
           <div className="relative">
             {showConfirmPrompt && (
-              <div className="absolute bottom-full right-0 mb-3 w-[360px] bg-white border border-slate-200 shadow-xl rounded-xl p-3 flex flex-col gap-3 z-50 animate-in fade-in zoom-in-95 duration-200">
-                <span className="text-sm font-bold text-slate-800 tracking-tight leading-tight">
-                  Are you sure you want to execute transfer?
-                </span>
-                <div className="flex gap-2 justify-end">
+              <div className="absolute bottom-full right-0 mb-3 w-[340px] sm:w-[370px] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 flex flex-col gap-3 z-50 animate-in fade-in zoom-in-95 duration-200">
+                <div>
+                  <span className="text-xs font-black text-slate-900 uppercase tracking-wider block">
+                    Confirm Transfer Execution
+                  </span>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    Are you sure you want to execute transfer for this ticket?
+                  </p>
+                </div>
+
+                {/* Ticket Details Summary Card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5 text-xs font-mono">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Trans. ID:</span>
+                    <span className="font-bold text-[#002B66]">{targetTransId}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Teller / Outlet:</span>
+                    <span className="font-bold text-slate-800 truncate max-w-[180px]">{ticket.fullName || ticket.outlet || ticket.username || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Combination:</span>
+                    <span className="font-bold text-slate-900">{betNo} ({betCode})</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
+                    <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase">Win Amount:</span>
+                    <span className="font-black text-emerald-700 text-sm">
+                      ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-1">
                   <button
                     type="button"
                     onClick={() => setShowConfirmPrompt(false)}
                     disabled={isSaving}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-1.5 rounded-lg text-xs transition-colors flex-1"
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs transition-colors flex-1 cursor-pointer"
                   >
                     No, Cancel
                   </button>
@@ -240,7 +268,7 @@ export default function ConfirmReturnModal({
                       onConfirm();
                     }}
                     disabled={isSaving}
-                    className="bg-[#002B66] hover:bg-blue-900 text-white px-4 py-1.5 rounded-lg text-xs font-black shadow-md flex-1"
+                    className="bg-[#002B66] hover:bg-blue-900 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md flex-1 cursor-pointer transition-all active:scale-95"
                   >
                     Yes, Execute
                   </button>

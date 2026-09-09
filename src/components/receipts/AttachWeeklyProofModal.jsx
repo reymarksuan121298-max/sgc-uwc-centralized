@@ -1,13 +1,12 @@
 import React, { useState, useMemo, useEffect, memo, useCallback } from 'react';
 import { 
-  X, UploadCloud, Calendar, FileText, CheckCircle2, 
+  X, UploadCloud, FileText, CheckCircle2, 
   Smartphone, Building2, Landmark, Image as ImageIcon, Loader2,
-  AlertTriangle, ShieldCheck, Search, Sparkles, Check, ScanText, Eye
+  AlertTriangle, ShieldCheck, Search, Sparkles, Eye
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
-import { scanReceiptProof } from '../../utils/receiptOcr';
-import { generateRemittanceSerial, getSubOfficeAbbreviation } from '../../utils/formatters';
+import { generateRemittanceSerial } from '../../utils/formatters';
 
 // Fast Date Formatter (cached, avoids heavy toLocaleString overhead on every render)
 const fastFormatTimestamp = (timestampStr) => {
@@ -211,9 +210,6 @@ function AttachWeeklyProofModal({
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalTableSearch, setModalTableSearch] = useState('');
-  const [isScanningOcr, setIsScanningOcr] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState(0);
-  const [ocrDetectionNote, setOcrDetectionNote] = useState('');
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
 
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
@@ -239,8 +235,6 @@ function AttachWeeklyProofModal({
       setPreviewImage(null);
       setNotes('');
       setModalTableSearch('');
-      setOcrDetectionNote('');
-      setIsScanningOcr(false);
       setSenderName(currentUser?.full_name || '');
 
       const unremitted = filteredData.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
@@ -297,18 +291,20 @@ function AttachWeeklyProofModal({
     });
   }, [targetBatch]);
 
-  // Dynamically compute Remittance Serial Number based on sub-office (e.g. MANDAUE -> MAN) and actual current date + 6-digit code
+  // Dynamically compute Remittance Serial Number based on sub-office and remittance date
   const effectiveBatchSrn = useMemo(() => {
     const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
       ? currentUser.sub_office
       : (selectedItems[0]?.sub_office || targetBatch?.items[0]?.sub_office || 'Mandaue Central');
-    const dateObj = new Date(); // Actual current date
+    
+    // Parse receiptDate (or fallback to current date)
+    const dateObj = receiptDate ? new Date(`${receiptDate}T12:00:00`) : new Date();
 
     if (!selectedItems || selectedItems.length === 0) {
       return generateRemittanceSerial(subOfficeName, '892301', dateObj);
     }
 
-    // 1. Single specific ticket selected -> generate format [SUB-OFFICE]-[YYMMDD]-[6-DIGIT CODE] (e.g. MAN-260901-892301)
+    // 1. Single specific ticket selected -> generate format [SUB-OFFICE]-[YYMMDD]-[6-DIGIT CODE]
     if (selectedItems.length === 1) {
       const single = selectedItems[0];
       const transId = single.transactionId || single.transId || single.id;
@@ -319,7 +315,7 @@ function AttachWeeklyProofModal({
     const firstSelected = selectedItems[0];
     const firstTransId = firstSelected?.transactionId || firstSelected?.transId || firstSelected?.id;
     return generateRemittanceSerial(subOfficeName, firstTransId, dateObj);
-  }, [selectedItems, targetBatch, currentUser]);
+  }, [selectedItems, targetBatch, currentUser, receiptDate]);
 
   // Fast filtered tickets list
   const filteredTickets = useMemo(() => {
@@ -346,28 +342,9 @@ function AttachWeeklyProofModal({
     }
 
     setFormError('');
-    setOcrDetectionNote('');
     const reader = new FileReader();
-    reader.onloadend = async () => {
+    reader.onloadend = () => {
       setPreviewImage(reader.result);
-
-      // Trigger automatic AI OCR to extract Official Reference / Control Number
-      setIsScanningOcr(true);
-      setOcrProgress(15);
-      try {
-        const ocrResult = await scanReceiptProof(file, (pct) => setOcrProgress(pct));
-        if (ocrResult?.referenceNumber) {
-          setReferenceNumber(ocrResult.referenceNumber);
-          setOcrDetectionNote(`Auto-detected: ${ocrResult.referenceNumber}`);
-        }
-        if (ocrResult?.mobile && !senderMobile) {
-          setSenderMobile(ocrResult.mobile);
-        }
-      } catch (err) {
-        console.warn('OCR error:', err);
-      } finally {
-        setIsScanningOcr(false);
-      }
     };
     reader.readAsDataURL(file);
   };
@@ -487,13 +464,17 @@ function AttachWeeklyProofModal({
 
       // 4. Update status of all selected returned winning records in database
       if (transIds.length > 0) {
+        const effectiveRemittanceTimestamp = receiptDate 
+          ? new Date(`${receiptDate}T12:00:00`).toISOString() 
+          : new Date().toISOString();
+
         const { error: updateError } = await supabase
           .from('returned_winnings')
           .update({
             receipt_status: 'PENDING_VERIFICATION',
             sub_office: subOfficeName,
             batch_serial_no: effectiveBatchSrn || null,
-            updated_at: new Date().toISOString()
+            updated_at: effectiveRemittanceTimestamp
           })
           .in('transactionId', transIds);
 
@@ -638,29 +619,6 @@ function AttachWeeklyProofModal({
           {/* Form Fields: Reference, Amount, Sender, Date (Hidden on Admin side) */}
           {!isAdmin && (
             <>
-              {/* AI OCR Scanning & Auto-Detect Banner */}
-              {isScanningOcr && (
-                <div className="bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-xl flex items-center justify-between text-xs font-bold animate-pulse">
-                  <div className="flex items-center gap-2.5">
-                    <Loader2 size={16} className="animate-spin text-[#002B66]" />
-                    <span>AI scanning receipt image for Official Reference / Control No...</span>
-                  </div>
-                  <span className="font-mono text-xs bg-blue-100 px-2 py-0.5 rounded-full text-[#002B66]">{ocrProgress}%</span>
-                </div>
-              )}
-
-              {ocrDetectionNote && !isScanningOcr && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2 rounded-xl flex items-center justify-between text-xs font-bold animate-in fade-in">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={15} className="text-emerald-600" />
-                    <span>{ocrDetectionNote}</span>
-                  </div>
-                  <span className="text-[10px] text-emerald-700 uppercase font-sans font-black bg-emerald-100/90 px-2.5 py-0.5 rounded-full">
-                    Auto-Fetched ✨
-                  </span>
-                </div>
-              )}
-
               {/* Reference Number, Amount, and Deposited Charges */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
                 <div>
@@ -668,21 +626,13 @@ function AttachWeeklyProofModal({
                     <label className="text-[11px] font-extrabold text-slate-700 uppercase">
                       Official Reference / Control No. *
                     </label>
-                    {referenceNumber && ocrDetectionNote && (
-                      <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                        <Check size={11} /> Auto-Fetched
-                      </span>
-                    )}
                   </div>
                   <input
                     type="text"
                     required
                     placeholder="e.g. 10029384758 / CEB-9982 / DEP-48921"
                     value={referenceNumber}
-                    onChange={(e) => {
-                      setReferenceNumber(e.target.value);
-                      if (ocrDetectionNote) setOcrDetectionNote('');
-                    }}
+                    onChange={(e) => setReferenceNumber(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 focus:border-[#002B66] focus:bg-white px-3 py-2 rounded-lg font-mono font-bold text-[#002B66] uppercase outline-none transition-all"
                   />
                 </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Coins, Download, Search, Building2, UserCheck, CheckCircle2,
   Landmark, Clock, ShieldCheck, Receipt, PieChart, FileCheck, Check, Ban, X, Loader2,
@@ -8,6 +8,7 @@ import { toPng } from 'html-to-image';
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import { winningsService } from '../../services/winningsService';
+import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
 import { generateRemittanceSerial, getTicketTransId } from '../../utils/formatters';
 
@@ -28,6 +29,29 @@ export default function TotalCollectionsTab({
   const [toastMessage, setToastMessage] = useState('');
   const [capturingSrn, setCapturingSrn] = useState(null);
   const [copiedSrn, setCopiedSrn] = useState(null);
+  const [receiptsList, setReceiptsList] = useState([]);
+
+  useEffect(() => {
+    const fetchReceipts = async () => {
+      try {
+        const { data } = await supabase.from('remittance_receipts').select('*');
+        setReceiptsList(data || []);
+      } catch (err) {
+        console.error('Failed to load receipts in TotalCollectionsTab:', err);
+      }
+    };
+    fetchReceipts();
+  }, []);
+
+  const receiptsBySrn = useMemo(() => {
+    const map = {};
+    (receiptsList || []).forEach(r => {
+      if (r.batch_serial_no) map[r.batch_serial_no.trim()] = r;
+      if (r.reference_number) map[r.reference_number.trim()] = r;
+      if (r.transactionId) map[r.transactionId.trim()] = r;
+    });
+    return map;
+  }, [receiptsList]);
 
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
@@ -120,8 +144,8 @@ export default function TotalCollectionsTab({
   // Filtered transactions aligned with Sub-Office & search
   const filteredList = useMemo(() => {
     return scopedData.filter(item => {
-      const rawTransId = String(item.batch_serial_no || item.transactionId || '').trim();
-      const transId = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
+      const ticketTransId = getTicketTransId(item, item.transactionId || '');
+      const srn = item.batch_serial_no || generateRemittanceSerial(item.sub_office || 'Mandaue Central', ticketTransId, item.created_at || item.date_returned);
 
       // Sub-office filter
       if (subOfficeFilter !== 'ALL' && (item.sub_office || 'Mandaue Central') !== subOfficeFilter) {
@@ -132,7 +156,9 @@ export default function TotalCollectionsTab({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const match = (
-          transId.toLowerCase().includes(q) ||
+          (srn || '').toLowerCase().includes(q) ||
+          (item.batch_serial_no || '').toLowerCase().includes(q) ||
+          ticketTransId.toLowerCase().includes(q) ||
           (item.username || '').toLowerCase().includes(q) ||
           (item.fullName || item.outlet || '').toLowerCase().includes(q) ||
           (item.sub_office || '').toLowerCase().includes(q) ||
@@ -155,8 +181,21 @@ export default function TotalCollectionsTab({
     let totalCollectorComm = 0;
 
     const branchSummary = {};
+    const seenSrns = new Set();
+    let totalDepositedCharges = 0;
 
     filteredList.forEach(item => {
+      const ticketTransId = getTicketTransId(item, item.transactionId || '');
+      const srn = item.batch_serial_no || generateRemittanceSerial(item.sub_office || 'Mandaue Central', ticketTransId, item.created_at || item.date_returned) || 'UNASSIGNED-SRN';
+
+      if (!seenSrns.has(srn)) {
+        seenSrns.add(srn);
+        const receipt = receiptsBySrn[srn] || (item.batch_serial_no ? receiptsBySrn[item.batch_serial_no] : null);
+        if (receipt?.deposited_charges) {
+          totalDepositedCharges += parseFloat(receipt.deposited_charges || 0);
+        }
+      }
+
       const win = parseFloat(item.winAmount || 0);
       const out = parseFloat(item.return_amount_out) || win;
       const adm = parseFloat(item.admin_commission) || (win * 0.50);
@@ -184,24 +223,28 @@ export default function TotalCollectionsTab({
       branchSummary[branch].collector += col;
     });
 
+    const netReturnOut = Math.max(0, totalReturnOut - totalDepositedCharges);
+
     return {
       count: filteredList.length,
       totalWin,
-      totalReturnOut,
+      totalDepositedCharges,
+      totalReturnOut: netReturnOut,
+      grossReturnOut: totalReturnOut,
       totalAdminComm,
       totalAgentComm,
       totalStaffComm,
       totalCollectorComm,
       branches: Object.values(branchSummary)
     };
-  }, [filteredList]);
+  }, [filteredList, receiptsBySrn]);
 
-  // Grouped transactions by Serial Number (SRN) with group totals
+  // Grouped transactions by Serial Number (SRN) with group totals & net remittance
   const groupedBySrn = useMemo(() => {
     const map = {};
     filteredList.forEach(item => {
-      const rawTransId = String(item.batch_serial_no || item.transactionId || '').trim();
-      const srn = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned) || 'UNASSIGNED-SRN';
+      const ticketTransId = getTicketTransId(item, item.transactionId || '');
+      const srn = item.batch_serial_no || generateRemittanceSerial(item.sub_office || 'Mandaue Central', ticketTransId, item.created_at || item.date_returned) || 'UNASSIGNED-SRN';
       if (!map[srn]) {
         map[srn] = {
           srn,
@@ -212,7 +255,9 @@ export default function TotalCollectionsTab({
           totalAdmin: 0,
           totalAgent: 0,
           totalStaff: 0,
-          totalCollector: 0
+          totalCollector: 0,
+          depositedCharges: 0,
+          netRemittance: 0
         };
       }
       const win = parseFloat(item.winAmount || 0);
@@ -230,8 +275,17 @@ export default function TotalCollectionsTab({
       map[srn].totalCollector += col;
       map[srn].items.push(item);
     });
+
+    // Deduct deposited charges from receipt for each SRN batch
+    Object.keys(map).forEach(srn => {
+      const receipt = receiptsBySrn[srn] || (map[srn].items[0]?.batch_serial_no ? receiptsBySrn[map[srn].items[0].batch_serial_no] : null);
+      const charges = parseFloat(receipt?.deposited_charges || 0);
+      map[srn].depositedCharges = charges;
+      map[srn].netRemittance = Math.max(0, map[srn].totalWin - charges);
+    });
+
     return map;
-  }, [filteredList]);
+  }, [filteredList, receiptsBySrn]);
 
   const handleCopySrnImage = async (srnKey) => {
     const safeId = `srn-card-${srnKey.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
@@ -506,15 +560,15 @@ export default function TotalCollectionsTab({
               <div className="p-2.5 bg-slate-100/80 text-[#002B66] rounded-xl shrink-0 border border-slate-200/50"><Coins size={18} /></div>
             </div>
 
-            {/* Return Amount Out */}
+            {/* Return Amount Out (Net of Charges) */}
             <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between min-w-0">
               <div className="min-w-0 pr-2">
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-none block truncate">Return Amount Out</span>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-none block truncate">Net Remitted Amount Out</span>
                 <p className="text-base sm:text-lg font-black font-mono text-amber-700 mt-1.5 leading-tight truncate">
                   ₱{totals.totalReturnOut.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
                 <span className="text-[10px] text-slate-400 font-medium mt-1 block truncate">
-                  Disbursed payout volume
+                  {totals.totalDepositedCharges > 0 ? `Less ₱${totals.totalDepositedCharges.toLocaleString('en-US', { minimumFractionDigits: 2 })} charges` : 'Disbursed payout volume'}
                 </span>
               </div>
               <div className="p-2.5 bg-amber-50 text-amber-700 rounded-xl shrink-0 border border-amber-200/50"><CheckCircle2 size={18} /></div>
@@ -772,12 +826,30 @@ export default function TotalCollectionsTab({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2.5 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
                       {/* Total Amount Badge */}
                       <div className="flex items-center gap-1.5 bg-white border border-slate-200/80 px-2.5 py-1 rounded-lg shadow-2xs font-mono text-xs">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Win:</span>
                         <span className="font-black text-slate-900">
                           ₱{group.totalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      {/* Charges Badge (if > 0) */}
+                      {group.depositedCharges > 0 && (
+                        <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg shadow-2xs font-mono text-xs text-rose-700">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500">Charges:</span>
+                          <span className="font-black">
+                            -₱{group.depositedCharges.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Net Remittance Badge */}
+                      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shadow-2xs font-mono text-xs text-emerald-900">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Net Remitted:</span>
+                        <span className="font-black text-emerald-800">
+                          ₱{group.netRemittance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
 

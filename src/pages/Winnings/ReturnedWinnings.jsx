@@ -404,7 +404,7 @@ export default function ReturnedWinnings({
           <table className="w-full text-left border-collapse min-w-[900px]">
             <thead>
               <tr className="bg-[#003366] text-white text-[11px] font-bold uppercase tracking-wider border-b border-slate-300">
-                {['Teller / Outlet', 'Trans. ID / SRN', 'Draw', 'Bet No.', 'Bet Code', 'Bet Amount', 'Win Amount', 'Date Returned', 'Status', 'Action'].map((h, i) => (
+                {['Teller / Outlet', 'Trans. ID', 'Draw', 'Bet No.', 'Bet Code', 'Bet Amount', 'Win Amount', 'Date Returned', 'Status', 'Action'].map((h, i) => (
                   <th key={h} className={`px-3 py-2.5 border-r border-blue-900 whitespace-nowrap ${i >= 2 && i <= 4 || i >= 8 ? 'text-center' : i >= 5 && i <= 6 ? 'text-right' : i === 7 ? 'text-center' : ''}`}>{h}</th>
                 ))}
               </tr>
@@ -481,7 +481,7 @@ export default function ReturnedWinnings({
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-blue-300">
-                                  <Clock size={10} /> RETURNED (UNREMITTED)
+                                  <Clock size={10} /> UNREMITTED
                                 </span>
                               )}
                             </td>

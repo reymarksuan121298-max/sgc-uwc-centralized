@@ -20,14 +20,16 @@ export const extractReferenceNumber = (text) => {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
   // Pattern 1: Explicit labels (Ref No, Reference Number, Control No, KPTN, Transaction ID, etc.)
-  const labelRegex = /(?:ref(?:erence)?\s*(?:no\.?|id|#|number|code)?|control\s*(?:no\.?|#|code)?|kptn|txn\s*(?:id|no\.?)|transaction\s*(?:id|no\.?|code|#)|trace\s*no\.?|approval\s*code|confirmation\s*(?:no\.?|#))[:\s#\-]*([A-Z0-9\s\-]{5,30})/i;
+  const labelRegex = /\b(?:reference\s*(?:no\.?|id|#|number|code)?|ref\s*(?:no\.?|id|#|number|code)?|control\s*(?:no\.?|#|code)?|kptn|txn\s*(?:id|no\.?)|transaction\s*(?:id|no\.?|code|#)|trace\s*no\.?|approval\s*code|confirmation\s*(?:no\.?|#))\b[:\s#\-]*([A-Z0-9\s\-]{4,30})/i;
 
   for (const line of lines) {
     const match = line.match(labelRegex);
     if (match && match[1]) {
       const candidate = match[1].trim().replace(/\s+/g, ' ');
-      // Filter out common false positives like "PHP", "SUCCESS", "COMPLETED"
-      if (!/^(php|amount|success|completed|total|pending|paid|sent)$/i.test(candidate) && candidate.length >= 6) {
+      // Filter out common false positives and ensure candidate contains digits
+      const isInvalidLabel = /^(php|amount|success|completed|total|pending|paid|sent|reference|control|number|code|receipt|deposit|transfer|erence|erence\s*no)$/i.test(candidate);
+      const hasDigits = /\d{2,}/.test(candidate);
+      if (!isInvalidLabel && hasDigits && candidate.length >= 4) {
         return candidate.toUpperCase();
       }
     }
