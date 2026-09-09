@@ -310,7 +310,7 @@ export default function TotalCollectionsTab({
       'SRN', 'Transaction ID', 'Branch / Sub-Office', 'Supervisor / Account', 'Teller / Outlet', 
       'Draw Schedule', 'Bet Combination', 'Win Amount (₱)', 
       'Admin 50% Share (₱)', 'Agent/Teller 30% Share (₱)', 'Staff 10% Share (₱)', 'Collector 10% Share (₱)', 
-      'Remittance Status', 'Date Returned'
+      'Remittance Status', 'Date Returned', 'Date Deposited'
     ];
 
     const rows = filteredList.map(item => {
@@ -338,7 +338,8 @@ export default function TotalCollectionsTab({
         stf,
         col,
         `"${item.receipt_status || 'REMITTED'}"`,
-        `"${item.updated_at || item.created_at || 'N/A'}"`
+        `"${item.date_returned || item.created_at || 'N/A'}"`,
+        `"${item.date_deposited || item.receipt_date || item.updated_at || 'N/A'}"`
       ];
     });
 
@@ -811,12 +812,14 @@ export default function TotalCollectionsTab({
 
                   {/* Table */}
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[1100px]">
+                    <table className="w-full text-left border-collapse min-w-[1300px]">
                       <thead>
                         <tr className="bg-[#002B66] text-white text-[11px] font-black uppercase tracking-wider">
                           <th className="px-3.5 py-3 border-r border-blue-900">Teller</th>
                           <th className="px-3.5 py-3 border-r border-blue-900">Trans. ID</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900 text-center">Draw</th>
                           <th className="px-3.5 py-3 border-r border-blue-900 text-center">Bet & Code</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900">Date Returned</th>
                           <th className="px-3.5 py-3 border-r border-blue-900">Date Deposited</th>
                           <th className="px-3.5 py-3 border-r border-blue-900 text-right">Win Amount</th>
                           <th className="px-3.5 py-3 border-r border-blue-900 text-right">Admin (50%)</th>
@@ -842,11 +845,17 @@ export default function TotalCollectionsTab({
                               <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-bold text-slate-800">
                                 {transId}
                               </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 text-center font-mono font-semibold text-slate-800 text-xs whitespace-nowrap">
+                                {formatDrawTime ? formatDrawTime(item.drawTime || item.draw, item.drawDate || item.created_at) : (item.drawTime || 'N/A')}
+                              </td>
                               <td className="px-3.5 py-2.5 border-r border-slate-100 text-center font-mono font-bold text-slate-900">
                                 {item.betNo || 'N/A'} <span className="text-slate-500 font-normal">({item.betCode || 'RS3'})</span>
                               </td>
                               <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono text-slate-600 text-xs whitespace-nowrap">
-                                {formatTimestamp(item.date_returned || item.updated_at || item.created_at)}
+                                {formatTimestamp(item.date_returned || item.created_at)}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono text-slate-600 text-xs whitespace-nowrap">
+                                {formatTimestamp(item.date_deposited || item.receipt_date || item.updated_at)}
                               </td>
                               <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-black text-slate-800 text-right">
                                 ₱{win.toLocaleString('en-US', { minimumFractionDigits: 2 })}

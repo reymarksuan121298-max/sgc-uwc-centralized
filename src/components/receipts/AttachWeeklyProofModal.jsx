@@ -127,7 +127,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
               items.map((t, idx) => {
                 const key = getItemKey(t) || `REC-${idx + 1}`;
                 const transId = t.transactionId || t.transId || `REC-${idx + 1}`;
-                const recordTimestamp = t.updated_at || t.created_at;
+                const recordTimestamp = t.date_returned || t.created_at;
                 const isSelected = selectedKeys.has(key);
 
                 return (
@@ -273,9 +273,12 @@ function AttachWeeklyProofModal({
       } else {
         next.add(key);
       }
+      const newItems = (targetBatch?.items || []).filter(t => next.has(getItemKey(t)));
+      const newTotal = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
+      setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, []);
+  }, [targetBatch]);
 
   // Toggle select all visible / batch tickets
   const handleToggleSelectAll = useCallback(() => {
@@ -284,8 +287,11 @@ function AttachWeeklyProofModal({
       const visibleKeys = targetBatch.items.map(t => getItemKey(t));
       const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => prev.has(k));
       if (allSelected) {
+        setCustomRemittanceAmount('0.00');
         return new Set();
       } else {
+        const fullTotal = targetBatch.items.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
+        setCustomRemittanceAmount(fullTotal.toFixed(2));
         return new Set(visibleKeys);
       }
     });

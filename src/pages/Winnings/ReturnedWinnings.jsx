@@ -208,7 +208,7 @@ export default function ReturnedWinnings({
         `"${item.betCode || 'RS3'}"`,
         parseFloat(item.betAmount ?? 0).toFixed(2),
         parseFloat(item.winAmount ?? 0).toFixed(2),
-        `"${formatTimestamp(item.updated_at || item.created_at)}"`,
+        `"${formatTimestamp(item.date_returned || item.created_at)}"`,
         `"${item.receipt_status || 'NO_RECEIPT'}"`,
         `"${item.deletion_request_status || 'NONE'}"`
       ];
@@ -436,7 +436,7 @@ export default function ReturnedWinnings({
                         const transId = item.transactionId || `REC-${i + 1}`;
                         const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
                         const isUnderSettlement = Boolean(item.isUnderSettlement);
-                        const recordTimestamp = item.updated_at || item.created_at;
+                        const recordTimestamp = item.date_returned || item.created_at;
                         const isRemitted = Boolean(item.receipt_status && item.receipt_status !== 'NO_RECEIPT');
                         const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
 
@@ -461,7 +461,7 @@ export default function ReturnedWinnings({
                                 </span>
                               ) : isRemitted ? (
                                 <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-black text-[10px] px-2 py-0.5 rounded-full border border-emerald-300">
-                                  <CheckCircle2 size={10} /> IN COLLECTIONS
+                                  <CheckCircle2 size={10} /> DEPOSITED
                                 </span>
                               ) : isUnderSettlement ? (
                                 <button
@@ -606,7 +606,7 @@ export default function ReturnedWinnings({
                     const transId = item.transactionId || `REC-${i + 1}`;
                     const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
                     const isUnderSettlement = Boolean(item.isUnderSettlement);
-                    const recordTimestamp = item.updated_at || item.created_at;
+                    const recordTimestamp = item.date_returned || item.created_at;
                     const isRemitted = Boolean(item.receipt_status && item.receipt_status !== 'NO_RECEIPT');
                     const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
 
@@ -659,7 +659,7 @@ export default function ReturnedWinnings({
                               </span>
                             ) : isRemitted ? (
                               <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300">
-                                <CheckCircle2 size={9} /> IN COLLECTIONS
+                                <CheckCircle2 size={9} /> DEPOSITED
                               </span>
                             ) : isUnderSettlement ? (
                               <button
