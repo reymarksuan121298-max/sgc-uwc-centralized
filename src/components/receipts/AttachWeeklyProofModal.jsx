@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, memo, useCallback } from 'react';
 import { 
   X, UploadCloud, Calendar, FileText, CheckCircle2, 
   Smartphone, Building2, Landmark, Image as ImageIcon, Loader2,
-  AlertTriangle, ShieldCheck, Search, Sparkles, Check, ScanText
+  AlertTriangle, ShieldCheck, Search, Sparkles, Check, ScanText, Eye
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
@@ -366,14 +366,16 @@ function AttachWeeklyProofModal({
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = async (e) => {
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isImageZoomed, setIsImageZoomed] = useState(false);
+
+  const handleInitiateSubmit = (e) => {
     e.preventDefault();
     if (selectedCount === 0) {
       setFormError('Please select at least one Trans ID ticket to attach remittance proof.');
       return;
     }
 
-    const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn).toUpperCase();
     const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
       ? parseFloat(customRemittanceAmount) 
       : (parseFloat(selectedWinTotal || 0) || 0);
@@ -387,6 +389,18 @@ function AttachWeeklyProofModal({
       setFormError('Please enter a valid total remittance amount.');
       return;
     }
+
+    setFormError('');
+    setShowConfirmModal(true);
+  };
+
+  const handleFinalSubmit = async () => {
+    if (selectedCount === 0) return;
+
+    const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn).toUpperCase();
+    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
+      ? parseFloat(customRemittanceAmount) 
+      : (parseFloat(selectedWinTotal || 0) || 0);
 
     setIsSubmitting(true);
     setFormError('');
@@ -500,11 +514,13 @@ function AttachWeeklyProofModal({
         }
       }]);
 
+      setShowConfirmModal(false);
       if (onSuccess) onSuccess(transIds.length);
       onClose();
     } catch (err) {
       console.error("Remittance submission error:", err);
       setFormError(err.message || 'Failed to submit batch remittance proof.');
+      setShowConfirmModal(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -534,7 +550,7 @@ function AttachWeeklyProofModal({
         {/* 2. SCROLLABLE FORM BODY */}
         <form 
           id="weekly-remit-form"
-          onSubmit={handleSubmit} 
+          onSubmit={handleInitiateSubmit} 
           className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs"
         >
           {formError && (
@@ -782,15 +798,25 @@ function AttachWeeklyProofModal({
                 <img 
                   src={previewImage} 
                   alt="Receipt Preview" 
-                  className="max-h-44 rounded-lg object-contain border border-emerald-200 shadow-xs" 
+                  className="max-h-44 rounded-lg object-contain border border-emerald-200 shadow-xs cursor-pointer hover:opacity-95" 
+                  onClick={() => setIsImageZoomed(true)}
                 />
-                <button
-                  type="button"
-                  onClick={() => setPreviewImage(null)}
-                  className="mt-2 text-xs font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer bg-white px-3 py-1 rounded-full border border-rose-200 shadow-2xs"
-                >
-                  <X size={13} /> Remove & Change Image
-                </button>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsImageZoomed(true)}
+                    className="text-xs font-bold text-[#002B66] hover:text-blue-800 flex items-center gap-1 cursor-pointer bg-white px-3 py-1 rounded-full border border-slate-200 shadow-2xs"
+                  >
+                    <Eye size={13} /> View Large
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewImage(null)}
+                    className="text-xs font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer bg-white px-3 py-1 rounded-full border border-rose-200 shadow-2xs"
+                  >
+                    <X size={13} /> Remove & Change Image
+                  </button>
+                </div>
               </div>
             ) : (
               <label className="border-2 border-dashed border-slate-300 hover:border-[#002B66] rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-slate-50 hover:bg-blue-50/30 transition-all text-center">
@@ -833,7 +859,7 @@ function AttachWeeklyProofModal({
 
         </form>
 
-        {/* 3. FIXED MODAL FOOTER (Always visible without scrolling!) */}
+        {/* 3. FIXED MODAL FOOTER */}
         <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono text-slate-500">
@@ -856,20 +882,219 @@ function AttachWeeklyProofModal({
               disabled={isSubmitting || selectedCount === 0}
               className="flex items-center gap-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 rounded-xl font-black transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer text-xs"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" />
-                  <span>Moving to Collections...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 size={15} />
-                  <span>Confirm & Move {selectedCount} Records</span>
-                </>
-              )}
+              <CheckCircle2 size={15} />
+              <span>Review & Attach Proof ({selectedCount} Records) →</span>
             </button>
           </div>
         </div>
+
+        {/* 4. CONFIRMATION OVERLAY MODAL */}
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+            <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+              
+              {/* Header */}
+              <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
+                <div className="flex items-center gap-2.5 font-black uppercase text-xs sm:text-sm tracking-wider">
+                  <ShieldCheck size={18} className="text-[#FFD700]" />
+                  <span>Confirm Remittance & Attached Proof</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={isSubmitting}
+                  className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs">
+                
+                <div className="bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
+                  <Sparkles size={16} className="text-[#002B66] shrink-0" />
+                  <span>Please verify that the attached receipt and remittance details are 100% correct before finalizing.</span>
+                </div>
+
+                {/* Proof Image Preview + Details Layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-start">
+                  
+                  {/* Left: Receipt Proof Preview Card */}
+                  <div className="sm:col-span-5 bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col items-center justify-center text-center">
+                    <span className="text-[10px] font-extrabold uppercase text-slate-500 mb-2 block tracking-wider">
+                      Attached Proof
+                    </span>
+                    {previewImage ? (
+                      <div className="relative group w-full flex flex-col items-center">
+                        <img
+                          src={previewImage}
+                          alt="Remittance Proof"
+                          className="max-h-44 w-full object-contain rounded-lg border border-slate-300 shadow-xs cursor-pointer hover:opacity-95 transition-opacity"
+                          onClick={() => setIsImageZoomed(true)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setIsImageZoomed(true)}
+                          className="mt-2 text-[10px] font-bold text-[#002B66] hover:text-blue-800 flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-2xs cursor-pointer"
+                        >
+                          <Eye size={12} /> Click to Expand
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="py-6 px-3 flex flex-col items-center justify-center text-slate-400">
+                        <ImageIcon size={32} className="mb-1 text-slate-300" />
+                        <span className="text-[11px] font-bold text-slate-500">No Image Attached</span>
+                        <span className="text-[10px] text-slate-400">(Reference Number Only)</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Key Remittance Details Table/Summary */}
+                  <div className="sm:col-span-7 space-y-2">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                      <div>
+                        <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
+                          Official Reference / Control No.
+                        </span>
+                        <span className="font-mono font-black text-sm text-[#002B66] block break-all">
+                          {(referenceNumber.trim() || effectiveBatchSrn).toUpperCase()}
+                        </span>
+                      </div>
+
+                      <div className="border-t border-slate-200 pt-2 grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
+                            Remittance Amount
+                          </span>
+                          <span className="font-mono font-black text-emerald-700 text-sm block">
+                            ₱{parseFloat(customRemittanceAmount || selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
+                            Payment Channel
+                          </span>
+                          <span className="font-sans font-bold text-slate-800 text-xs block">
+                            {paymentChannel} {(paymentChannel === 'BANK_TRANSFER' || paymentChannel === 'BANK_DEPOSIT') && bankName ? `(${bankName})` : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      {parseFloat(depositedCharges) > 0 && (
+                        <div className="border-t border-slate-200 pt-1.5 flex justify-between items-center text-[11px]">
+                          <span className="font-sans text-slate-500">Bank / Channel Charges:</span>
+                          <span className="font-mono font-bold text-[#002B66]">₱{parseFloat(depositedCharges).toFixed(2)}</span>
+                        </div>
+                      )}
+
+                      <div className="border-t border-slate-200 pt-2 grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
+                            Batch Serial (SRN)
+                          </span>
+                          <span className="font-mono font-bold text-slate-700 text-[11px] block truncate">
+                            {effectiveBatchSrn}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
+                            Remittance Date
+                          </span>
+                          <span className="font-sans font-bold text-slate-700 text-[11px] block">
+                            {receiptDate}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-200 pt-2">
+                        <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
+                          Included Tickets
+                        </span>
+                        <div className="flex items-center justify-between text-xs mt-0.5">
+                          <span className="font-sans font-bold text-slate-700">{selectedCount} Tickets Selected</span>
+                          <span className="font-mono font-bold text-emerald-800">
+                            Total: ₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {(senderName || senderMobile) && (
+                        <div className="border-t border-slate-200 pt-2 text-[10px] font-sans text-slate-500">
+                          <strong>Sender:</strong> {senderName || 'N/A'} {senderMobile ? `(${senderMobile})` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Audit confirmation summary note */}
+                <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                  <CheckCircle2 size={15} className="text-amber-700 shrink-0 mt-0.5" />
+                  <span>
+                    By confirming, these <strong>{selectedCount} returned winning records</strong> will immediately transition to <strong>Collections & Commissions</strong> and be submitted for superadmin review.
+                  </span>
+                </div>
+
+              </div>
+
+              {/* Confirmation Footer Buttons */}
+              <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-700 hover:bg-slate-200/70 transition-colors cursor-pointer text-xs"
+                >
+                  ← Back to Edit Details
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinalSubmit}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-black transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer text-xs"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      <span>Submitting Proof...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={15} />
+                      <span>Yes, Confirm & Submit Proof</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* 5. ENLARGED PROOF IMAGE MODAL */}
+        {isImageZoomed && previewImage && (
+          <div 
+            className="fixed inset-0 z-70 bg-black/90 flex items-center justify-center p-4 animate-in fade-in cursor-zoom-out"
+            onClick={() => setIsImageZoomed(false)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+              <img 
+                src={previewImage} 
+                alt="Enlarged Proof" 
+                className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/20"
+              />
+              <button
+                type="button"
+                onClick={() => setIsImageZoomed(false)}
+                className="mt-3 bg-white/20 hover:bg-white/30 text-white font-bold text-xs px-4 py-1.5 rounded-full backdrop-blur-sm transition-colors cursor-pointer"
+              >
+                Close Zoom View
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

@@ -386,7 +386,7 @@ export default function App() {
       // If user is a restricted SSR, filter returned winnings by their assigned sub-office
       const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
       if (isRestrictedBranchSSR) {
-        query = query.eq('sub_office', currentUser.sub_office);
+        query = query.ilike('sub_office', currentUser.sub_office);
       }
 
       const { data: sData, error } = await query.order('created_at', { ascending: false });
@@ -405,7 +405,7 @@ export default function App() {
         
       const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
       if (isRestrictedBranchSSR) {
-        query = query.eq('sub_office', currentUser.sub_office);
+        query = query.ilike('sub_office', currentUser.sub_office);
       }
 
       const { data: rData, error } = await query.order('created_at', { ascending: false });

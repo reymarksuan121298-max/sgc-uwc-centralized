@@ -1,16 +1,18 @@
 import { useState, useMemo } from 'react';
-import { 
-  Coins, Download, Search, Building2, UserCheck, CheckCircle2, 
-  Landmark, Clock, ShieldCheck, Receipt, PieChart, FileCheck, Check, Ban, X, Loader2
+import {
+  Coins, Download, Search, Building2, UserCheck, CheckCircle2,
+  Landmark, Clock, ShieldCheck, Receipt, PieChart, FileCheck, Check, Ban, X, Loader2,
+  Image as ImageIcon, Copy
 } from 'lucide-react';
+import { toPng } from 'html-to-image';
 import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import { winningsService } from '../../services/winningsService';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
-import { generateRemittanceSerial } from '../../utils/formatters';
+import { generateRemittanceSerial, getTicketTransId } from '../../utils/formatters';
 
-export default function TotalCollections({ 
-  returnedData = [], 
+export default function TotalCollections({
+  returnedData = [],
   currentUser,
   formatDrawTime,
   onDataUpdated
@@ -24,6 +26,8 @@ export default function TotalCollections({
   const [approvingItem, setApprovingItem] = useState(null);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [capturingSrn, setCapturingSrn] = useState(null);
+  const [copiedSrn, setCopiedSrn] = useState(null);
 
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
@@ -31,6 +35,24 @@ export default function TotalCollections({
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  const formatTimestamp = (timestampStr) => {
+    if (!timestampStr) return 'N/A';
+    try {
+      const d = new Date(timestampStr);
+      if (isNaN(d.getTime())) return timestampStr;
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return timestampStr;
+    }
   };
 
   const handleApproveDeletion = (item) => {
@@ -174,27 +196,136 @@ export default function TotalCollections({
     };
   }, [filteredList]);
 
+  // Grouped transactions by Serial Number (SRN) with group totals
+  const groupedBySrn = useMemo(() => {
+    const map = {};
+    filteredList.forEach(item => {
+      const rawTransId = String(item.batch_serial_no || item.transactionId || '').trim();
+      const srn = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned) || 'UNASSIGNED-SRN';
+      if (!map[srn]) {
+        map[srn] = {
+          srn,
+          subOffice: item.sub_office || 'Mandaue Central',
+          items: [],
+          totalWin: 0,
+          totalReturnOut: 0,
+          totalAdmin: 0,
+          totalAgent: 0,
+          totalStaff: 0,
+          totalCollector: 0
+        };
+      }
+      const win = parseFloat(item.winAmount || 0);
+      const out = parseFloat(item.return_amount_out) || win;
+      const adm = parseFloat(item.admin_commission) || (win * 0.50);
+      const agt = parseFloat(item.agent_commission) || (win * 0.30);
+      const stf = parseFloat(item.staff_commission) || (win * 0.10);
+      const col = parseFloat(item.collector_commission) || (win * 0.10);
+
+      map[srn].totalWin += win;
+      map[srn].totalReturnOut += out;
+      map[srn].totalAdmin += adm;
+      map[srn].totalAgent += agt;
+      map[srn].totalStaff += stf;
+      map[srn].totalCollector += col;
+      map[srn].items.push(item);
+    });
+    return map;
+  }, [filteredList]);
+
+  const handleCopySrnImage = async (srnKey) => {
+    const safeId = `srn-card-${srnKey.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const captureNode = document.getElementById(safeId);
+    if (!captureNode) {
+      alert(`Could not find table element for serial number "${srnKey}".`);
+      return;
+    }
+
+    setCapturingSrn(srnKey);
+    try {
+      // Find all overflow containers inside the capture node
+      const overflowEls = captureNode.querySelectorAll('.overflow-x-auto, .overflow-y-auto, [class*="overflow"]');
+      const savedStyles = [];
+      overflowEls.forEach((el) => {
+        savedStyles.push({ el, overflow: el.style.overflow, overflowX: el.style.overflowX });
+        el.style.overflow = 'visible';
+        el.style.overflowX = 'visible';
+      });
+
+      const dataUrl = await toPng(captureNode, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        style: {
+          overflow: 'visible',
+          maxWidth: 'none',
+          width: 'auto'
+        },
+        filter: (node) => {
+          if (node.classList && (node.classList.contains('hide-in-screenshot') || node.classList.contains('no-screenshot'))) {
+            return false;
+          }
+          if (node.getAttribute && node.getAttribute('data-screenshot-exclude') === 'true') {
+            return false;
+          }
+          return true;
+        }
+      });
+
+      // Restore overflow styles
+      savedStyles.forEach(({ el, overflow, overflowX }) => {
+        el.style.overflow = overflow;
+        el.style.overflowX = overflowX;
+      });
+
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        const item = new ClipboardItem({ [blob.type]: blob });
+        await navigator.clipboard.write([item]);
+        setCopiedSrn(srnKey);
+        showToast(`Table for SRN "${srnKey}" copied as image to clipboard!`);
+        setTimeout(() => setCopiedSrn(null), 3000);
+      } else {
+        const downloadLink = document.createElement('a');
+        downloadLink.href = dataUrl;
+        downloadLink.download = `Collections_${srnKey}_${new Date().toISOString().slice(0, 10)}.png`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        showToast(`Image downloaded for SRN "${srnKey}"!`);
+      }
+    } catch (err) {
+      console.error('Failed to copy image:', err);
+      alert('Error capturing screenshot: ' + (err.message || err));
+    } finally {
+      setCapturingSrn(null);
+    }
+  };
+
   const exportCollectionsCSV = () => {
     if (!filteredList.length) return alert('No collection records to export.');
     const headers = [
-      'SRN / Trans ID', 'Branch / Sub-Office', 'Supervisor / Account', 'Teller / Outlet', 
-      'Draw Schedule', 'Bet Combination', 'Win Amount (₱)', 'Return Amount Out (₱)', 
-      'Admin 50% Share (₱)', 'Agent/Teller 30% Share (₱)', 'Staff 10% Share (₱)', 'Collector 10% Share (₱)', 
+      'SRN', 'Transaction ID', 'Branch / Sub-Office', 'Supervisor / Account', 'Teller / Outlet',
+      'Draw Schedule', 'Bet Combination', 'Win Amount (₱)',
+      'Admin 50% Share (₱)', 'Agent/Teller 30% Share (₱)', 'Staff 10% Share (₱)', 'Collector 10% Share (₱)',
       'Remittance Status', 'Date Returned'
     ];
 
     const rows = filteredList.map(item => {
       const rawTransId = String(item.batch_serial_no || item.transactionId || 'N/A').trim();
-      const transId = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
+      const srn = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
+      const transId = getTicketTransId(item, rawTransId);
 
       const win = parseFloat(item.winAmount || 0);
-      const out = parseFloat(item.return_amount_out) || win;
       const adm = (parseFloat(item.admin_commission) || (win * 0.50)).toFixed(2);
       const agt = (parseFloat(item.agent_commission) || (win * 0.30)).toFixed(2);
       const stf = (parseFloat(item.staff_commission) || (win * 0.10)).toFixed(2);
       const col = (parseFloat(item.collector_commission) || (win * 0.10)).toFixed(2);
 
       return [
+        `"${srn}"`,
         `"${transId}"`,
         `"${item.sub_office || 'Mandaue Central'}"`,
         `"${item.username || 'N/A'}"`,
@@ -202,7 +333,6 @@ export default function TotalCollections({
         `"${formatDrawTime ? formatDrawTime(item.drawTime || item.drawDate) : item.drawTime || 'N/A'}"`,
         `"${item.betNo || 'N/A'} (${item.betCode || 'RS3'})"`,
         win.toFixed(2),
-        out.toFixed(2),
         adm,
         agt,
         stf,
@@ -225,7 +355,7 @@ export default function TotalCollections({
   if (!scopedData.length) {
     return (
       <div className="w-full space-y-5">
-        
+
         {/* Top Header Card */}
         <div className="bg-gradient-to-r from-[#001D47] via-[#002B66] to-[#04337a] text-white p-5 sm:p-6 rounded-2xl shadow-xl border border-blue-900/70 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -272,72 +402,56 @@ export default function TotalCollections({
 
   return (
     <div className="w-full space-y-5">
-      
+
       {/* View Mode Navigation Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
         <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 rounded-xl w-fit border border-slate-300/60 shadow-xs">
-          
+
           <button
             onClick={() => setActiveSubTab('overview')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              activeSubTab === 'overview'
-                ? 'bg-[#002B66] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-            }`}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${activeSubTab === 'overview'
+              ? 'bg-[#002B66] text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
           >
             <PieChart size={14} />
             <span>Commission Allocations</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              activeSubTab === 'overview' ? 'bg-[#FFD700] text-[#002B66] font-black' : 'bg-slate-300/80 text-slate-700 font-bold'
-            }`}>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeSubTab === 'overview' ? 'bg-[#FFD700] text-[#002B66] font-black' : 'bg-slate-300/80 text-slate-700 font-bold'
+              }`}>
               4-Tier
             </span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('matrix')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              activeSubTab === 'matrix'
-                ? 'bg-[#002B66] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-            }`}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${activeSubTab === 'matrix'
+              ? 'bg-[#002B66] text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
           >
             <Building2 size={14} />
             <span>Sub-Office Matrix</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              activeSubTab === 'matrix' ? 'bg-[#FFD700] text-[#002B66] font-black' : 'bg-slate-300/80 text-slate-700 font-bold'
-            }`}>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeSubTab === 'matrix' ? 'bg-[#FFD700] text-[#002B66] font-black' : 'bg-slate-300/80 text-slate-700 font-bold'
+              }`}>
               {totals.branches.length}
             </span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('detailed')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              activeSubTab === 'detailed'
-                ? 'bg-[#002B66] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-            }`}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${activeSubTab === 'detailed'
+              ? 'bg-[#002B66] text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
           >
             <Receipt size={14} />
             <span>Detailed Ticket Ledger</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              activeSubTab === 'detailed' ? 'bg-[#FFD700] text-[#002B66] font-black' : 'bg-slate-300/80 text-slate-700 font-bold'
-            }`}>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeSubTab === 'detailed' ? 'bg-[#FFD700] text-[#002B66] font-black' : 'bg-slate-300/80 text-slate-700 font-bold'
+              }`}>
               {filteredList.length}
             </span>
           </button>
         </div>
-
-        {activeSubTab === 'detailed' && (
-          <button
-            onClick={exportCollectionsCSV}
-            className="flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer shadow-xs"
-          >
-            <Download size={13} />
-            <span>Download CSV</span>
-          </button>
-        )}
       </div>
 
       {/* TAB 1: COMMISSION ALLOCATIONS OVERVIEW */}
@@ -375,7 +489,7 @@ export default function TotalCollections({
 
           {/* Main KPI Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5 w-full min-w-0">
-            
+
             {/* Gross Collection Volume */}
             <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between min-w-0">
               <div className="min-w-0 pr-2">
@@ -455,7 +569,7 @@ export default function TotalCollections({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5 w-full min-w-0">
-              
+
               <div className="bg-slate-50/80 border border-slate-200/80 p-3.5 sm:p-4 rounded-xl min-w-0">
                 <div className="flex items-center justify-between text-slate-700">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 truncate">Admin Share</span>
@@ -526,7 +640,6 @@ export default function TotalCollections({
                   <th className="px-4 py-3 border-r border-blue-900">Branch / Sub-Office</th>
                   <th className="px-4 py-3 border-r border-blue-900 text-center">Tickets</th>
                   <th className="px-4 py-3 border-r border-blue-900 text-right">Total Win</th>
-                  <th className="px-4 py-3 border-r border-blue-900 text-right">Return Out (₱)</th>
                   <th className="px-4 py-3 border-r border-blue-900 text-right">Admin 50%</th>
                   <th className="px-4 py-3 border-r border-blue-900 text-right">Agent 30%</th>
                   <th className="px-4 py-3 border-r border-blue-900 text-right">Staff 10%</th>
@@ -536,14 +649,14 @@ export default function TotalCollections({
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
                 {!totals.branches.length ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-500 font-bold uppercase text-xs">
+                    <td colSpan={7} className="p-8 text-center text-slate-500 font-bold uppercase text-xs">
                       No branch collections recorded.
                     </td>
                   </tr>
                 ) : (
                   totals.branches.map((b, i) => (
-                    <tr 
-                      key={i} 
+                    <tr
+                      key={i}
                       className="hover:bg-slate-50 transition-colors"
                     >
                       <td className="px-4 py-3 border-r border-slate-100 font-bold text-slate-900">
@@ -554,9 +667,6 @@ export default function TotalCollections({
                       </td>
                       <td className="px-4 py-3 border-r border-slate-100 font-mono font-bold text-slate-800 text-right">
                         ₱{b.win.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-4 py-3 border-r border-slate-100 font-mono font-extrabold text-amber-700 text-right">
-                        ₱{b.out.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="px-4 py-3 border-r border-slate-100 font-mono font-extrabold text-[#002B66] text-right">
                         ₱{b.admin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -581,12 +691,12 @@ export default function TotalCollections({
 
       {/* TAB 3: DETAILED COLLECTIONS TRANSACTION TABLE */}
       {activeSubTab === 'detailed' && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-          
+        <div className="space-y-4">
+
           {/* Controls */}
-          <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-              
+
               {/* Search */}
               <div className="relative flex-1 min-w-[180px]">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -611,91 +721,165 @@ export default function TotalCollections({
                 ))}
               </select>
             </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={exportCollectionsCSV}
+                className="flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer shadow-xs"
+              >
+                <Download size={13} />
+                <span>Download CSV</span>
+              </button>
+            </div>
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1100px]">
-              <thead>
-                <tr className="bg-[#002B66] text-white text-[11px] font-black uppercase tracking-wider">
-                  <th className="px-3.5 py-3 border-r border-blue-900">SRN</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900">Branch</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900">Teller / Outlet</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-center">Bet & Code</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Win Amount</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Return Out</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Admin (50%)</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Agent (30%)</th>
-                  <th className="px-3.5 py-3 border-r border-blue-900 text-right">Staff (10%)</th>
-                  <th className="px-3.5 py-3 text-right">Collector (10%)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
-                {!filteredList.length ? (
-                  <tr>
-                    <td colSpan={10} className="p-8 text-center text-slate-500 font-bold uppercase text-xs">
-                      No matching remitted collection records found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredList.map((item) => {
-                    const rawTransId = String(item.batch_serial_no || item.transactionId || '').trim();
-                    const transId = generateRemittanceSerial(item.sub_office || 'Mandaue Central', rawTransId, item.created_at || item.date_returned);
+          {/* Grouped by Serial Number (SRN) Tables with Totals & Copy Image */}
+          {!Object.keys(groupedBySrn).length ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 font-bold uppercase text-xs shadow-xs">
+              No matching remitted collection records found.
+            </div>
+          ) : (
+            Object.entries(groupedBySrn).map(([srnKey, group]) => {
+              const safeCardId = `srn-card-${srnKey.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+              const isCapturingThis = capturingSrn === srnKey;
+              const isCopiedThis = copiedSrn === srnKey;
 
-                    const win = parseFloat(item.winAmount || 0);
-                    const out = parseFloat(item.return_amount_out) || win;
-                    const adm = parseFloat(item.admin_commission) || (win * 0.50);
-                    const agt = parseFloat(item.agent_commission) || (win * 0.30);
-                    const stf = parseFloat(item.staff_commission) || (win * 0.10);
-                    const col = parseFloat(item.collector_commission) || (win * 0.10);
+              return (
+                <div
+                  key={srnKey}
+                  id={safeCardId}
+                  className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden"
+                >
+                  {/* SRN Header with Branch, Count, Total Amount, and Copy Image Button */}
+                  <div className="bg-slate-100/90 border-b border-slate-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <div className="p-1.5 bg-[#002B66] text-[#FFD700] rounded-lg">
+                        <Receipt size={15} />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">SRN:</span>
+                        <span className="font-mono font-black text-xs sm:text-sm text-[#002B66] tracking-tight">
+                          {srnKey}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded-md">
+                        {group.subOffice}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold bg-blue-100 text-[#002B66] px-2 py-0.5 rounded">
+                        {group.items.length} {group.items.length === 1 ? 'ticket' : 'tickets'}
+                      </span>
+                    </div>
 
-                    return (
-                      <tr key={item.id || transId} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-black text-[#002B66]">
-                          {transId}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-bold text-slate-900">
-                          {item.sub_office || 'Mandaue Central'}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-medium text-slate-800 uppercase">
-                          {item.fullName || item.outlet || 'N/A'}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 text-center font-mono font-bold text-slate-900">
-                          {item.betNo || 'N/A'} <span className="text-slate-500 font-normal">({item.betCode || 'RS3'})</span>
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-black text-slate-800 text-right">
-                          ₱{win.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-amber-700 text-right">
-                          ₱{out.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-[#002B66] text-right">
-                          ₱{adm.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-emerald-700 text-right">
-                          ₱{agt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-amber-700 text-right">
-                          ₱{stf.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-3.5 py-2.5 font-mono font-extrabold text-purple-700 text-right">
-                          ₱{col.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      {/* Total Amount Badge */}
+                      <div className="flex items-center gap-1.5 bg-white border border-slate-200/80 px-2.5 py-1 rounded-lg shadow-2xs font-mono text-xs">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Win:</span>
+                        <span className="font-black text-slate-900">
+                          ₱{group.totalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
 
-          {/* Footer */}
-          <div className="bg-slate-50 p-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs font-mono font-bold text-slate-700 gap-2">
-            <span>Showing {filteredList.length} records in current filter</span>
-            <div className="flex items-center gap-4">
+                      {/* Copy Image Button */}
+                      <button
+                        type="button"
+                        data-screenshot-exclude="true"
+                        onClick={() => handleCopySrnImage(srnKey)}
+                        disabled={isCapturingThis}
+                        className="hide-in-screenshot flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-xs font-black px-3 py-1.5 rounded-lg shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                        title={`Copy SRN ${srnKey} table with total amount as image`}
+                      >
+                        {isCapturingThis ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>Capturing...</span>
+                          </>
+                        ) : isCopiedThis ? (
+                          <>
+                            <Check size={13} className="text-emerald-400" />
+                            <span>Image Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon size={13} />
+                            <span>Copy Image</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[1100px]">
+                      <thead>
+                        <tr className="bg-[#002B66] text-white text-[11px] font-black uppercase tracking-wider">
+                          <th className="px-3.5 py-3 border-r border-blue-900">Teller</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900">Trans. ID</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900 text-center">Bet & Code</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900">Date Deposited</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900 text-right">Win Amount</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900 text-right">Admin (50%)</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900 text-right">Agent (30%)</th>
+                          <th className="px-3.5 py-3 border-r border-blue-900 text-right">Staff (10%)</th>
+                          <th className="px-3.5 py-3 text-right">Collector (10%)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
+                        {group.items.map((item, idx) => {
+                          const transId = getTicketTransId(item, item.transactionId || 'N/A');
+                          const win = parseFloat(item.winAmount || 0);
+                          const adm = parseFloat(item.admin_commission) || (win * 0.50);
+                          const agt = parseFloat(item.agent_commission) || (win * 0.30);
+                          const stf = parseFloat(item.staff_commission) || (win * 0.10);
+                          const col = parseFloat(item.collector_commission) || (win * 0.10);
+
+                          return (
+                            <tr key={item.id || `${srnKey}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-medium text-slate-800 uppercase">
+                                {item.fullName || item.outlet || 'N/A'}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-bold text-slate-800">
+                                {transId}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 text-center font-mono font-bold text-slate-900">
+                                {item.betNo || 'N/A'} <span className="text-slate-500 font-normal">({item.betCode || 'RS3'})</span>
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono text-slate-600 text-xs whitespace-nowrap">
+                                {formatTimestamp(item.date_returned || item.updated_at || item.created_at)}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-black text-slate-800 text-right">
+                                ₱{win.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-[#002B66] text-right">
+                                ₱{adm.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-emerald-700 text-right">
+                                ₱{agt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3.5 py-2.5 border-r border-slate-100 font-mono font-extrabold text-amber-700 text-right">
+                                ₱{stf.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3.5 py-2.5 font-mono font-extrabold text-purple-700 text-right">
+                                ₱{col.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {/* Overall Ledger Global Summary Bar */}
+          <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between text-xs font-mono font-bold text-slate-700 gap-3 shadow-2xs">
+            <span>Showing {filteredList.length} records across {Object.keys(groupedBySrn).length} Serial Numbers</span>
+            <div className="flex items-center gap-4 flex-wrap">
               <span>Total Win: ₱{totals.totalWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-              <span className="text-amber-700 font-extrabold">Return Out: ₱{totals.totalReturnOut.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
               <span className="text-[#002B66] font-black">Admin 50%: ₱{totals.totalAdminComm.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="text-emerald-700 font-extrabold">Agent 30%: ₱{totals.totalAgentComm.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
             </div>
           </div>
         </div>
