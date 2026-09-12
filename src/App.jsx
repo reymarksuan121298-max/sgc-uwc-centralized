@@ -550,10 +550,18 @@ export default function App() {
           });
         }
 
-        return arr.map(item => ({
+        let mappedArr = arr.map(item => ({
           ...item,
           sub_office: item.sub_office || item.location || fallbackSubOffice
         }));
+
+        if (cfg.requestedSubOffice && cfg.requestedSubOffice !== 'All') {
+          mappedArr = mappedArr.filter(item => 
+            String(item.sub_office || '').toLowerCase() === String(cfg.requestedSubOffice).toLowerCase()
+          );
+        }
+
+        return mappedArr;
       });
 
       const results = await Promise.allSettled(fetchPromises);
