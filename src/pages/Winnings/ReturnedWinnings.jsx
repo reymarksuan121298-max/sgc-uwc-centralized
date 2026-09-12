@@ -500,6 +500,10 @@ export default function ReturnedWinnings({
                                 <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-emerald-300">
                                   <CheckCircle size={10} /> ALREADY CLAIMED
                                 </span>
+                              ) : item.teller_status ? (
+                                <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-rose-300 uppercase">
+                                  <AlertTriangle size={10} /> {item.teller_status}
+                                </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-blue-300">
                                   <Clock size={10} /> UNREMITTED
@@ -697,6 +701,10 @@ export default function ReturnedWinnings({
                             ) : isClaimedInSourceSystem ? (
                               <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300">
                                 <CheckCircle size={9} /> CLAIMED
+                              </span>
+                            ) : item.teller_status ? (
+                              <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-rose-300 uppercase">
+                                <AlertTriangle size={9} /> {item.teller_status}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-blue-300">
