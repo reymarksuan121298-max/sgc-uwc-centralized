@@ -42,6 +42,8 @@ CREATE TABLE public.app_users (
     sub_office TEXT DEFAULT 'All' REFERENCES public.sub_offices(name) ON UPDATE CASCADE ON DELETE SET NULL,
     branch_code TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    account_status TEXT DEFAULT 'APPROVED', -- 'APPROVED', 'AWOL', 'PULLOUTS', 'TERMINATED', 'DISABLED'
+    transcode_visibility BOOLEAN DEFAULT FALSE,
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())

@@ -82,6 +82,14 @@ export default function ReturnedWinnings({
     return (filteredData || []).filter(item => (!item.receipt_status || item.receipt_status === 'NO_RECEIPT') && !item.isUnderSettlement);
   }, [filteredData]);
 
+  // Inactive Teller items (Pull-out, AWOL, Terminated)
+  const inactiveTellerItems = useMemo(() => {
+    return (filteredData || []).filter(item => {
+      const ts = String(item.teller_status || '').toUpperCase();
+      return ts === 'PULL-OUT' || ts === 'AWOL' || ts === 'TERMINATED' || ts === 'PULLOUTS';
+    });
+  }, [filteredData]);
+
   // Filtered display items based on activeFilterTab & searchQuery
   const displayItems = useMemo(() => {
     let list = filteredData || [];
@@ -90,6 +98,8 @@ export default function ReturnedWinnings({
       list = unremittedDepositItems;
     } else if (activeFilterTab === 'REQUESTS') {
       list = pendingDeletionRequests;
+    } else if (activeFilterTab === 'INACTIVE') {
+      list = inactiveTellerItems;
     }
 
     if (searchQuery.trim()) {
@@ -302,6 +312,17 @@ export default function ReturnedWinnings({
           >
             <AlertTriangle size={14} className={pendingDeletionRequests.length > 0 ? 'text-amber-700' : ''} />
             <span>{canApprove ? 'Approve Requests' : 'Deletion Requests'} ({pendingDeletionRequests.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilterTab('INACTIVE')}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'INACTIVE'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              }`}
+          >
+            Pull-out/AWOL/Terminated ({inactiveTellerItems.length})
           </button>
         </div>
 

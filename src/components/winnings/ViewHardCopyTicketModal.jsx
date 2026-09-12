@@ -18,6 +18,7 @@ export default function ViewHardCopyTicketModal({
 }) {
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [activeTab, setActiveTab] = useState('DETAILS');
 
   if (!isOpen || !ticket) return null;
 
@@ -207,9 +208,32 @@ export default function ViewHardCopyTicketModal({
           </div>
 
           {/* Metadata & Audit Verification Panel (5 cols on large screens) */}
-          <div className="lg:col-span-5 bg-white p-5 flex flex-col justify-between space-y-4 overflow-y-auto text-xs">
+          <div className="lg:col-span-5 bg-white flex flex-col min-h-0 overflow-hidden text-xs">
             
-            <div className="space-y-4">
+            {/* Tabs Header */}
+            <div className="flex items-center border-b border-slate-200 shrink-0">
+              <button
+                onClick={() => setActiveTab('DETAILS')}
+                className={`flex-1 py-3 text-center font-black uppercase text-[10px] sm:text-[11px] transition-colors cursor-pointer ${
+                  activeTab === 'DETAILS' ? 'border-b-2 border-[#002B66] text-[#002B66] bg-blue-50' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Claim Details
+              </button>
+              <button
+                onClick={() => setActiveTab('TIMESTAMP')}
+                className={`flex-1 py-3 text-center font-black uppercase text-[10px] sm:text-[11px] transition-colors cursor-pointer ${
+                  activeTab === 'TIMESTAMP' ? 'border-b-2 border-[#002B66] text-[#002B66] bg-blue-50' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Background Timestamp
+              </button>
+            </div>
+
+            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              
+              {activeTab === 'DETAILS' ? (
+                <div className="space-y-4">
               {/* Deletion Request Status Banner */}
               <div className={`p-3.5 rounded-xl border flex items-start gap-2.5 ${
                 isPending 
@@ -285,9 +309,59 @@ export default function ViewHardCopyTicketModal({
                 </div>
               </div>
             </div>
+            ) : (
+              <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <h4 className="font-extrabold uppercase text-slate-700 text-[11px] border-b border-slate-200 pb-2 mb-3 flex items-center gap-2">
+                      <Calendar size={14} className="text-[#002B66]" /> System Timestamps
+                    </h4>
+                    <div className="space-y-3 font-mono text-[10px]">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Ticket Date / Time:</span>
+                        <span className="font-bold text-slate-800">{ticket.drawDate || 'N/A'} {ticket.drawTime || ''}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Claim Date API:</span>
+                        <span className="font-bold text-slate-800">{ticket.claimDate || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Row Created At (DB):</span>
+                        <span className="font-bold text-emerald-700">
+                          {ticket.created_at ? new Date(ticket.created_at).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Row Updated At (DB):</span>
+                        <span className="font-bold text-[#002B66]">
+                          {ticket.updated_at ? new Date(ticket.updated_at).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                      {ticket.deletion_request_at && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500">Deletion Request Set:</span>
+                          <span className="font-bold text-amber-700">
+                            {new Date(ticket.deletion_request_at).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-100 rounded-xl border border-slate-300">
+                    <h4 className="font-black uppercase text-slate-700 text-[10px] pb-1.5 flex items-center gap-2">
+                      <ShieldAlert size={12} className="text-slate-500" /> Proof of Timestamp Authenticity
+                    </h4>
+                    <p className="text-[10px] text-slate-600 leading-relaxed mt-1">
+                      This background timestamp verifies when the claim was logged and modified in our centralized database prior to this audit request. 
+                      Cross-reference the <strong>Row Created At</strong> with the physical ticket's print date.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Action Buttons for Approver / Viewer */}
-            <div className="pt-3 border-t border-slate-200 space-y-2">
+            <div className="p-5 pt-3 border-t border-slate-200 bg-white space-y-2 mt-auto">
               {isPending && canApprove ? (
                 <div className="flex items-center gap-2">
                   <button

@@ -30,6 +30,8 @@ export default function UserManagement({ currentUser }) {
   const [role, setRole] = useState('Unclaimed Specialist');
   const [subOffice, setSubOffice] = useState('All');
   const [isActive, setIsActive] = useState(true);
+  const [accountStatus, setAccountStatus] = useState('APPROVED');
+  const [transcodeVisibility, setTranscodeVisibility] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
@@ -113,6 +115,8 @@ export default function UserManagement({ currentUser }) {
     setRole('Unclaimed Specialist');
     setSubOffice('All');
     setIsActive(true);
+    setAccountStatus('APPROVED');
+    setTranscodeVisibility(false);
     setErrorMessage('');
     setIsModalOpen(true);
   };
@@ -125,6 +129,8 @@ export default function UserManagement({ currentUser }) {
     setRole(formatRoleName(user.role));
     setSubOffice(user.sub_office || 'All');
     setIsActive(user.is_active ?? true);
+    setAccountStatus(user.account_status || (user.is_active ? 'APPROVED' : 'DISABLED'));
+    setTranscodeVisibility(user.transcode_visibility ?? false);
     setErrorMessage('');
     setIsModalOpen(true);
   };
@@ -153,7 +159,9 @@ export default function UserManagement({ currentUser }) {
           full_name: fullName.trim() || null,
           role,
           sub_office: finalSubOffice,
-          is_active: isActive,
+          is_active: accountStatus === 'APPROVED',
+          account_status: accountStatus,
+          transcode_visibility: transcodeVisibility,
           updated_at: new Date().toISOString()
         };
         if (password.trim()) {
@@ -175,7 +183,7 @@ export default function UserManagement({ currentUser }) {
             target_type: 'USER',
             target_id: username.trim(),
             sub_office: finalSubOffice || 'All Branches',
-            details: { role, is_active: isActive }
+            details: { role, is_active: accountStatus === 'APPROVED', account_status: accountStatus, transcode_visibility: transcodeVisibility }
           }]);
         } catch {}
 
@@ -194,7 +202,9 @@ export default function UserManagement({ currentUser }) {
             full_name: fullName.trim() || null,
             role,
             sub_office: finalSubOffice,
-            is_active: isActive
+            is_active: accountStatus === 'APPROVED',
+            account_status: accountStatus,
+            transcode_visibility: transcodeVisibility
           }]);
 
         if (error) throw error;
@@ -225,10 +235,11 @@ export default function UserManagement({ currentUser }) {
 
   const toggleUserStatus = async (user) => {
     const newStatus = !user.is_active;
+    const newAcctStatus = newStatus ? 'APPROVED' : 'DISABLED';
     try {
       await supabase
         .from('app_users')
-        .update({ is_active: newStatus })
+        .update({ is_active: newStatus, account_status: newAcctStatus })
         .eq('username', user.username);
 
       showToast(`User ${user.username} ${newStatus ? 'activated' : 'deactivated'}.`);
@@ -420,7 +431,7 @@ export default function UserManagement({ currentUser }) {
                         title="Click to toggle status"
                       >
                         {u.is_active ? <Unlock size={11} /> : <Lock size={11} />}
-                        <span>{u.is_active ? 'Active' : 'Disabled'}</span>
+                        <span>{u.account_status || (u.is_active ? 'Active' : 'Disabled')}</span>
                       </button>
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 text-slate-500 font-mono text-[11px]">
@@ -549,18 +560,39 @@ export default function UserManagement({ currentUser }) {
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-between border-t border-slate-200">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isActive}
-                    onChange={(e) => setIsActive(e.target.checked)}
-                    className="rounded text-[#002B66] focus:ring-0"
-                  />
-                  <span className="font-bold text-xs text-slate-700">Account Active</span>
-                </label>
+              <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-200 gap-3">
+                <div className="flex flex-col gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider">
+                      Account Status:
+                    </label>
+                    <select
+                      value={accountStatus}
+                      onChange={(e) => {
+                        setAccountStatus(e.target.value);
+                        setIsActive(e.target.value === 'APPROVED');
+                      }}
+                      className="bg-slate-50 border border-slate-300 px-2 py-1 rounded text-[10px] font-bold text-slate-800 focus:border-[#002B66] outline-none"
+                    >
+                      <option value="APPROVED">APPROVED (Active)</option>
+                      <option value="DISABLED">DISABLED (Inactive)</option>
+                      <option value="AWOL">AWOL (Inactive)</option>
+                      <option value="PULLOUTS">PULLOUTS (Inactive)</option>
+                      <option value="TERMINATED">TERMINATED (Inactive)</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={transcodeVisibility}
+                      onChange={(e) => setTranscodeVisibility(e.target.checked)}
+                      className="rounded text-[#002B66] focus:ring-0"
+                    />
+                    <span className="font-bold text-[10px] uppercase text-slate-700">Enable Transcode Visibility</span>
+                  </label>
+                </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}

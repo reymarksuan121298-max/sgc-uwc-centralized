@@ -21,10 +21,12 @@ export default function ConfirmReturnModal({
 }) {
   const [internalCopied, setInternalCopied] = React.useState(false);
   const [showConfirmPrompt, setShowConfirmPrompt] = React.useState(false);
+  const [tellerStatus, setTellerStatus] = React.useState('ACTIVE');
 
   React.useEffect(() => {
     if (isOpen) {
       setShowConfirmPrompt(false);
+      setTellerStatus('ACTIVE');
     }
   }, [isOpen]);
 
@@ -250,6 +252,19 @@ export default function ConfirmReturnModal({
                       ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
+                  <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
+                    <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase">Teller Status:</span>
+                    <select
+                      value={tellerStatus}
+                      onChange={(e) => setTellerStatus(e.target.value)}
+                      className="bg-white border border-slate-300 text-[#002B66] text-[10px] font-bold rounded p-1 outline-none focus:border-[#002B66]"
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="PULL-OUT">PULL-OUT</option>
+                      <option value="AWOL">AWOL</option>
+                      <option value="TERMINATED">TERMINATED</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="flex gap-2 justify-end pt-1">
@@ -265,7 +280,7 @@ export default function ConfirmReturnModal({
                     type="button"
                     onClick={() => {
                       setShowConfirmPrompt(false);
-                      onConfirm();
+                      onConfirm(tellerStatus);
                     }}
                     disabled={isSaving}
                     className="bg-[#002B66] hover:bg-blue-900 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md flex-1 cursor-pointer transition-all active:scale-95"

@@ -42,7 +42,8 @@ export default function UnclaimedRegistry({
   formatDrawTime,
   onOpenQrModal,
   canCopyTransaction = true,
-  canOpenQrModal = true
+  canOpenQrModal = true,
+  hideTransIdColumn = false
 }) {
   const [incidentReportTicket, setIncidentReportTicket] = useState(null);
   const [localSearch, setLocalSearch] = useState(searchQuery || '');
@@ -272,7 +273,7 @@ export default function UnclaimedRegistry({
                         <thead>
                           <tr className="bg-[#002B66] text-white text-[10px] font-black uppercase tracking-wider">
                             <th className="px-3 py-2.5 border-r border-blue-950 w-[18%]">Teller</th>
-                            <th className="px-3 py-2.5 border-r border-blue-950 w-[20%]">Trans. ID</th>
+                            {!hideTransIdColumn && <th className="px-3 py-2.5 border-r border-blue-950 w-[20%]">Trans. ID</th>}
                             <th className="px-3 py-2.5 border-r border-blue-950 w-[18%]">Draw</th>
                             <th className="px-3 py-2.5 border-r border-blue-950 text-center w-[12%]">Bet No.</th>
                             <th className="px-3 py-2.5 border-r border-blue-950 text-center w-[10%]">Code</th>
@@ -287,37 +288,41 @@ export default function UnclaimedRegistry({
                             return (
                               <tr
                                 key={index}
-                                className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 cursor-pointer group border-b border-slate-100 ${meta.showWarningBadge ? 'bg-rose-50/30 hover:bg-rose-50/80 border-l-4 border-l-rose-500' : ''
+                                className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 group border-b border-slate-100 ${meta.showWarningBadge ? 'bg-rose-50/30 hover:bg-rose-50/80 border-l-4 border-l-rose-500' : ''
                                   }`}
-                                onClick={() => onRowClick && onRowClick(item, index)}
-                                title="Click row to process return"
                               >
                                 <td className="px-3 py-3 border-r border-slate-200 font-bold text-slate-800 uppercase text-xs whitespace-nowrap">{meta.displayAccountName}</td>
-                                <td className="px-3 py-3 border-r border-slate-200 font-mono text-[#002B66] font-extrabold text-xs group-hover:underline whitespace-nowrap">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                      <span>{meta.transId}</span>
-                                      {meta.showWarningBadge && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setIncidentReportTicket({
-                                              ...item,
-                                              computedTransId: meta.transId
-                                            });
-                                          }}
-                                          className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
-                                          title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
-                                          aria-label="Issue incident report"
-                                        >
-                                          <AlertTriangle size={12} className="shrink-0" />
-                                        </button>
-                                      )}
+                                {!hideTransIdColumn && (
+                                  <td 
+                                    className="px-3 py-3 border-r border-slate-200 font-mono text-[#002B66] font-extrabold text-xs group-hover:underline whitespace-nowrap cursor-pointer hover:bg-blue-50/50"
+                                    onClick={() => onRowClick && onRowClick(item, index)}
+                                    title="Click to process return"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span>{meta.transId}</span>
+                                        {meta.showWarningBadge && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setIncidentReportTicket({
+                                                ...item,
+                                                computedTransId: meta.transId
+                                              });
+                                            }}
+                                            className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
+                                            title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
+                                            aria-label="Issue incident report"
+                                          >
+                                            <AlertTriangle size={12} className="shrink-0" />
+                                          </button>
+                                        )}
+                                      </div>
+                                      <ChevronRight size={13} className="text-slate-400 group-hover:text-[#002B66] opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                                     </div>
-                                    <ChevronRight size={13} className="text-slate-400 group-hover:text-[#002B66] opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                                  </div>
-                                </td>
+                                  </td>
+                                )}
                                 <td className="px-3 py-3 border-r border-slate-200 font-mono text-xs text-slate-700 font-semibold whitespace-nowrap">{meta.drawFormatted}</td>
                                 <td className="px-3 py-3 border-r border-slate-200 text-center font-mono font-bold text-slate-900 text-xs whitespace-nowrap">{meta.betNo}</td>
                                 <td className="px-3 py-3 border-r border-slate-200 text-center font-mono font-bold text-slate-700 text-xs whitespace-nowrap">{meta.betCode}</td>
@@ -342,8 +347,7 @@ export default function UnclaimedRegistry({
                         return (
                           <div
                             key={index}
-                            onClick={() => onRowClick && onRowClick(item, index)}
-                            className={`bg-white border border-slate-200 rounded-xl p-3 shadow-2xs active:scale-[0.99] transition-all space-y-2.5 cursor-pointer relative overflow-hidden ${meta.showWarningBadge ? 'border-l-4 border-l-rose-500' : ''
+                            className={`bg-white border border-slate-200 rounded-xl p-3 shadow-2xs transition-all space-y-2.5 relative overflow-hidden ${meta.showWarningBadge ? 'border-l-4 border-l-rose-500' : ''
                               }`}
                           >
                             <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${meta.showWarningBadge ? 'bg-rose-500' : 'bg-[#002B66]'}`}></div>
@@ -352,29 +356,35 @@ export default function UnclaimedRegistry({
                                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Teller</span>
                                 <span className="text-xs font-black text-slate-800 uppercase">{meta.displayAccountName}</span>
                               </div>
-                              <div className="text-right">
-                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Trans. ID</span>
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <span className="font-mono text-xs font-bold text-[#002B66]">{meta.transId}</span>
-                                  {meta.showWarningBadge && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setIncidentReportTicket({
-                                          ...item,
-                                          computedTransId: meta.transId
-                                        });
-                                      }}
-                                      className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
-                                      title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
-                                      aria-label="Issue incident report"
-                                    >
-                                      <AlertTriangle size={12} className="shrink-0" />
-                                    </button>
-                                  )}
+                              {!hideTransIdColumn && (
+                                <div 
+                                  className="text-right cursor-pointer hover:bg-slate-50 p-1 -m-1 rounded-md active:scale-95 transition-all"
+                                  onClick={() => onRowClick && onRowClick(item, index)}
+                                  title="Click to process return"
+                                >
+                                  <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Trans. ID</span>
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <span className="font-mono text-xs font-bold text-[#002B66]">{meta.transId}</span>
+                                    {meta.showWarningBadge && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setIncidentReportTicket({
+                                            ...item,
+                                            computedTransId: meta.transId
+                                          });
+                                        }}
+                                        className="inline-flex items-center justify-center p-1 rounded-md bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white transition-all cursor-pointer shadow-2xs shrink-0"
+                                        title={`Unclaimed for ${meta.ageDays} days. Click to issue incident report.`}
+                                        aria-label="Issue incident report"
+                                      >
+                                        <AlertTriangle size={12} className="shrink-0" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs pl-2 font-mono">
                               <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">

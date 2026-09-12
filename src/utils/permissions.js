@@ -1,4 +1,4 @@
-export const ROLES = ['Admin', 'Unclaimed Specialist', 'Sales Service Representative'];
+export const ROLES = ['Admin', 'Unclaimed Specialist', 'Sales Service Representative', 'Teller'];
 
 export const formatRoleName = (role) => {
   if (!role) return 'Unclaimed Specialist';
@@ -10,6 +10,9 @@ export const formatRoleName = (role) => {
   }
   if (lower === 'staff' || lower.includes('unclaimed') || lower.includes('specialist')) {
     return 'Unclaimed Specialist';
+  }
+  if (lower === 'teller' || lower.includes('cashier')) {
+    return 'Teller';
   }
   return r;
 };

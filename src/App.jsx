@@ -49,6 +49,7 @@ export default function App() {
   const [userFeaturesConfig, setUserFeaturesConfig] = useState({
     default_copy_transaction: false,
     default_qr_modal: false,
+    default_hide_trans_id: false,
     users: {}
   });
 
@@ -349,6 +350,7 @@ export default function App() {
               setUserFeaturesConfig({
                 default_copy_transaction: parsed.default_copy_transaction === true,
                 default_qr_modal: parsed.default_qr_modal === true,
+                default_hide_trans_id: parsed.default_hide_trans_id === true,
                 users: parsed.users || {}
               });
             }
@@ -1010,7 +1012,7 @@ export default function App() {
     setIsModalOpen(true);
   };
 
-  const handleConfirmReturn = async () => {
+  const handleConfirmReturn = async (tellerStatus = 'ACTIVE') => {
     if (!selectedTicket) return;
     setIsSaving(true);
 
@@ -1051,6 +1053,7 @@ export default function App() {
       staff_commission: staffComm,
       collector_commission: collectorComm,
       receipt_status: 'NO_RECEIPT',
+      teller_status: tellerStatus !== 'ACTIVE' ? tellerStatus : null,
       status: selectedTicket.status ?? (gatewayConfig?.isClaim === 1 ? 1 : 0)
     };
 
@@ -1157,14 +1160,19 @@ export default function App() {
   const userFeaturePermissions = useMemo(() => {
     // Non-SSR roles (Superadmin, Admin, Unclaimed Specialist) retain full access
     if (!isSSRRole(currentUser?.role)) {
-      return { canCopyTransaction: true, canOpenQrModal: true };
+      return { 
+        canCopyTransaction: true, 
+        canOpenQrModal: true, 
+        hideTransIdColumn: false 
+      };
     }
     // Sales Service Representative (SSR) accounts:
     const myKey = String(currentUser?.username || '').toLowerCase().trim();
     const userOverride = userFeaturesConfig?.users?.[myKey];
     return {
       canCopyTransaction: userOverride?.enableCopyTransaction ?? userFeaturesConfig?.default_copy_transaction ?? false,
-      canOpenQrModal: userOverride?.enableQrModal ?? userFeaturesConfig?.default_qr_modal ?? false
+      canOpenQrModal: userOverride?.enableQrModal ?? userFeaturesConfig?.default_qr_modal ?? false,
+      hideTransIdColumn: userOverride?.enableHideTransId ?? userFeaturesConfig?.default_hide_trans_id ?? false
     };
   }, [currentUser, userFeaturesConfig]);
 
@@ -1531,6 +1539,7 @@ export default function App() {
           copiedTransIds={copiedTransIds}
           formatDrawTime={formatDrawTime}
           onOpenQrModal={userFeaturePermissions.canOpenQrModal ? handleOpenQrModal : null}
+          hideTransIdColumn={userFeaturePermissions.hideTransIdColumn}
           // Returned Winnings Props
           returnedGroupedData={null}
           returnedFilteredData={returnedData}
@@ -1545,6 +1554,7 @@ export default function App() {
           onSyncClaimedTickets={syncClaimedTickets}
           liveClaimedTransactionIds={liveClaimedTransactionIds}
           onUserUpdated={handleUserUpdated}
+          onConfigUpdated={loadSystemSettings}
         />
       </MainLayout>
 
@@ -1599,7 +1609,7 @@ export default function App() {
         copiedTransIds={copiedTransIds}
         openedQrTransIds={openedQrTransIds}
         onCopyTransId={handleCopyTransId}
-        onConfirm={handleConfirmReturn}
+        onConfirm={(tellerStatus) => handleConfirmReturn(tellerStatus)}
         onOpenQrModal={handleOpenQrModal}
         currentUser={currentUser}
         canCopyTransaction={userFeaturePermissions.canCopyTransaction}

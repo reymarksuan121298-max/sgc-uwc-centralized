@@ -1,11 +1,14 @@
 import { useState, useRef } from 'react';
 import { 
   Trash2, X, AlertTriangle, Send, Loader2, UploadCloud, 
-  Image as ImageIcon, Camera, CheckCircle2, ShieldAlert
+  Image as ImageIcon, Camera, CheckCircle2, ShieldAlert,
+  Clock
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { getTicketTransId } from '../../utils/formatters';
 import { compressImageFile } from '../../utils/imageCompressor';
+import TimestampCaptureModal from './TimestampCaptureModal';
+import { isAdminRole, isSuperAdminRole, isSSRRole } from '../../utils/permissions';
 
 export default function RequestDeleteModal({
   isOpen,
@@ -19,7 +22,14 @@ export default function RequestDeleteModal({
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isTimestampModalOpen, setIsTimestampModalOpen] = useState(false);
   const fileInputRef = useRef(null);
+
+  const canUseTimestampScreen = currentUser && (
+    isSSRRole(currentUser.role) || 
+    isAdminRole(currentUser.role) || 
+    isSuperAdminRole(currentUser.role)
+  );
 
   if (!isOpen || !ticket) return null;
 
@@ -159,6 +169,7 @@ export default function RequestDeleteModal({
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden text-slate-800">
         
@@ -231,6 +242,19 @@ export default function RequestDeleteModal({
               onChange={handleFileChange}
               className="hidden"
             />
+
+            {canUseTimestampScreen && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTimestampModalOpen(true)}
+                  className="flex items-center justify-center gap-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-95 flex-1 cursor-pointer"
+                >
+                  <Clock size={16} />
+                  <span>Open Timestamp Screen</span>
+                </button>
+              </div>
+            )}
 
             {!ticketImage ? (
               <div
@@ -365,5 +389,12 @@ export default function RequestDeleteModal({
 
       </div>
     </div>
+
+      {/* Fullscreen Timestamp Capture Modal */}
+      <TimestampCaptureModal 
+        isOpen={isTimestampModalOpen} 
+        onClose={() => setIsTimestampModalOpen(false)} 
+      />
+    </>
   );
 }

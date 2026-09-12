@@ -21,6 +21,7 @@ export default function AppRoutes({
   isSuperAdmin,
   canCopyTransaction = true,
   canOpenQrModal = true,
+  hideTransIdColumn = false,
   // Unclaimed registry props
   fromDate,
   setFromDate,
@@ -62,6 +63,7 @@ export default function AppRoutes({
   liveClaimedTransactionIds,
   // Profile props
   onUserUpdated,
+  onConfigUpdated
 }) {
   switch (activeTab) {
     case 'superadmin':
@@ -107,6 +109,7 @@ export default function AppRoutes({
           onOpenQrModal={onOpenQrModal}
           canCopyTransaction={canCopyTransaction}
           canOpenQrModal={canOpenQrModal}
+          hideTransIdColumn={hideTransIdColumn}
         />
       );
 
@@ -183,6 +186,7 @@ export default function AppRoutes({
       return (
         <SystemConfig
           currentUser={currentUser}
+          onConfigUpdated={onConfigUpdated}
         />
       );
 

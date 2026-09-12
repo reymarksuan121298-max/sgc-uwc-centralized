@@ -3,7 +3,7 @@ import {
   Settings, Save, CheckCircle2, AlertCircle, RefreshCw, KeyRound, Globe, 
   Coins, ShieldCheck, Plus, Trash2, Edit2, Play, Building2, Check, X, Shield, 
   ExternalLink, Server, QrCode, Copy, Users, UserCheck, Search, SlidersHorizontal,
-  ToggleLeft, ToggleRight
+  ToggleLeft, ToggleRight, EyeOff
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole } from '../../utils/permissions';
@@ -450,6 +450,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
         details: { 
           default_copy_transaction: config.default_copy_transaction,
           default_qr_modal: config.default_qr_modal,
+          default_hide_trans_id: config.default_hide_trans_id,
           userOverridesCount: Object.keys(config.users || {}).length 
         }
       }]);
@@ -475,7 +476,8 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     const nextState = !isCurrentlyEnabled;
     currentUsers[uKey] = {
       enableCopyTransaction: nextState,
-      enableQrModal: nextState
+      enableQrModal: nextState,
+      enableHideTransId: currentPerms.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false
     };
     
     const newConfig = {
@@ -498,6 +500,38 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     setUserFeaturesConfig(newConfig);
     await handleSaveUserFeatures(newConfig);
   };
+
+  const handleToggleDefaultHideTransId = async () => {
+    const nextState = !(userFeaturesConfig.default_hide_trans_id === true);
+    const newConfig = {
+      ...userFeaturesConfig,
+      default_hide_trans_id: nextState
+    };
+    setUserFeaturesConfig(newConfig);
+    await handleSaveUserFeatures(newConfig);
+  };
+
+  const handleToggleUserHideTransId = async (username) => {
+    const uKey = String(username || '').toLowerCase().trim();
+    const currentUsers = { ...(userFeaturesConfig.users || {}) };
+    const currentPerms = currentUsers[uKey] || {
+      enableCopyTransaction: userFeaturesConfig.default_copy_transaction ?? false,
+      enableQrModal: userFeaturesConfig.default_qr_modal ?? false,
+      enableHideTransId: userFeaturesConfig.default_hide_trans_id ?? false
+    };
+    currentUsers[uKey] = {
+      ...currentPerms,
+      enableHideTransId: !currentPerms.enableHideTransId
+    };
+    
+    const newConfig = {
+      ...userFeaturesConfig,
+      users: currentUsers
+    };
+    setUserFeaturesConfig(newConfig);
+    await handleSaveUserFeatures(newConfig);
+  };
+
 
   // Reset user override to global default
   const handleResetUserToDefault = async (username) => {
@@ -899,6 +933,22 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                 </div>
                 <span>SSR Default: <strong>{(userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal) ? 'ENABLED' : 'DISABLED'}</strong></span>
               </button>
+
+              <button
+                type="button"
+                onClick={handleToggleDefaultHideTransId}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
+                  userFeaturesConfig.default_hide_trans_id
+                    ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-xs'
+                    : 'bg-slate-100 text-slate-600 border-slate-300'
+                }`}
+                title="Toggle default for hiding Trans ID for unconfigured SSR accounts"
+              >
+                <div className="flex items-center gap-1">
+                  <EyeOff size={14} className={userFeaturesConfig.default_hide_trans_id ? 'text-rose-600' : 'text-slate-400'} />
+                </div>
+                <span>Hide Trans ID: <strong>{userFeaturesConfig.default_hide_trans_id ? 'ENABLED' : 'DISABLED'}</strong></span>
+              </button>
             </div>
 
           </div>
@@ -951,6 +1001,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                 <th className="px-3 py-2.5">Role</th>
                 <th className="px-3 py-2.5">Sub-Office</th>
                 <th className="px-4 py-2.5 text-center">Copy Transaction & QR Access</th>
+                <th className="px-4 py-2.5 text-center">Hide Trans ID</th>
                 <th className="px-3 py-2.5 text-center">Action</th>
               </tr>
             </thead>
@@ -1018,6 +1069,22 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                             <QrCode size={13} />
                           </div>
                           <span>{isMergedEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                        </button>
+                      </td>
+
+                      {/* Hide Trans ID Toggle */}
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUserHideTransId(user.username)}
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs ${
+                            (userOverride?.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false)
+                              ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
+                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                          }`}
+                        >
+                          <EyeOff size={13} />
+                          <span>{(userOverride?.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false) ? 'HIDDEN' : 'VISIBLE'}</span>
                         </button>
                       </td>
 
