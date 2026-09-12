@@ -575,13 +575,6 @@ export default function App() {
             sub_office: isIliganEndpoint ? fallbackSubOffice : (item.sub_office || item.location || fallbackSubOffice)
           }));
 
-          if (!isIliganEndpoint && cfg.requestedSubOffice && cfg.requestedSubOffice !== 'All') {
-            mappedArr = mappedArr.filter(item => {
-              const s1 = String(item.sub_office || '').toLowerCase().trim();
-              const req = String(cfg.requestedSubOffice).toLowerCase().trim();
-              return s1 === req || s1.includes(req) || req.includes(s1);
-            });
-          }
           return mappedArr;
         };
 
@@ -956,22 +949,6 @@ export default function App() {
 
   const returnedTransIds = useMemo(() => new Set(returnedData.map(i => String(i.transactionId || '').trim().toLowerCase())), [returnedData]);
 
-  // Resolve the active sub-office filter string for post-fetch filtering.
-  // SSR users are always scoped to their own sub_office.
-  // Admins/Specialists are scoped only when a specific composite endpoint filter (e.g. "id__SubOfficeName") is selected.
-  const activeSubOfficeFilter = useMemo(() => {
-    const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
-    if (isRestrictedBranchSSR) {
-      return String(currentUser.sub_office).toLowerCase().trim();
-    }
-    if (selectedEndpointFilter && selectedEndpointFilter !== 'ALL' && selectedEndpointFilter.includes('__')) {
-      const parts = selectedEndpointFilter.split('__');
-      const requestedOffice = (parts[1] || '').toLowerCase().trim();
-      if (requestedOffice) return requestedOffice;
-    }
-    return null; // null = no sub_office restriction (Admin viewing ALL)
-  }, [isSSR, currentUser, selectedEndpointFilter]);
-
   const pendingFilteredData = useMemo(() => {
     return data.filter(i => {
       if (i.isClaim == 1 || i.isClaim === '1' || i.isClaim === true || i.isClaim === 'true') return false;
@@ -980,18 +957,6 @@ export default function App() {
       const uName = String(i.username || '').trim().toUpperCase();
       const sName = String(i.supervisor || '').trim().toUpperCase();
       if (uName.includes('-SK') || sName.includes('-SK')) return false;
-
-      // Sub-office alignment: ensure Admin and SSR see identical records for the same branch.
-      // SSR: always filtered to their own sub_office.
-      // Admin: filtered to selected sub-office when a specific one is chosen (composite key).
-      if (activeSubOfficeFilter) {
-        const itemSub = String(i.sub_office || '').toLowerCase().trim();
-        const matches =
-          itemSub === activeSubOfficeFilter ||
-          itemSub.includes(activeSubOfficeFilter) ||
-          activeSubOfficeFilter.includes(itemSub);
-        if (!matches) return false;
-      }
 
       // If item belongs to an ILIGAN or LALA sub-office, filter by the correct SET whitelist
       const subOffice = String(i.sub_office || '').toLowerCase();
@@ -1020,7 +985,7 @@ export default function App() {
       if (toDate && itemDateStr > toDate) return false;
       return true;
     });
-  }, [data, returnedTransIds, fromDate, toDate, activeSubOfficeFilter]);
+  }, [data, returnedTransIds, fromDate, toDate]);
 
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) return pendingFilteredData;
