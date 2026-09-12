@@ -71,8 +71,20 @@ export default function App() {
   const [toDate, setToDate] = useState(todayStr);
   const [data, setData] = useState([]);
   const [returnedData, setReturnedData] = useState([]);
-  const [liveClaimedTransactionIds, setLiveClaimedTransactionIds] = useState(() => new Set());
   const [receipts, setReceipts] = useState([]);
+
+  const liveClaimedTransactionIds = useMemo(() => {
+    const ids = new Set();
+    if (data && data.length) {
+      data.forEach(r => {
+        if (r.isClaim == 1 || r.isClaim === '1' || r.isClaim === true || r.isClaim === 'true') {
+          const tid = String(r.transactionId || r.transId || r.receipt_no || r.ticket_no || '').trim();
+          if (tid) ids.add(tid);
+        }
+      });
+    }
+    return ids;
+  }, [data]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [showDailyTable, setShowDailyTable] = useState(true);
@@ -491,7 +503,7 @@ export default function App() {
         return;
       }
 
-      const fetchPromises = targetEndpoints.map(async (cfg) => {
+      const fetchPromises = targetEndpoints.flatMap((cfg) => {
         if (!cfg.baseUrl) return [];
         let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
         let targetUrl = cleanBaseUrl;
@@ -504,25 +516,9 @@ export default function App() {
         }
 
         const queryGlue = targetUrl.includes('?') ? '&' : '?';
-        const fullUrl = `${targetUrl}${queryGlue}isClaim=${cfg.isClaim ?? 0}&from=${apiFromDate}&to=${apiToDate}`;
-
         const rawToken = (cfg.token || '').trim();
         const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
 
-        const res = await fetch(fullUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': authHeader,
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json'
-          }
-        });
-        if (!res.ok) throw new Error(`[${cfg.name || cfg.sub_office || 'Gateway'}] HTTP ${res.status}`);
-        const result = await res.json();
-        const deepData = result?.data?.data || result?.data || result;
-        let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-
-        // If gateway endpoint is ILIGAN, filter strictly to the correct sub-office whitelist
         const endpointLabel = (cfg.sub_office || cfg.name || '').toLowerCase();
         const isIliganEndpoint = endpointLabel.includes('iligan') ||
                                  (cfg.baseUrl || '').toLowerCase().includes('stl-ldn-api');
@@ -543,35 +539,55 @@ export default function App() {
             isSetA = endpointLabel.includes('set a');
             isLala = endpointLabel.includes('lala');
             isBaloi = endpointLabel.includes('baloi');
-            // If the gateway doesn't explicitly have a sub_office name but is an Iligan endpoint,
-            // we force the sub_office fallback.
             if (!cfg.sub_office || cfg.sub_office === 'All' || endpointLabel === 'stl-ldn') {
               fallbackSubOffice = isBaloi ? 'BALOI OFFICE' : (isLala ? 'LALA OFFICE' : (isSetA ? 'ILIGAN SET A' : 'ILIGAN SET B'));
             }
           }
-          arr = arr.filter(item => {
-            const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
-            if (isBaloi) return isBaloiOfficeAllowedSupervisor(uName);
-            if (isLala) return isLalaOfficeAllowedSupervisor(uName);
-            return isSetA ? isIliganSetAAllowedSupervisor(uName) : isIliganAllowedSupervisor(uName);
-          });
         }
 
-        let mappedArr = arr.map(item => ({
-          ...item,
-          sub_office: isIliganEndpoint ? fallbackSubOffice : (item.sub_office || item.location || fallbackSubOffice)
-        }));
-
-        if (!isIliganEndpoint && cfg.requestedSubOffice && cfg.requestedSubOffice !== 'All') {
-          mappedArr = mappedArr.filter(item => {
-            const s1 = String(item.sub_office || '').toLowerCase().trim();
-            const req = String(cfg.requestedSubOffice).toLowerCase().trim();
-            return s1 === req || s1.includes(req) || req.includes(s1);
+        const doFetch = async (isClaimVal) => {
+          const fullUrl = `${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${apiFromDate}&to=${apiToDate}`;
+          const res = await fetch(fullUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json, text/plain, */*',
+              'Content-Type': 'application/json'
+            }
           });
-        }
+          if (!res.ok) throw new Error(`[${cfg.name || cfg.sub_office || 'Gateway'} (isClaim=${isClaimVal})] HTTP ${res.status}`);
+          const result = await res.json();
+          const deepData = result?.data?.data || result?.data || result;
+          let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
 
-        return mappedArr;
+          if (isIliganEndpoint) {
+            arr = arr.filter(item => {
+              const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
+              if (isBaloi) return isBaloiOfficeAllowedSupervisor(uName);
+              if (isLala) return isLalaOfficeAllowedSupervisor(uName);
+              return isSetA ? isIliganSetAAllowedSupervisor(uName) : isIliganAllowedSupervisor(uName);
+            });
+          }
+
+          let mappedArr = arr.map(item => ({
+            ...item,
+            isClaim: isClaimVal,
+            sub_office: isIliganEndpoint ? fallbackSubOffice : (item.sub_office || item.location || fallbackSubOffice)
+          }));
+
+          if (!isIliganEndpoint && cfg.requestedSubOffice && cfg.requestedSubOffice !== 'All') {
+            mappedArr = mappedArr.filter(item => {
+              const s1 = String(item.sub_office || '').toLowerCase().trim();
+              const req = String(cfg.requestedSubOffice).toLowerCase().trim();
+              return s1 === req || s1.includes(req) || req.includes(s1);
+            });
+          }
+          return mappedArr;
+        };
+
+        return [doFetch(0), doFetch(1)];
       });
+
 
       const results = await Promise.allSettled(fetchPromises);
       const errors = [];
@@ -940,12 +956,42 @@ export default function App() {
 
   const returnedTransIds = useMemo(() => new Set(returnedData.map(i => String(i.transactionId || '').trim().toLowerCase())), [returnedData]);
 
+  // Resolve the active sub-office filter string for post-fetch filtering.
+  // SSR users are always scoped to their own sub_office.
+  // Admins/Specialists are scoped only when a specific composite endpoint filter (e.g. "id__SubOfficeName") is selected.
+  const activeSubOfficeFilter = useMemo(() => {
+    const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
+    if (isRestrictedBranchSSR) {
+      return String(currentUser.sub_office).toLowerCase().trim();
+    }
+    if (selectedEndpointFilter && selectedEndpointFilter !== 'ALL' && selectedEndpointFilter.includes('__')) {
+      const parts = selectedEndpointFilter.split('__');
+      const requestedOffice = (parts[1] || '').toLowerCase().trim();
+      if (requestedOffice) return requestedOffice;
+    }
+    return null; // null = no sub_office restriction (Admin viewing ALL)
+  }, [isSSR, currentUser, selectedEndpointFilter]);
+
   const pendingFilteredData = useMemo(() => {
     return data.filter(i => {
+      if (i.isClaim == 1 || i.isClaim === '1' || i.isClaim === true || i.isClaim === 'true') return false;
+
       // Exclude usernames or supervisors with '-SK' (e.g. SPVR-PERYA-SK)
       const uName = String(i.username || '').trim().toUpperCase();
       const sName = String(i.supervisor || '').trim().toUpperCase();
       if (uName.includes('-SK') || sName.includes('-SK')) return false;
+
+      // Sub-office alignment: ensure Admin and SSR see identical records for the same branch.
+      // SSR: always filtered to their own sub_office.
+      // Admin: filtered to selected sub-office when a specific one is chosen (composite key).
+      if (activeSubOfficeFilter) {
+        const itemSub = String(i.sub_office || '').toLowerCase().trim();
+        const matches =
+          itemSub === activeSubOfficeFilter ||
+          itemSub.includes(activeSubOfficeFilter) ||
+          activeSubOfficeFilter.includes(itemSub);
+        if (!matches) return false;
+      }
 
       // If item belongs to an ILIGAN or LALA sub-office, filter by the correct SET whitelist
       const subOffice = String(i.sub_office || '').toLowerCase();
@@ -974,7 +1020,7 @@ export default function App() {
       if (toDate && itemDateStr > toDate) return false;
       return true;
     });
-  }, [data, returnedTransIds, fromDate, toDate]);
+  }, [data, returnedTransIds, fromDate, toDate, activeSubOfficeFilter]);
 
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) return pendingFilteredData;
@@ -1329,82 +1375,6 @@ export default function App() {
     } catch { }
   };
 
-  const syncClaimedTickets = async (showToastMessage = true) => {
-    try {
-      if (showToastMessage) showToast("Starting synchronization with central server...");
-
-      let apiFromDate = parseToDateString(fromDate) || getLocalDateString();
-      let apiToDate = parseToDateString(toDate) || getLocalDateString();
-
-      // Dynamically expand date range to include all dates present in the current returnedData
-      if (returnedData && returnedData.length > 0) {
-        let minTime = Number.MAX_SAFE_INTEGER;
-        let maxTime = 0;
-        returnedData.forEach(t => {
-          const dt = t.drawDate || t.drawTime || t.created_at;
-          if (dt) {
-            const time = new Date(dt).getTime();
-            if (!isNaN(time)) {
-              if (time < minTime) minTime = time;
-              if (time > maxTime) maxTime = time;
-            }
-          }
-        });
-        if (minTime !== Number.MAX_SAFE_INTEGER) {
-          const dataFromStr = new Date(minTime).toISOString().split('T')[0];
-          const dataToStr = new Date(maxTime).toISOString().split('T')[0];
-          if (dataFromStr < apiFromDate) apiFromDate = dataFromStr;
-          if (dataToStr > apiToDate) apiToDate = dataToStr;
-        }
-      }
-      const activeEndpoints = gatewayEndpoints.filter(e => e.is_active !== false && e.baseUrl);
-
-      const fetchApi = async (cfg) => {
-        let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
-        let targetUrl = cleanBaseUrl;
-        if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
-          targetUrl = targetUrl.toLowerCase().endsWith('/api')
-            ? `${targetUrl}/accountant/UnclaimedReceipts`
-            : `${targetUrl}/api/accountant/UnclaimedReceipts`;
-        }
-
-        const queryGlue = targetUrl.includes('?') ? '&' : '?';
-        const fullUrl = `${targetUrl}${queryGlue}isClaim=1&from=${apiFromDate}&to=${apiToDate}`;
-
-        const rawToken = (cfg.token || '').trim();
-        const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
-
-        const res = await fetch(fullUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': authHeader,
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json'
-          }
-        });
-        if (!res.ok) return [];
-        const result = await res.json();
-        const deepData = result?.data?.data || result?.data || result;
-        return Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-      };
-
-      const promises = activeEndpoints.map(cfg => fetchApi(cfg));
-      const results = await Promise.allSettled(promises);
-      const claimedRecords = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
-
-      const claimedIds = new Set(claimedRecords.map(r => String(r.transactionId || r.transId || r.receipt_no || r.ticket_no).trim()));
-
-      setLiveClaimedTransactionIds(claimedIds);
-
-      if (showToastMessage) {
-        showToast(`Sync complete: Found ${claimedIds.size} claimed ticket(s) from central server.`);
-      }
-    } catch (err) {
-      console.error("Sync error:", err);
-      if (showToastMessage) showToast("Error during sync: " + err.message);
-    }
-  };
-
   // Background session verification (checks if current user account is still active in database)
   useEffect(() => {
     if (!currentUser?.username) return;
@@ -1435,24 +1405,6 @@ export default function App() {
     verifySession();
     return () => { isMounted = false; };
   }, [currentUser?.username]);
-
-  // Live polling for claimed tickets (runs in background every 15 seconds)
-  const syncClaimedRef = useRef(syncClaimedTickets);
-  useEffect(() => {
-    syncClaimedRef.current = syncClaimedTickets;
-  });
-
-  // Fetch claimed tickets when tab changes and poll periodically every 15s in the background
-  useEffect(() => {
-    if (!currentUser) return;
-    if (activeTab === 'returned' || activeTab === 'settlement') {
-      if (syncClaimedRef.current) syncClaimedRef.current(false);
-      const intervalId = setInterval(() => {
-        if (syncClaimedRef.current) syncClaimedRef.current(false);
-      }, 15000);
-      return () => clearInterval(intervalId);
-    }
-  }, [currentUser, activeTab]);
 
   // If not logged in, render Login page (along with ProfileSettingsModal if reset token exists)
   if (!currentUser) {
@@ -1568,7 +1520,7 @@ export default function App() {
           selectedSettlementTicketId={selectedSettlementTicketId}
           onSaveAgreement={handleSaveAgreement}
           onSyncLedger={fetchReturnedFromSupabase}
-          onSyncClaimedTickets={syncClaimedTickets}
+          onSyncClaimedTickets={() => fetchData(true)}
           liveClaimedTransactionIds={liveClaimedTransactionIds}
           onUserUpdated={handleUserUpdated}
           onConfigUpdated={loadSystemSettings}
