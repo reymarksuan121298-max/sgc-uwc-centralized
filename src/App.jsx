@@ -461,8 +461,15 @@ export default function App() {
         const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
 
         if (isRestrictedBranchSSR) {
-          const match = activeEndpoints.find(e => e.sub_office && e.sub_office.includes(currentUser.sub_office));
-          targetEndpoints = match ? [{ ...match, requestedSubOffice: currentUser.sub_office }] : [activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0]].filter(Boolean);
+          const userSub = String(currentUser.sub_office).toLowerCase().trim();
+          const match = activeEndpoints.find(e => {
+            if (!e.sub_office) return false;
+            const epOffices = e.sub_office.split(',').map(s => s.trim().toLowerCase());
+            // Looser match to handle "SET B OFFICE" matching "ILIGAN SET B"
+            return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')));
+          });
+          const fallbackEp = activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0];
+          targetEndpoints = match ? [{ ...match, requestedSubOffice: currentUser.sub_office }] : (fallbackEp ? [{ ...fallbackEp, requestedSubOffice: currentUser.sub_office }] : []);
         } else {
           if (selectedEndpointFilter !== 'ALL') {
             // Support composite key format: "endpointId__subOfficeName" from broken-down dropdown
@@ -552,13 +559,15 @@ export default function App() {
 
         let mappedArr = arr.map(item => ({
           ...item,
-          sub_office: item.sub_office || item.location || fallbackSubOffice
+          sub_office: isIliganEndpoint ? fallbackSubOffice : (item.sub_office || item.location || fallbackSubOffice)
         }));
 
-        if (cfg.requestedSubOffice && cfg.requestedSubOffice !== 'All') {
-          mappedArr = mappedArr.filter(item => 
-            String(item.sub_office || '').toLowerCase() === String(cfg.requestedSubOffice).toLowerCase()
-          );
+        if (!isIliganEndpoint && cfg.requestedSubOffice && cfg.requestedSubOffice !== 'All') {
+          mappedArr = mappedArr.filter(item => {
+            const s1 = String(item.sub_office || '').toLowerCase().trim();
+            const req = String(cfg.requestedSubOffice).toLowerCase().trim();
+            return s1 === req || s1.includes(req) || req.includes(s1);
+          });
         }
 
         return mappedArr;
