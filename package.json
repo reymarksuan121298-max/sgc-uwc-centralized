@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@splinetool/react-spline": "^4.1.0",
     "@splinetool/runtime": "^2.0.5",
     "@supabase/supabase-js": "^2.112.3",

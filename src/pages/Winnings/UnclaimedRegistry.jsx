@@ -116,8 +116,8 @@ export default function UnclaimedRegistry({
   return (
     <div className="space-y-4">
 
-      {/* FROZEN / STICKY TOP HEADER: Date Filters, Search & Summary Metrics (Zero Bleed-through) */}
-      <div className="sticky -top-2.5 sm:-top-4 md:-top-6 z-10 bg-slate-100 pt-2.5 sm:pt-4 md:pt-6 pb-3 -mt-2.5 sm:-mt-4 md:-mt-6 -mx-2.5 sm:-mx-4 md:-mx-6 px-2.5 sm:px-4 md:px-6 shadow-xs space-y-3.5">
+      {/* FROZEN / STICKY TOP HEADER: Date Filters, Search & Summary Metrics (Zero Bleed-through on Desktop, unfrozen on mobile) */}
+      <div className="relative md:sticky -top-2.5 sm:-top-4 md:-top-6 z-10 bg-slate-100 pt-2.5 sm:pt-4 md:pt-6 pb-3 -mt-2.5 sm:-mt-4 md:-mt-6 -mx-2.5 sm:-mx-4 md:-mx-6 px-2.5 sm:px-4 md:px-6 shadow-xs space-y-3.5">
 
         {/* Date Filters & Search Toolbar (With Top Navy Accent) */}
         <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-blue-200/80 border-t-4 border-t-[#002B66] shadow-xs flex flex-wrap items-center justify-between gap-3 sm:gap-4">

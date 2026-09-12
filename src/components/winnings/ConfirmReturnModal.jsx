@@ -22,11 +22,13 @@ export default function ConfirmReturnModal({
   const [internalCopied, setInternalCopied] = React.useState(false);
   const [showConfirmPrompt, setShowConfirmPrompt] = React.useState(false);
   const [tellerStatus, setTellerStatus] = React.useState('ACTIVE');
+  const [hrValidEmail, setHrValidEmail] = React.useState('');
 
   React.useEffect(() => {
     if (isOpen) {
       setShowConfirmPrompt(false);
       setTellerStatus('ACTIVE');
+      setHrValidEmail('');
     }
   }, [isOpen]);
 
@@ -265,6 +267,22 @@ export default function ConfirmReturnModal({
                       <option value="TERMINATED">TERMINATED</option>
                     </select>
                   </div>
+                  {(tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED') && (
+                    <div className="pt-2 border-t border-slate-200 text-left space-y-1">
+                      <label className="text-[10px] font-extrabold text-amber-700 uppercase">HR Valid Email Address:</label>
+                      <input
+                        type="email"
+                        value={hrValidEmail}
+                        onChange={(e) => setHrValidEmail(e.target.value)}
+                        placeholder="hr@example.com"
+                        className="w-full bg-white border border-amber-300 rounded p-1.5 text-xs outline-none focus:border-amber-500 font-mono"
+                        required
+                      />
+                      <p className="text-[9px] text-amber-600 leading-tight">
+                        Required to verify AWOL/Inactive status. Subject for Unclaimed Specialist approval.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2 justify-end pt-1">
@@ -279,8 +297,18 @@ export default function ConfirmReturnModal({
                   <button
                     type="button"
                     onClick={() => {
+                      if (tellerStatus === 'AWOL' || tellerStatus === 'PULL-OUT' || tellerStatus === 'TERMINATED') {
+                        if (!hrValidEmail.trim()) {
+                          alert("Please provide a valid HR email address to proceed with this status.");
+                          return;
+                        }
+                        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hrValidEmail.trim())) {
+                          alert("Please enter a strictly valid email address format (e.g., hr@example.com) or the auto-reply will fail to send.");
+                          return;
+                        }
+                      }
                       setShowConfirmPrompt(false);
-                      onConfirm(tellerStatus);
+                      onConfirm({ tellerStatus, hrValidEmail });
                     }}
                     disabled={isSaving}
                     className="bg-[#002B66] hover:bg-blue-900 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md flex-1 cursor-pointer transition-all active:scale-95"

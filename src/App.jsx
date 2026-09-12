@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { supabase } from './config/supabaseClient';
+import { EMAILJS_CONFIG } from './config/emailjsConfig';
 import { getLocalDateString, parseToDateString, formatDrawTime, getTicketTransId } from './utils/formatters';
 import { isAdminRole, isSuperAdminRole, isSSRRole, isUnclaimedSpecialistRole, isOperationalNotification, canViewTab } from './utils/permissions';
 import MainLayout from './layouts/MainLayout';
@@ -550,30 +551,66 @@ export default function App() {
           let useTo = apiToDate;
 
           // User requested not to rely on Date Range for Claimed tickets matching.
-          // Fetch the last 12 months for Claimed Tickets instantly, independent of UI or state.
+          let arr = [];
+
           if (isClaimVal === 1) {
+            // Chunking into 3-month intervals to prevent API 500 Internal Server errors
             const pastD = new Date();
             pastD.setFullYear(pastD.getFullYear() - 1);
-            useFrom = pastD.toISOString().split('T')[0];
             
             const futD = new Date();
             futD.setDate(futD.getDate() + 2);
-            useTo = futD.toISOString().split('T')[0];
-          }
 
-          const fullUrl = `${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${useFrom}&to=${useTo}`;
-          const res = await fetch(fullUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': authHeader,
-              'Accept': 'application/json, text/plain, */*',
-              'Content-Type': 'application/json'
+            let currentStart = new Date(pastD);
+            const chunks = [];
+
+            while (currentStart < futD) {
+              let chunkEnd = new Date(currentStart);
+              chunkEnd.setMonth(chunkEnd.getMonth() + 3);
+              if (chunkEnd > futD) chunkEnd = futD;
+              
+              const sFrom = currentStart.toISOString().split('T')[0];
+              const sTo = chunkEnd.toISOString().split('T')[0];
+              
+              chunks.push(`${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${sFrom}&to=${sTo}`);
+              currentStart = new Date(chunkEnd);
+              currentStart.setDate(currentStart.getDate() + 1);
             }
-          });
-          if (!res.ok) throw new Error(`[${cfg.name || cfg.sub_office || 'Gateway'} (isClaim=${isClaimVal})] HTTP ${res.status}`);
-          const result = await res.json();
-          const deepData = result?.data?.data || result?.data || result;
-          let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+
+            try {
+              const responses = await Promise.all(chunks.map(url => 
+                fetch(url, {
+                  method: 'GET',
+                  headers: { 'Authorization': authHeader, 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json' }
+                })
+              ));
+              
+              for (const res of responses) {
+                if (res.ok) {
+                  const result = await res.json();
+                  const deepData = result?.data?.data || result?.data || result;
+                  const chunkArr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+                  arr = [...arr, ...chunkArr];
+                }
+              }
+            } catch (err) {
+               console.warn("Chunked fetch failed:", err);
+            }
+          } else {
+             const fullUrl = `${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${useFrom}&to=${useTo}`;
+             const res = await fetch(fullUrl, {
+               method: 'GET',
+               headers: {
+                 'Authorization': authHeader,
+                 'Accept': 'application/json, text/plain, */*',
+                 'Content-Type': 'application/json'
+               }
+             });
+             if (!res.ok) throw new Error(`[${cfg.name || cfg.sub_office || 'Gateway'} (isClaim=${isClaimVal})] HTTP ${res.status}`);
+             const result = await res.json();
+             const deepData = result?.data?.data || result?.data || result;
+             arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+          }
 
           if (isIliganEndpoint) {
             arr = arr.filter(item => {
@@ -1056,9 +1093,14 @@ export default function App() {
     setIsModalOpen(true);
   };
 
-  const handleConfirmReturn = async (tellerStatus = 'ACTIVE') => {
+  const handleConfirmReturn = async (payloadObj) => {
     if (!selectedTicket) return;
     setIsSaving(true);
+    
+    // Support legacy string or new object format
+    const tellerStatus = typeof payloadObj === 'object' ? payloadObj.tellerStatus : (payloadObj || 'ACTIVE');
+    const hrValidEmail = typeof payloadObj === 'object' ? payloadObj.hrValidEmail : null;
+    const isInactiveStatus = tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED';
 
     const winAmt = parseFloat(selectedTicket.winAmount ?? 0);
     const admP = commissionConfig?.adminPercent ?? 50;
@@ -1098,6 +1140,8 @@ export default function App() {
       collector_commission: collectorComm,
       receipt_status: 'NO_RECEIPT',
       teller_status: tellerStatus !== 'ACTIVE' ? tellerStatus : null,
+      hr_valid_email: isInactiveStatus ? hrValidEmail : null,
+      unclaimed_approval_status: isInactiveStatus ? 'PENDING' : null,
       status: selectedTicket.status ?? (gatewayConfig?.isClaim === 1 ? 1 : 0)
     };
 
@@ -1114,6 +1158,43 @@ export default function App() {
         sub_office: targetSubOffice,
         details: { winAmount: winAmt, admin_commission: adminComm }
       }]);
+
+      if (isInactiveStatus && hrValidEmail) {
+        try {
+          const { serviceId, hrInactiveTemplateId, publicKey } = EMAILJS_CONFIG;
+          if (serviceId && hrInactiveTemplateId && publicKey) {
+            const emailRes = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                service_id: serviceId,
+                template_id: hrInactiveTemplateId,
+                user_id: publicKey,
+                template_params: {
+                  to_email: hrValidEmail,
+                  teller_status: tellerStatus,
+                  teller_name: selectedTicket.fullName || selectedTicket.outlet || 'Unknown Teller',
+                  transaction_id: String(selectedTicket.computedTransId).trim(),
+                  submitted_by: currentUser?.full_name || currentUser?.username || 'SSR UI',
+                },
+              }),
+            });
+            
+            if (!emailRes.ok) {
+              const errTxt = await emailRes.text();
+              console.error("EmailJS Error Response:", errTxt);
+              alert("Warning: Ticket saved, but EmailJS failed to send the HR notification. Error: " + errTxt);
+            } else {
+              console.log("EmailJS successfully sent HR notification.");
+            }
+          } else {
+             console.warn("EmailJS configuration is missing, aborting send.");
+          }
+        } catch (emailErr) {
+          console.warn('Failed to send HR notification email:', emailErr);
+          alert("Network or internal error when attempting to send HR email: " + emailErr.message);
+        }
+      }
 
       showToast(`Ticket ${selectedTicket.computedTransId} returned to Supabase ledger successfully!`);
       setIsModalOpen(false);
@@ -1559,7 +1640,7 @@ export default function App() {
         copiedTransIds={copiedTransIds}
         openedQrTransIds={openedQrTransIds}
         onCopyTransId={handleCopyTransId}
-        onConfirm={(tellerStatus) => handleConfirmReturn(tellerStatus)}
+        onConfirm={(payload) => handleConfirmReturn(payload)}
         onOpenQrModal={handleOpenQrModal}
         currentUser={currentUser}
         canCopyTransaction={userFeaturePermissions.canCopyTransaction}

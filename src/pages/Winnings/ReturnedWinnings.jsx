@@ -47,6 +47,11 @@ export default function ReturnedWinnings({
   const [approvingItem, setApprovingItem] = useState(null);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
 
+  // Unclaimed Specialist Approval State for Inactive Tellers
+  const [inactiveApprovalItem, setInactiveApprovalItem] = useState(null);
+  const [inactiveApprovalName, setInactiveApprovalName] = useState('');
+  const [inactiveApprovalIssue, setInactiveApprovalIssue] = useState('');
+
   // Admin / Staff Approval Permission (SSR can request, Staff/Admin can approve)
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
   const isSSR = isSSRRole(currentUser?.role);
@@ -77,22 +82,24 @@ export default function ReturnedWinnings({
     return (filteredData || []).filter(item => item.deletion_request_status === 'PENDING_ADMIN_APPROVAL');
   }, [filteredData]);
 
-  // Unremitted items available strictly for weekly remittance deposit (excluding under settlement)
+  const isInactiveTeller = (item) => {
+    const ts = String(item.teller_status || '').toUpperCase();
+    return ts === 'PULL-OUT' || ts === 'AWOL' || ts === 'TERMINATED' || ts === 'PULLOUTS';
+  };
+
+  // Unremitted items available strictly for weekly remittance deposit (excluding under settlement and inactive)
   const unremittedDepositItems = useMemo(() => {
-    return (filteredData || []).filter(item => (!item.receipt_status || item.receipt_status === 'NO_RECEIPT') && !item.isUnderSettlement);
+    return (filteredData || []).filter(item => (!item.receipt_status || item.receipt_status === 'NO_RECEIPT') && !item.isUnderSettlement && !isInactiveTeller(item));
   }, [filteredData]);
 
   // Inactive Teller items (Pull-out, AWOL, Terminated)
   const inactiveTellerItems = useMemo(() => {
-    return (filteredData || []).filter(item => {
-      const ts = String(item.teller_status || '').toUpperCase();
-      return ts === 'PULL-OUT' || ts === 'AWOL' || ts === 'TERMINATED' || ts === 'PULLOUTS';
-    });
+    return (filteredData || []).filter(item => isInactiveTeller(item));
   }, [filteredData]);
 
   // Filtered display items based on activeFilterTab & searchQuery
   const displayItems = useMemo(() => {
-    let list = filteredData || [];
+    let list = (filteredData || []).filter(item => !isInactiveTeller(item));
 
     if (activeFilterTab === 'UNREMITTED') {
       list = unremittedDepositItems;
@@ -204,6 +211,32 @@ export default function ReturnedWinnings({
     }
   };
 
+  const executeApproveInactive = async () => {
+    if (!inactiveApprovalItem || !inactiveApprovalName.trim() || !inactiveApprovalIssue.trim()) {
+      alert("Please provide the Approver's Full Name and Issue/Reason.");
+      return;
+    }
+    const transId = inactiveApprovalItem.computedTransId || inactiveApprovalItem.transactionId || 'N/A';
+    setIsProcessingAdminAction(true);
+    try {
+      const q = inactiveApprovalItem.id 
+        ? supabase.from('returned_winnings').update({ unclaimed_approval_status: 'APPROVED', unclaimed_approved_by: inactiveApprovalName, unclaimed_approval_issue: inactiveApprovalIssue }).eq('id', inactiveApprovalItem.id)
+        : supabase.from('returned_winnings').update({ unclaimed_approval_status: 'APPROVED', unclaimed_approved_by: inactiveApprovalName, unclaimed_approval_issue: inactiveApprovalIssue }).eq('transactionId', transId);
+      const { error } = await q;
+      if (error) throw error;
+      
+      showToast(`Inactive tally for ticket ${transId} has been approved by ${inactiveApprovalName}!`);
+      setInactiveApprovalItem(null);
+      setInactiveApprovalName('');
+      setInactiveApprovalIssue('');
+      if (onDataUpdated) onDataUpdated();
+    } catch (err) {
+      alert(`Failed to approve inactive status: ${err.message}`);
+    } finally {
+      setIsProcessingAdminAction(false);
+    }
+  };
+
   const exportToCSV = () => {
     if (!displayItems.length) return alert("No records available to export.");
     const headers = ["Username", "Teller / Outlet", "Transaction ID", "Draw Time", "Bet No", "Bet Code", "Bet Amount", "Win Amount", "Date Returned", "Remittance Status", "Deletion Request Status"];
@@ -286,7 +319,7 @@ export default function ReturnedWinnings({
               : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
-            All Returned ({filteredData.length})
+            All Returned ({(filteredData || []).filter(item => !isInactiveTeller(item)).length})
           </button>
 
           <button
@@ -526,7 +559,23 @@ export default function ReturnedWinnings({
                                   </button>
                                 )}
 
-                                {isDeletionPending ? (
+                                {item.unclaimed_approval_status === 'PENDING' ? (
+                                  canApprove ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedForInactiveApproval(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-amber-900 bg-amber-400 hover:bg-amber-500 rounded-md shadow-xs transition-all cursor-pointer active:scale-95"
+                                      title="Review Unclaimed Specialist Approval"
+                                      onClickCapture={(e) => { e.stopPropagation(); setInactiveApprovalItem({...item, computedTransId: transId}); }}
+                                    >
+                                      <Check size={11} /> Review Inactive
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-amber-700 font-bold italic">
+                                      Pending HR Approval
+                                    </span>
+                                  )
+                                ) : isDeletionPending ? (
                                   canApprove ? (
                                     <div className="flex items-center gap-1">
                                       <button
@@ -729,7 +778,22 @@ export default function ReturnedWinnings({
                             </button>
                           )}
 
-                          {isDeletionPending ? (
+                          {item.unclaimed_approval_status === 'PENDING' ? (
+                            canApprove ? (
+                              <button
+                                type="button"
+                                onClick={() => setInactiveApprovalItem({ ...item, computedTransId: transId })}
+                                disabled={isProcessingAdminAction}
+                                className="px-3 py-1 bg-amber-500 text-amber-950 rounded-lg font-black uppercase text-[10px] shadow-xs"
+                              >
+                                Review Inactive
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-amber-700 font-bold italic">
+                                Pending HR Approval
+                              </span>
+                            )
+                          ) : isDeletionPending ? (
                             canApprove ? (
                               <>
                                 <button
@@ -947,6 +1011,87 @@ export default function ReturnedWinnings({
         item={selectedSettlementItem}
         onDataUpdated={onDataUpdated}
       />
+
+      {/* APPROVE INACTIVE STATUS MODAL */}
+      {inactiveApprovalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-xs">
+            <div className="bg-amber-500 text-amber-950 px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs">
+                <Check size={16} />
+                <span>Approve Inactive Teller Status</span>
+              </div>
+              <button type="button" onClick={() => setInactiveApprovalItem(null)} className="text-amber-900 hover:text-black cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-slate-700 font-medium">
+                Review and approve the AWOL/PULL-OUT/TERMINATED status for transaction <strong className="font-mono text-amber-900">{inactiveApprovalItem.transactionId || inactiveApprovalItem.computedTransId}</strong>.
+              </p>
+              
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-[11px] font-mono mb-2">
+                <div className="flex justify-between pb-1 mb-1 border-b border-amber-200">
+                  <span className="text-amber-700 font-bold">HR Provided Email:</span>
+                  <span className="font-black text-amber-900">{inactiveApprovalItem.hr_valid_email || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-amber-700 font-bold">Teller Status:</span>
+                  <span className="font-black text-amber-900 uppercase">{inactiveApprovalItem.teller_status}</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Approver's Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={inactiveApprovalName}
+                    onChange={(e) => setInactiveApprovalName(e.target.value)}
+                    placeholder="e.g. John Doe (Unclaimed Specialist)"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-amber-500"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Issue / Reason
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={inactiveApprovalIssue}
+                    onChange={(e) => setInactiveApprovalIssue(e.target.value)}
+                    placeholder="Explain why this ticket went through approval..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-amber-500"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setInactiveApprovalItem(null)}
+                disabled={isProcessingAdminAction}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold uppercase text-[11px] hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeApproveInactive}
+                disabled={isProcessingAdminAction || !inactiveApprovalName.trim() || !inactiveApprovalIssue.trim()}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-amber-950 font-black uppercase text-[11px] shadow-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                {isProcessingAdminAction ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                <span>Approve Ticket</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
