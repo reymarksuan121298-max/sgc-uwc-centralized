@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { supabase } from './config/supabaseClient';
 import { getLocalDateString, parseToDateString, formatDrawTime, getTicketTransId } from './utils/formatters';
-import { isSuperAdminRole, isSSRRole, isUnclaimedSpecialistRole, isOperationalNotification, canViewTab } from './utils/permissions';
+import { isAdminRole, isSuperAdminRole, isSSRRole, isUnclaimedSpecialistRole, isOperationalNotification, canViewTab } from './utils/permissions';
 import MainLayout from './layouts/MainLayout';
 import AppRoutes from './routes/AppRoutes';
 import Login from './pages/Login/Login';
@@ -546,7 +546,22 @@ export default function App() {
         }
 
         const doFetch = async (isClaimVal) => {
-          const fullUrl = `${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${apiFromDate}&to=${apiToDate}`;
+          let useFrom = apiFromDate;
+          let useTo = apiToDate;
+
+          // User requested not to rely on Date Range for Claimed tickets matching.
+          // Fetch the last 12 months for Claimed Tickets instantly, independent of UI or state.
+          if (isClaimVal === 1) {
+            const pastD = new Date();
+            pastD.setFullYear(pastD.getFullYear() - 1);
+            useFrom = pastD.toISOString().split('T')[0];
+            
+            const futD = new Date();
+            futD.setDate(futD.getDate() + 2);
+            useTo = futD.toISOString().split('T')[0];
+          }
+
+          const fullUrl = `${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${useFrom}&to=${useTo}`;
           const res = await fetch(fullUrl, {
             method: 'GET',
             headers: {
@@ -919,8 +934,9 @@ export default function App() {
           // 1. Append to notification center feed
           appendNotification(auditNotif);
 
-          // 2. Dispatch Web Push / Browser notification + popup + audio chime (if not initiated by self)
-          if (!isMe) {
+          // 2. Dispatch Web Push / Browser notification + popup + audio chime (only for Admins, if not initiated by self)
+          const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
+          if (!isMe && isAdmin) {
             triggerNotificationPopup(auditNotif);
             notificationService.sendAuditNotification({
               actorUsername: actorName,

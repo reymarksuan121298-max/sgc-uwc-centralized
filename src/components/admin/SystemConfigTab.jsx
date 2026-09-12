@@ -181,7 +181,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
     try {
       const cleanUrl = endpoint.baseUrl.replace(/\/+$/, '');
-      const url = `${cleanUrl}/api/accountant/UnclaimedReceipts?isClaim=${endpoint.isClaim ?? 0}&from=${fromStr}&to=${toStr}`;
+      const url = `${cleanUrl}/api/accountant/UnclaimedReceipts?isClaim=0&from=${fromStr}&to=${toStr}`;
 
       const res = await fetch(url, {
         method: 'GET',
@@ -232,7 +232,6 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
       sub_office: 'All',
       baseUrl: '',
       token: '',
-      isClaim: 0,
       is_active: true
     });
     setIsModalOpen(true);
@@ -246,7 +245,6 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
       sub_office: endpoint.sub_office || 'All',
       baseUrl: endpoint.baseUrl || '',
       token: endpoint.token || '',
-      isClaim: endpoint.isClaim ?? 0,
       is_active: endpoint.is_active ?? true
     });
     setIsModalOpen(true);
@@ -1238,32 +1236,19 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                 />
               </div>
 
-              {/* isClaim and Status */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
-                    isClaim Param
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.isClaim}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isClaim: parseInt(e.target.value, 10) || 0 }))}
-                    className="w-full bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg font-mono font-bold text-slate-800 focus:border-[#002B66] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={formData.is_active ? '1' : '0'}
-                    onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.value === '1' }))}
-                    className="w-full bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg font-bold text-slate-800 focus:border-[#002B66] outline-none"
-                  >
-                    <option value="1">Active</option>
-                    <option value="0">Disabled</option>
-                  </select>
-                </div>
+              {/* Status */}
+              <div>
+                <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  Gateway Status *
+                </label>
+                <select
+                  value={formData.is_active ? '1' : '0'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.value === '1' }))}
+                  className="w-full bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg font-bold text-slate-800 focus:border-[#002B66] outline-none"
+                >
+                  <option value="1">Active</option>
+                  <option value="0">Disabled</option>
+                </select>
               </div>
 
               <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">

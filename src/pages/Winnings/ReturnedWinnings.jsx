@@ -558,7 +558,7 @@ export default function ReturnedWinnings({
                                     {isRemitted && !isClaimedInSourceSystem && (
                                       <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
                                     )}
-                                    {isClaimedInSourceSystem && !isUnderSettlement && (
+                                    {isClaimedInSourceSystem && (
                                       <button
                                         type="button"
                                         onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
@@ -756,7 +756,7 @@ export default function ReturnedWinnings({
                             )
                           ) : (
                             <>
-                              {isClaimedInSourceSystem && !isUnderSettlement && (
+                              {isClaimedInSourceSystem && (
                                 <button
                                   type="button"
                                   onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
