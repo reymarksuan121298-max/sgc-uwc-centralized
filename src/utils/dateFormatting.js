@@ -38,31 +38,50 @@ export const parseToDateString = (dateVal) => {
 export const formatDrawTime = (timeStr, drawDate) => {
   if (!timeStr && !drawDate) return 'N/A';
   let rawTime = String(timeStr || '').trim();
+  const dateCandidate = drawDate || (rawTime.includes('-') || rawTime.includes('/') ? rawTime : null);
+  const formattedDate = parseToDateString(dateCandidate);
 
-  if (/^\d{1,2}$/.test(rawTime)) {
+  // If timeStr is already a full ISO string (e.g. 2026-08-21T00:00:00+00:00 or 2026-08-21 00:00:00)
+  if (rawTime.includes('T') || (rawTime.includes('-') && rawTime.includes(':'))) {
+    const parts = rawTime.split(/[\sT]/);
+    if (parts.length > 1) {
+      const timePart = parts[1].split(':');
+      const hourNum = parseInt(timePart[0], 10);
+      const minNum = parseInt(timePart[1] || '0', 10);
+      const secNum = parseInt(timePart[2] || '0', 10);
+      if (!Number.isNaN(hourNum)) {
+        if (hourNum === 0 && minNum === 0 && secNum === 0) {
+          rawTime = ''; // Midnight default timestamp, omit time
+        } else if (hourNum === 0) {
+          rawTime = '12AM';
+        } else if (hourNum === 12) {
+          rawTime = '12PM';
+        } else if (hourNum > 12) {
+          rawTime = `${hourNum - 12}PM`;
+        } else {
+          rawTime = `${hourNum}AM`;
+        }
+      }
+    } else {
+      rawTime = '';
+    }
+  } else if (/^\d{1,2}$/.test(rawTime)) {
     const hourNum = parseInt(rawTime, 10);
     if (hourNum === 0) rawTime = '12AM';
     else if (hourNum === 12) rawTime = '12PM';
     else if (hourNum > 12) rawTime = `${hourNum - 12}PM`;
     else rawTime = `${hourNum}AM`;
-  } else if (rawTime.includes('T') || rawTime.includes(' ')) {
-    const parts = rawTime.split(/[\sT]/);
-    if (parts.length > 1) {
-      const timePart = parts[1].split(':');
-      if (timePart.length > 0) {
-        const hourNum = parseInt(timePart[0], 10);
-        if (!Number.isNaN(hourNum)) {
-          if (hourNum === 0) rawTime = '12AM';
-          else if (hourNum === 12) rawTime = '12PM';
-          else if (hourNum > 12) rawTime = `${hourNum - 12}PM`;
-          else rawTime = `${hourNum}AM`;
-        }
-      }
-    }
   }
 
-  const formattedDate = parseToDateString(drawDate || timeStr);
-  return formattedDate ? `${rawTime} ${formattedDate}`.trim() : rawTime || 'N/A';
+  // If rawTime is redundant or equal to formattedDate
+  if (rawTime && formattedDate) {
+    if (rawTime === formattedDate || rawTime.includes(formattedDate)) {
+      return formattedDate;
+    }
+    return `${rawTime} ${formattedDate}`.trim();
+  }
+
+  return formattedDate || rawTime || 'N/A';
 };
 
 /**

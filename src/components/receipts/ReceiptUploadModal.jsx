@@ -7,7 +7,7 @@ import {
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
 import { scanReceiptProof } from '../../utils/receiptOcr';
-import { getTicketTransId } from '../../utils/formatters';
+import { getTicketTransId, formatDrawTime } from '../../utils/formatters';
 
 export default function ReceiptUploadModal({ 
   isOpen, 
@@ -210,7 +210,7 @@ export default function ReceiptUploadModal({
             <div>
               <span className="text-[10px] font-bold text-slate-500 uppercase block">Draw Details</span>
               <span className="font-mono font-medium text-slate-700 truncate block">
-                {ticket.drawTime || ticket.drawDate || 'N/A'}
+                {formatDrawTime(ticket.drawTime || ticket.draw, ticket.drawDate || ticket.date || ticket.created_at)}
               </span>
             </div>
             <div>

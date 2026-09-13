@@ -1,7 +1,8 @@
 import React from 'react';
-import { Receipt, AlertTriangle, X, QrCode, Copy, Check, CheckCircle2 } from 'lucide-react';
+import { Receipt, AlertTriangle, X, QrCode, Copy, Check, CheckCircle2, UserCheck, UserX } from 'lucide-react';
 import { formatDrawTime, getTicketTransId } from '../../utils/formatters';
 import { isSSRRole } from '../../utils/permissions';
+import ModernDropdown from '../common/ModernDropdown';
 
 export default function ConfirmReturnModal({
   isOpen,
@@ -128,7 +129,82 @@ export default function ConfirmReturnModal({
               </span>
             </div>
 
-            {/* Row 3: Transaction ID with Copy & QR pill buttons */}
+            {/* Row 3: Teller Status Selector (Prominent on Main Modal Body) */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2 bg-blue-50/40 -mx-4 sm:-mx-5 px-4 sm:px-5 py-2">
+              <span className="text-[#002B66] font-extrabold text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                <span>TELLER STATUS:</span>
+              </span>
+              <ModernDropdown
+                value={tellerStatus}
+                onChange={setTellerStatus}
+                align="right"
+                size="sm"
+                options={[
+                  {
+                    value: 'ACTIVE',
+                    label: 'ACTIVE',
+                    subLabel: 'Active Regular Teller',
+                    color: 'emerald',
+                    badge: 'Active'
+                  },
+                  {
+                    value: 'APPROVE TELLER STATUS',
+                    label: 'APPROVE TELLER STATUS',
+                    subLabel: 'Requires Admin/HR Status Approval',
+                    color: 'amber',
+                    badge: 'Requires Approval'
+                  },
+                  {
+                    value: 'PULL-OUT',
+                    label: 'PULL-OUT',
+                    subLabel: 'Pull-out teller',
+                    color: 'amber',
+                    badge: 'Requires HR'
+                  },
+                  {
+                    value: 'AWOL',
+                    label: 'AWOL',
+                    subLabel: 'Left without notice',
+                    color: 'rose',
+                    badge: 'Requires HR'
+                  },
+                  {
+                    value: 'TERMINATED',
+                    label: 'TERMINATED',
+                    subLabel: 'Separated from service',
+                    color: 'rose',
+                    badge: 'Requires HR'
+                  }
+                ]}
+              />
+            </div>
+
+            {/* HR Valid Email Input for Inactive / AWOL Statuses */}
+            {(tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED') && (
+              <div className="bg-amber-50/90 border border-amber-300/90 rounded-xl p-3 space-y-1.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-amber-900 uppercase tracking-wider">
+                    HR Valid Email Address <span className="text-rose-600">*</span>
+                  </label>
+                  <span className="text-[9px] font-bold text-amber-800 bg-amber-200/80 px-1.5 py-0.5 rounded">
+                    Required for {tellerStatus}
+                  </span>
+                </div>
+                <input
+                  type="email"
+                  value={hrValidEmail}
+                  onChange={(e) => setHrValidEmail(e.target.value)}
+                  placeholder="hr@example.com"
+                  className="w-full bg-white border border-amber-400 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-amber-500/30 font-semibold"
+                  required
+                />
+                <p className="text-[9px] text-amber-800 leading-tight">
+                  Required to verify AWOL/Inactive status. Subject for Unclaimed Specialist approval.
+                </p>
+              </div>
+            )}
+
+            {/* Row 4: Transaction ID with Copy & QR pill buttons */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2 flex-wrap sm:flex-nowrap">
               <div className="flex items-center gap-1 text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
                 <QrCode size={13} className="text-[#002B66]" />
@@ -167,7 +243,7 @@ export default function ConfirmReturnModal({
               </div>
             </div>
 
-            {/* Row 4: Draw Schedule */}
+            {/* Row 5: Draw Schedule */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
                 DRAW SCHEDULE:
@@ -177,7 +253,7 @@ export default function ConfirmReturnModal({
               </span>
             </div>
 
-            {/* Row 5: Bet Combination */}
+            {/* Row 6: Bet Combination */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
                 BET COMBINATION:
@@ -187,7 +263,7 @@ export default function ConfirmReturnModal({
               </span>
             </div>
 
-            {/* Row 6: Bet Amount */}
+            {/* Row 7: Bet Amount */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
                 BET AMOUNT:
@@ -197,7 +273,7 @@ export default function ConfirmReturnModal({
               </span>
             </div>
 
-            {/* Row 7: Win Amount */}
+            {/* Row 8: Win Amount */}
             <div className="flex items-center justify-between pt-1 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
                 WIN AMOUNT:
@@ -245,6 +321,14 @@ export default function ConfirmReturnModal({
                     <span className="font-bold text-slate-800 truncate max-w-[180px]">{ticket.fullName || ticket.outlet || ticket.username || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Teller Status:</span>
+                    <span className={`font-black text-[11px] px-1.5 py-0.5 rounded ${
+                      tellerStatus === 'ACTIVE'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>{tellerStatus}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
                     <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Combination:</span>
                     <span className="font-bold text-slate-900">{betNo} ({betCode})</span>
                   </div>
@@ -254,35 +338,6 @@ export default function ConfirmReturnModal({
                       ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
-                    <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase">Teller Status:</span>
-                    <select
-                      value={tellerStatus}
-                      onChange={(e) => setTellerStatus(e.target.value)}
-                      className="bg-white border border-slate-300 text-[#002B66] text-[10px] font-bold rounded p-1 outline-none focus:border-[#002B66]"
-                    >
-                      <option value="ACTIVE">ACTIVE</option>
-                      <option value="PULL-OUT">PULL-OUT</option>
-                      <option value="AWOL">AWOL</option>
-                      <option value="TERMINATED">TERMINATED</option>
-                    </select>
-                  </div>
-                  {(tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED') && (
-                    <div className="pt-2 border-t border-slate-200 text-left space-y-1">
-                      <label className="text-[10px] font-extrabold text-amber-700 uppercase">HR Valid Email Address:</label>
-                      <input
-                        type="email"
-                        value={hrValidEmail}
-                        onChange={(e) => setHrValidEmail(e.target.value)}
-                        placeholder="hr@example.com"
-                        className="w-full bg-white border border-amber-300 rounded p-1.5 text-xs outline-none focus:border-amber-500 font-mono"
-                        required
-                      />
-                      <p className="text-[9px] text-amber-600 leading-tight">
-                        Required to verify AWOL/Inactive status. Subject for Unclaimed Specialist approval.
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex gap-2 justify-end pt-1">

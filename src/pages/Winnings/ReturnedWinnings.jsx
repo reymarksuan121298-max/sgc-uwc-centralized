@@ -60,20 +60,38 @@ export default function ReturnedWinnings({
   const checkIsExplicitlyClaimed = (item) => {
     if (!item) return false;
     const tid = getTicketTransId(item);
-    if (tid && (liveClaimedTransactionIds?.has?.(tid) || liveClaimedTransactionIds?.has?.(String(item.transactionId || '').trim()))) return true;
+    const rawTid = String(item.transactionId || item.transId || item.receipt_no || item.ticket_no || '').trim();
+    
+    // Check if Trans ID has isClaim=1 in the live source gateway API
+    if (tid && (
+      liveClaimedTransactionIds?.has?.(tid) || 
+      liveClaimedTransactionIds?.has?.(tid.toUpperCase()) || 
+      liveClaimedTransactionIds?.has?.(tid.toLowerCase()) ||
+      liveClaimedTransactionIds?.has?.(rawTid) ||
+      liveClaimedTransactionIds?.has?.(rawTid.toUpperCase()) ||
+      liveClaimedTransactionIds?.has?.(rawTid.toLowerCase())
+    )) {
+      return true;
+    }
+
+    // Direct isClaim=1 property check on live record
     return Boolean(
-      item.is_claimed === 1 ||
-      item.is_claimed === '1' ||
-      item.is_claimed === true ||
-      item.is_claimed === 'true' ||
-      item.isClaimed === 1 ||
+      item.isClaim == 1 ||
+      item.isClaim === '1' ||
+      item.isClaim === true ||
+      item.isClaim === 'true' ||
+      item.is_claim == 1 ||
+      item.is_claim === '1' ||
+      item.is_claim === true ||
+      item.is_claim === 'true' ||
+      item.isClaimed == 1 ||
       item.isClaimed === '1' ||
       item.isClaimed === true ||
       item.isClaimed === 'true' ||
-      item.is_already_claimed ||
-      item.status === 'CLAIMED' ||
-      item.claim_status === 'CLAIMED' ||
-      item.claimed_at
+      item.is_claimed == 1 ||
+      item.is_claimed === '1' ||
+      item.is_claimed === true ||
+      item.is_claimed === 'true'
     );
   };
 
@@ -84,7 +102,7 @@ export default function ReturnedWinnings({
 
   const isInactiveTeller = (item) => {
     const ts = String(item.teller_status || '').toUpperCase();
-    return ts === 'PULL-OUT' || ts === 'AWOL' || ts === 'TERMINATED' || ts === 'PULLOUTS';
+    return ts === 'PULL-OUT' || ts === 'AWOL' || ts === 'TERMINATED' || ts === 'PULLOUTS' || ts === 'APPROVE TELLER STATUS' || item.unclaimed_approval_status === 'PENDING';
   };
 
   // Unremitted items available strictly for weekly remittance deposit (excluding under settlement and inactive)
@@ -212,26 +230,36 @@ export default function ReturnedWinnings({
   };
 
   const executeApproveInactive = async () => {
-    if (!inactiveApprovalItem || !inactiveApprovalName.trim() || !inactiveApprovalIssue.trim()) {
-      alert("Please provide the Approver's Full Name and Issue/Reason.");
+    if (!inactiveApprovalItem || !inactiveApprovalName.trim()) {
+      alert("Please provide the Approver's Full Name.");
       return;
     }
     const transId = inactiveApprovalItem.computedTransId || inactiveApprovalItem.transactionId || 'N/A';
+    const statusLabel = inactiveApprovalItem.teller_status || 'Inactive';
     setIsProcessingAdminAction(true);
     try {
-      const q = inactiveApprovalItem.id 
-        ? supabase.from('returned_winnings').update({ unclaimed_approval_status: 'APPROVED', unclaimed_approved_by: inactiveApprovalName, unclaimed_approval_issue: inactiveApprovalIssue }).eq('id', inactiveApprovalItem.id)
-        : supabase.from('returned_winnings').update({ unclaimed_approval_status: 'APPROVED', unclaimed_approved_by: inactiveApprovalName, unclaimed_approval_issue: inactiveApprovalIssue }).eq('transactionId', transId);
+      const issueText = inactiveApprovalIssue.trim() || `Approved ${statusLabel} status`;
+      const q = inactiveApprovalItem.id
+        ? supabase.from('returned_winnings').update({ 
+            unclaimed_approval_status: 'APPROVED', 
+            unclaimed_approved_by: inactiveApprovalName.trim(), 
+            unclaimed_approval_issue: issueText 
+          }).eq('id', inactiveApprovalItem.id)
+        : supabase.from('returned_winnings').update({ 
+            unclaimed_approval_status: 'APPROVED', 
+            unclaimed_approved_by: inactiveApprovalName.trim(), 
+            unclaimed_approval_issue: issueText 
+          }).eq('transactionId', transId);
       const { error } = await q;
       if (error) throw error;
-      
-      showToast(`Inactive tally for ticket ${transId} has been approved by ${inactiveApprovalName}!`);
+
+      showToast(`Teller status for ticket ${transId} has been approved by ${inactiveApprovalName}!`);
       setInactiveApprovalItem(null);
       setInactiveApprovalName('');
       setInactiveApprovalIssue('');
       if (onDataUpdated) onDataUpdated();
     } catch (err) {
-      alert(`Failed to approve inactive status: ${err.message}`);
+      alert(`Failed to approve teller status: ${err.message}`);
     } finally {
       setIsProcessingAdminAction(false);
     }
@@ -390,8 +418,6 @@ export default function ReturnedWinnings({
             <Download size={15} />
             <span className="hidden sm:inline">Export CSV</span>
           </button>
-
-          {/* Sync Claimed Button removed since it is real-time via App.jsx now */}
         </div>
       </div>
 
@@ -511,7 +537,15 @@ export default function ReturnedWinnings({
                             <td className="px-3 py-2 border-r border-slate-200 text-center whitespace-nowrap">
                               {isDeletionPending ? (
                                 <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full" title={`Requested by: ${item.deletion_request_by || 'Staff'} • Reason: ${item.deletion_request_reason || 'Hard copy receipt claimed'}`}>
-                                  <Clock size={10} className="text-amber-700 animate-spin" /> PENDING ADMIN APPROVAL
+                                  <Clock size={10} className="text-amber-700 animate-spin" /> PENDING APPROVAL
+                                </span>
+                              ) : item.unclaimed_approval_status === 'PENDING' ? (
+                                <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[10px] px-2 py-0.5 rounded-full uppercase">
+                                  <Clock size={10} className="text-amber-700" /> PENDING APPROVAL ({item.teller_status})
+                                </span>
+                              ) : item.unclaimed_approval_status === 'APPROVED' ? (
+                                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded-full uppercase">
+                                  <CheckCircle2 size={10} className="text-emerald-700" /> APPROVED ({item.teller_status})
                                 </span>
                               ) : isRemitted ? (
                                 <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-black text-[10px] px-2 py-0.5 rounded-full border border-emerald-300">
@@ -529,10 +563,6 @@ export default function ReturnedWinnings({
                                 >
                                   <Clock size={10} /> UNDER SETTLEMENT
                                 </button>
-                              ) : isClaimedInSourceSystem ? (
-                                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-emerald-300">
-                                  <CheckCircle size={10} /> ALREADY CLAIMED
-                                </span>
                               ) : item.teller_status ? (
                                 <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-rose-300 uppercase">
                                   <AlertTriangle size={10} /> {item.teller_status}
@@ -563,48 +593,25 @@ export default function ReturnedWinnings({
                                   canApprove ? (
                                     <button
                                       type="button"
-                                      onClick={() => setSelectedForInactiveApproval(item)}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-amber-900 bg-amber-400 hover:bg-amber-500 rounded-md shadow-xs transition-all cursor-pointer active:scale-95"
-                                      title="Review Unclaimed Specialist Approval"
-                                      onClickCapture={(e) => { e.stopPropagation(); setInactiveApprovalItem({...item, computedTransId: transId}); }}
+                                      onClick={() => setInactiveApprovalItem({ ...item, computedTransId: transId })}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-[#002B66] bg-[#FFD700] hover:bg-amber-400 border border-amber-400 rounded-md shadow-xs transition-all cursor-pointer active:scale-95"
+                                      title="Approve Teller Status (AWOL / PULL-OUT / TERMINATED)"
                                     >
-                                      <Check size={11} /> Review Inactive
+                                      <Check size={11} className="stroke-[3]" /> Approve Teller Status
                                     </button>
                                   ) : (
                                     <span className="text-[10px] text-amber-700 font-bold italic">
-                                      Pending HR Approval
+                                      Pending Teller Approval
                                     </span>
                                   )
-                                ) : isDeletionPending ? (
-                                  canApprove ? (
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApproveDeletion(item)}
-                                        disabled={isProcessingAdminAction}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                                        title="Approve claim and deduct from collections"
-                                      >
-                                        <Check size={11} /> Approve & Deduct
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setRejectingItem(item)}
-                                        disabled={isProcessingAdminAction}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 hover:text-white hover:bg-rose-600 border border-rose-300 rounded-md transition-all cursor-pointer"
-                                        title="Reject deletion request"
-                                      >
-                                        <Ban size={11} /> Reject
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-amber-700 font-bold italic">
-                                      Pending Approval
-                                    </span>
-                                  )
-                                ) : (
+                                ) : isDeletionPending ? null : (
                                   <>
-                                    {isRemitted && !isClaimedInSourceSystem && (
+                                    {item.unclaimed_approval_status === 'APPROVED' && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold" title={`Approved by: ${item.unclaimed_approved_by || 'HR / Specialist'}`}>
+                                        <CheckCircle2 size={11} className="text-emerald-600" /> Teller Status Approved
+                                      </span>
+                                    )}
+                                    {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
                                       <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
                                     )}
                                     {isClaimedInSourceSystem && (
@@ -731,6 +738,14 @@ export default function ReturnedWinnings({
                               <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
                                 <Clock size={9} className="text-amber-700" /> PENDING ADMIN
                               </span>
+                            ) : item.unclaimed_approval_status === 'PENDING' ? (
+                              <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 font-bold text-[9px] px-2 py-0.5 rounded-full border border-amber-300 uppercase">
+                                <Clock size={9} className="text-amber-700" /> PENDING ({item.teller_status})
+                              </span>
+                            ) : item.unclaimed_approval_status === 'APPROVED' ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300 uppercase">
+                                <CheckCircle2 size={9} className="text-emerald-700" /> APPROVED ({item.teller_status})
+                              </span>
                             ) : isRemitted ? (
                               <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300">
                                 <CheckCircle2 size={9} /> DEPOSITED
@@ -747,10 +762,6 @@ export default function ReturnedWinnings({
                               >
                                 <Clock size={9} /> SETTLEMENT
                               </button>
-                            ) : isClaimedInSourceSystem ? (
-                              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300">
-                                <CheckCircle size={9} /> CLAIMED
-                              </span>
                             ) : item.teller_status ? (
                               <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-rose-300 uppercase">
                                 <AlertTriangle size={9} /> {item.teller_status}
@@ -784,42 +795,25 @@ export default function ReturnedWinnings({
                                 type="button"
                                 onClick={() => setInactiveApprovalItem({ ...item, computedTransId: transId })}
                                 disabled={isProcessingAdminAction}
-                                className="px-3 py-1 bg-amber-500 text-amber-950 rounded-lg font-black uppercase text-[10px] shadow-xs"
+                                className="px-3 py-1 bg-[#FFD700] hover:bg-amber-400 text-[#002B66] border border-amber-400 rounded-lg font-black uppercase text-[10px] shadow-xs flex items-center gap-1"
                               >
-                                Review Inactive
+                                <Check size={11} className="stroke-[3]" /> Approve Status
                               </button>
                             ) : (
                               <span className="text-[10px] text-amber-700 font-bold italic">
-                                Pending HR Approval
+                                Pending Teller Approval
                               </span>
                             )
-                          ) : isDeletionPending ? (
-                            canApprove ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleApproveDeletion(item)}
-                                  disabled={isProcessingAdminAction}
-                                  className="px-3 py-1 bg-emerald-600 text-white rounded-lg font-black uppercase text-[10px] shadow-xs"
-                                >
-                                  Approve & Deduct
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setRejectingItem(item)}
-                                  disabled={isProcessingAdminAction}
-                                  className="px-2.5 py-1 text-rose-700 bg-rose-50 border border-rose-300 rounded-lg font-bold uppercase text-[10px]"
-                                >
-                                  Reject
-                                </button>
-                              </>
-                            ) : (
-                              <span className="text-[10px] text-amber-700 font-bold italic">
-                                Awaiting Approval
-                              </span>
-                            )
-                          ) : (
+                          ) : isDeletionPending ? null : (
                             <>
+                              {item.unclaimed_approval_status === 'APPROVED' && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
+                                  <CheckCircle2 size={11} className="text-emerald-600" /> Approved
+                                </span>
+                              )}
+                              {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
+                                <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
+                              )}
                               {isClaimedInSourceSystem && (
                                 <button
                                   type="button"
@@ -880,6 +874,7 @@ export default function ReturnedWinnings({
         currentUser={currentUser}
         onApprove={(item) => handleApproveDeletion(item)}
         onReject={(item) => setRejectingItem(item)}
+        onApproveTellerStatus={(item) => setInactiveApprovalItem(item)}
         isProcessingAction={isProcessingAdminAction}
       />
 
@@ -1014,79 +1009,80 @@ export default function ReturnedWinnings({
 
       {/* APPROVE INACTIVE STATUS MODAL */}
       {inactiveApprovalItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-xs">
-            <div className="bg-amber-500 text-amber-950 px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs">
-                <Check size={16} />
-                <span>Approve Inactive Teller Status</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-xs animate-in zoom-in-95 duration-150">
+            {/* Header with PAG-IBIG Navy & Gold Accent */}
+            <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
+              <div className="flex items-center gap-2.5 font-black uppercase tracking-wider text-xs sm:text-sm">
+                <div className="bg-[#FFD700] text-[#002B66] p-1.5 rounded-lg font-black shadow-xs">
+                  <Check size={16} />
+                </div>
+                <span>Approve Teller Status</span>
               </div>
-              <button type="button" onClick={() => setInactiveApprovalItem(null)} className="text-amber-900 hover:text-black cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setInactiveApprovalItem(null)}
+                className="text-slate-300 hover:text-white cursor-pointer p-1 rounded-md hover:bg-white/10 transition-colors"
+                title="Close"
+              >
                 <X size={18} />
               </button>
             </div>
-            <div className="p-5 space-y-4">
-              <p className="text-slate-700 font-medium">
-                Review and approve the AWOL/PULL-OUT/TERMINATED status for transaction <strong className="font-mono text-amber-900">{inactiveApprovalItem.transactionId || inactiveApprovalItem.computedTransId}</strong>.
+
+            <div className="p-4 sm:p-5 space-y-4">
+              <p className="text-slate-700 font-medium leading-relaxed">
+                Review and approve the <strong>{inactiveApprovalItem.teller_status}</strong> teller status for transaction <strong className="font-mono text-[#002B66] font-bold">{inactiveApprovalItem.transactionId || inactiveApprovalItem.computedTransId}</strong>.
               </p>
-              
-              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-[11px] font-mono mb-2">
-                <div className="flex justify-between pb-1 mb-1 border-b border-amber-200">
-                  <span className="text-amber-700 font-bold">HR Provided Email:</span>
-                  <span className="font-black text-amber-900">{inactiveApprovalItem.hr_valid_email || 'N/A'}</span>
+
+              {/* Info Box */}
+              <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3.5 space-y-2 text-xs font-mono shadow-2xs">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase tracking-wider">HR Provided Email:</span>
+                  <span className="font-bold text-slate-800">{inactiveApprovalItem.hr_valid_email || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-amber-700 font-bold">Teller Status:</span>
-                  <span className="font-black text-amber-900 uppercase">{inactiveApprovalItem.teller_status}</span>
+                <div className="flex justify-between items-center pt-0.5">
+                  <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase tracking-wider">Teller Status:</span>
+                  <span className="font-black text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded text-[11px] uppercase tracking-wider">
+                    {inactiveApprovalItem.teller_status}
+                  </span>
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Approver's Full Name
+                  <label className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider block">
+                    Approver's Full Name <span className="text-rose-600">*</span>
                   </label>
                   <input
                     type="text"
                     value={inactiveApprovalName}
                     onChange={(e) => setInactiveApprovalName(e.target.value)}
                     placeholder="e.g. John Doe (Unclaimed Specialist)"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-amber-500"
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Issue / Reason
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={inactiveApprovalIssue}
-                    onChange={(e) => setInactiveApprovalIssue(e.target.value)}
-                    placeholder="Explain why this ticket went through approval..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-amber-500"
+                    className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-[#002B66]/20 focus:border-[#002B66] transition-all"
                     required
                   />
                 </div>
               </div>
             </div>
-            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+
+            {/* Footer Buttons with PAG-IBIG Action Style */}
+            <div className="bg-slate-50/90 px-5 py-3.5 border-t border-slate-200 flex justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setInactiveApprovalItem(null)}
                 disabled={isProcessingAdminAction}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold uppercase text-[11px] hover:bg-slate-100 cursor-pointer"
+                className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-black px-5 py-2.5 rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={executeApproveInactive}
-                disabled={isProcessingAdminAction || !inactiveApprovalName.trim() || !inactiveApprovalIssue.trim()}
-                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-amber-950 font-black uppercase text-[11px] shadow-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                disabled={isProcessingAdminAction || !inactiveApprovalName.trim()}
+                className="bg-[#002B66] hover:bg-blue-900 text-white font-black px-6 py-2.5 rounded-lg text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer hover:shadow-lg"
               >
-                {isProcessingAdminAction ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                <span>Approve Ticket</span>
+                {isProcessingAdminAction ? <Loader2 size={14} className="animate-spin text-[#FFD700]" /> : <Check size={14} className="text-[#FFD700]" />}
+                <span>Approve Teller Status</span>
               </button>
             </div>
           </div>

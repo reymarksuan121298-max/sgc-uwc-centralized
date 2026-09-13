@@ -62,7 +62,7 @@ CREATE TABLE public.returned_winnings (
     location TEXT,
     outlet TEXT,
     supervisor TEXT,
-    sub_office TEXT REFERENCES public.sub_offices(name) ON UPDATE CASCADE,
+    sub_office TEXT,
     "tellerId" BIGINT,
     "drawId" BIGINT,
     "betCode" TEXT DEFAULT 'RS3',

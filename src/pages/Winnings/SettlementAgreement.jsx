@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
+import ModernDropdown from '../../components/common/ModernDropdown';
 
 const SUPERVISORS = {
   // Numeric IDs from backend database
@@ -696,22 +697,20 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
         {/* Sub-Office Filter Dropdown */}
         {(!currentUser?.sub_office || currentUser.sub_office === 'All') && dbSubOffices.length > 0 && (
-          <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs shadow-2xs">
-            <Building2 size={15} className="text-[#002B66] shrink-0" />
-            <span className="text-[10px] font-black uppercase text-slate-400">Sub-Office Scope:</span>
-            <select
-              value={selectedSubOfficeFilter}
-              onChange={(e) => setSelectedSubOfficeFilter(e.target.value)}
-              className="bg-transparent font-bold text-[#002B66] outline-none cursor-pointer text-xs"
-            >
-              <option value="ALL">All Sub-Offices ({dbSubOffices.length})</option>
-              {dbSubOffices.map((so) => (
-                <option key={so.id || so.name} value={so.name}>
-                  {so.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <ModernDropdown
+            icon={Building2}
+            label="Sub-Office Scope"
+            value={selectedSubOfficeFilter}
+            onChange={setSelectedSubOfficeFilter}
+            options={[
+              { value: 'ALL', label: `All Sub-Offices (${dbSubOffices.length})` },
+              ...dbSubOffices.map((so) => ({
+                value: so.name,
+                label: so.name
+              }))
+            ]}
+            searchable={dbSubOffices.length > 5}
+          />
         )}
       </div>
 

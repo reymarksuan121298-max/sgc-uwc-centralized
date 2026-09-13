@@ -4,7 +4,7 @@ import {
   FileCheck, ShieldAlert, AlertTriangle, UserCheck, Check, Ban,
   Building2, Calendar, Ticket, Loader2
 } from 'lucide-react';
-import { getTicketTransId } from '../../utils/formatters';
+import { getTicketTransId, formatDrawTime } from '../../utils/formatters';
 import { canApproveDeletionRequests, isAdminRole, isSuperAdminRole } from '../../utils/permissions';
 
 export default function ViewHardCopyTicketModal({
@@ -14,6 +14,7 @@ export default function ViewHardCopyTicketModal({
   currentUser,
   onApprove,
   onReject,
+  onApproveTellerStatus,
   isProcessingAction = false
 }) {
   const [zoom, setZoom] = useState(1);
@@ -26,6 +27,7 @@ export default function ViewHardCopyTicketModal({
   const winAmount = parseFloat(ticket.winAmount ?? 0);
   const betAmount = parseFloat(ticket.betAmount ?? 0);
   const displayAccount = ticket.fullName || ticket.outlet || ticket.username || 'Accountable Teller';
+  const drawFormatted = formatDrawTime(ticket.drawTime || ticket.draw, ticket.drawDate || ticket.date || ticket.created_at);
   const reason = ticket.deletion_request_reason || ticket.reason || 'Requested deletion for verified claimed winning ticket.';
   const requestedBy = ticket.deletion_request_by || ticket.username || 'SSR / Specialist';
   const requestDate = ticket.updated_at || ticket.created_at;
@@ -283,7 +285,7 @@ export default function ViewHardCopyTicketModal({
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                   <span className="font-sans text-slate-500 font-bold">Draw Date & Time:</span>
                   <span className="font-semibold text-slate-700">
-                    {ticket.drawDate || ticket.drawTime || 'N/A'}
+                    {drawFormatted}
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-0.5">
@@ -318,7 +320,7 @@ export default function ViewHardCopyTicketModal({
                     <div className="space-y-3 font-mono text-[10px]">
                       <div className="flex justify-between items-center">
                         <span className="text-slate-500">Ticket Date / Time:</span>
-                        <span className="font-bold text-slate-800">{ticket.drawDate || 'N/A'} {ticket.drawTime || ''}</span>
+                        <span className="font-bold text-slate-800">{drawFormatted}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-500">Claim Date API:</span>
@@ -362,6 +364,20 @@ export default function ViewHardCopyTicketModal({
 
             {/* Action Buttons for Approver / Viewer */}
             <div className="p-5 pt-3 border-t border-slate-200 bg-white space-y-2 mt-auto">
+              {ticket.unclaimed_approval_status === 'PENDING' && canApprove && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApproveTellerStatus && onApproveTellerStatus(ticket);
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#FFD700] hover:bg-amber-400 text-[#002B66] border border-amber-400 font-black uppercase text-[11px] rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+                >
+                  <Check size={14} className="stroke-[3]" />
+                  <span>Approve Teller Status</span>
+                </button>
+              )}
+
               {isPending && canApprove ? (
                 <div className="flex items-center gap-2">
                   <button

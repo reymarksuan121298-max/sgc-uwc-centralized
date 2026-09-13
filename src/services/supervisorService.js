@@ -194,9 +194,13 @@ function getIliganAuthHeader(gatewayEndpoints = []) {
     : '';
 }
 
+// 10-Minute in-memory cache for supervisor endpoints
+const supervisorUrlCache = new Map();
+const SUPERVISOR_CACHE_TTL = 10 * 60 * 1000;
+
 /**
- * Generic helper: fetch supervisors from one or more API URLs and merge into a single map.
- * @param {string[]} urls
+ * Helper to fetch and parse supervisor data from a list of candidate URLs
+ * @param {Array<string>} urls
  * @param {string} authHeader
  * @param {Function|null} allowFn - (username: string) => boolean, or null to accept all
  * @returns {Promise<Object>}
@@ -214,11 +218,38 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
   };
 
   const merged = {};
+  const now = Date.now();
 
   await Promise.all(
     urls.map(async (url) => {
       try {
-        const res = await fetch(url, { method: 'GET', headers });
+        const cached = supervisorUrlCache.get(url);
+        if (cached && (now - cached.timestamp) < SUPERVISOR_CACHE_TTL) {
+          const rawList = cached.data;
+          rawList.forEach(item => {
+            if (!item) return;
+            const name = (
+              item.name || item.fullName || item.full_name ||
+              item.supervisor_name || item.username || ''
+            ).trim().toUpperCase();
+            const username = (item.username || item.email || '').trim().toLowerCase();
+            if (allowFn && username && !allowFn(username)) return;
+            if (name) {
+              if (item.id !== undefined && item.id !== null) merged[String(item.id).toLowerCase()] = name;
+              if (username) {
+                merged[username] = name;
+                merged[username.split('@')[0]] = name;
+              }
+              if (item.code) merged[String(item.code).toLowerCase()] = name;
+            }
+          });
+          return;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        const res = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+        clearTimeout(timeoutId);
         if (!res.ok) {
           console.warn(`[SupervisorService] ${url} returned HTTP ${res.status}`);
           return;
@@ -233,6 +264,8 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
               : json?.data && typeof json.data === 'object'
                 ? [json.data]
                 : [];
+
+        supervisorUrlCache.set(url, { timestamp: now, data: rawList });
 
         rawList.forEach(item => {
           if (!item) return;

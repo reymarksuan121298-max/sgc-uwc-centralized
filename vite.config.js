@@ -12,6 +12,14 @@ export default defineConfig({
     port: 5173,
     fs: {
       allow: ['..'] // Allow serving files from one level up to the project root
+    },
+    proxy: {
+      '/api-proxy/stl-ldn': {
+        target: 'https://stl-ldn-api.com',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api-proxy\/stl-ldn/, '')
+      }
     }
   }
 })

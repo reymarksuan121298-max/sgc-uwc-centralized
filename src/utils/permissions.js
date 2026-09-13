@@ -47,7 +47,7 @@ export const canApproveDeletionRequests = (role) => {
 export const canViewTab = (userRole, tabId) => {
   if (isAdminRole(userRole)) return true;
   if (isSSRRole(userRole)) {
-    return tabId === 'pending' || tabId === 'unclaimed' || tabId === 'returned' || tabId === 'settlement';
+    return tabId === 'pending' || tabId === 'unclaimed' || tabId === 'returned' || tabId === 'settlement' || tabId === 'receipts';
   }
   // Unclaimed Specialist:
   const allowedTabs = ['collections', 'pending', 'unclaimed', 'returned', 'receipts', 'settlement', 'verification', 'remittance_verification'];

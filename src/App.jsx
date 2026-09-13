@@ -78,9 +78,19 @@ export default function App() {
     const ids = new Set();
     if (data && data.length) {
       data.forEach(r => {
-        if (r.isClaim == 1 || r.isClaim === '1' || r.isClaim === true || r.isClaim === 'true') {
+        const isClaimedFlag = (
+          r.isClaim == 1 || r.isClaim === '1' || r.isClaim === true || r.isClaim === 'true' ||
+          r.is_claim == 1 || r.is_claim === '1' || r.is_claim === true || r.is_claim === 'true' ||
+          r.is_claimed == 1 || r.is_claimed === '1' || r.is_claimed === true || r.is_claimed === 'true' ||
+          r.isClaimed == 1 || r.isClaimed === '1' || r.isClaimed === true || r.isClaimed === 'true'
+        );
+        if (isClaimedFlag) {
           const tid = String(r.transactionId || r.transId || r.receipt_no || r.ticket_no || '').trim();
-          if (tid) ids.add(tid);
+          if (tid) {
+            ids.add(tid);
+            ids.add(tid.toUpperCase());
+            ids.add(tid.toLowerCase());
+          }
         }
       });
     }
@@ -108,11 +118,38 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState(null);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrModalTicket, setQrModalTicket] = useState(null);
-  const [copiedTransIds, setCopiedTransIds] = useState(() => new Set());
+  const [copiedTransIds, setCopiedTransIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('stl_copied_trans_ids');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const [openedQrTransIds, setOpenedQrTransIds] = useState(() => new Set());
   const [isCapturingImage, setIsCapturingImage] = useState(null);
   const [copiedSupervisorKey, setCopiedSupervisorKey] = useState(null);
-  const [copiedSupervisorKeys, setCopiedSupervisorKeys] = useState(() => new Set());
+  const [copiedSupervisorKeys, setCopiedSupervisorKeys] = useState(() => {
+    try {
+      const saved = localStorage.getItem('stl_copied_supervisor_keys');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Persist copied sets in localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('stl_copied_trans_ids', JSON.stringify(Array.from(copiedTransIds)));
+    } catch {}
+  }, [copiedTransIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('stl_copied_supervisor_keys', JSON.stringify(Array.from(copiedSupervisorKeys)));
+    } catch {}
+  }, [copiedSupervisorKeys]);
 
   const [selectedSettlementTicketId, setSelectedSettlementTicketId] = useState('');
 
@@ -440,6 +477,7 @@ export default function App() {
   }, [fetchReturnedFromSupabase, fetchPendingChatCount]);
 
   // Fetch Winning Numbers from Central Live Gateway
+  // Fetch Winning Numbers from Central Live Gateway with High-Speed Progressive Sync
   const fetchData = useCallback(async (force = false, customFrom = null, customTo = null, endpointsOverride = null, configOverride = null) => {
     if (isFetchingLiveRef.current && !force) return;
 
@@ -453,14 +491,36 @@ export default function App() {
     const cacheKey = `${selectedEndpointFilter}_${currentUser?.sub_office || 'All'}_${apiFromDate}_${apiToDate}`;
     const now = Date.now();
 
-    // 20-Second Memory Cache Hit
-    if (!force && memoryCacheRef.current.key === cacheKey && (now - memoryCacheRef.current.timestamp) < 20000 && memoryCacheRef.current.data.length > 0) {
+    // 1. Fast Memory Cache (60s TTL)
+    if (!force && memoryCacheRef.current.key === cacheKey && (now - memoryCacheRef.current.timestamp) < 60000 && memoryCacheRef.current.data?.length > 0) {
       setData(memoryCacheRef.current.data);
+      setLoading(false);
       return;
     }
 
+    // 2. Instant Local Storage Stale-While-Revalidate Hit (0ms UI render)
+    let hasLocalRendered = false;
+    try {
+      const localSaved = localStorage.getItem(`stl_unclaimed_cache_${cacheKey}`);
+      if (localSaved) {
+        const parsed = JSON.parse(localSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setData(parsed);
+          hasLocalRendered = true;
+          // If fresh (<20s) and not forced, return immediately
+          const savedTs = parseInt(localStorage.getItem(`stl_unclaimed_ts_${cacheKey}`) || '0', 10);
+          if (!force && (now - savedTs) < 20000) {
+            setLoading(false);
+            return;
+          }
+        }
+      }
+    } catch {}
+
     isFetchingLiveRef.current = true;
-    setLoading(true);
+    if (!hasLocalRendered) {
+      setLoading(true);
+    }
     setErrorMsg(null);
 
     try {
@@ -478,14 +538,12 @@ export default function App() {
           const match = activeEndpoints.find(e => {
             if (!e.sub_office) return false;
             const epOffices = e.sub_office.split(',').map(s => s.trim().toLowerCase());
-            // Looser match to handle "SET B OFFICE" matching "ILIGAN SET B"
             return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')));
           });
           const fallbackEp = activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0];
           targetEndpoints = match ? [{ ...match, requestedSubOffice: currentUser.sub_office }] : (fallbackEp ? [{ ...fallbackEp, requestedSubOffice: currentUser.sub_office }] : []);
         } else {
           if (selectedEndpointFilter !== 'ALL') {
-            // Support composite key format: "endpointId__subOfficeName" from broken-down dropdown
             const parts = selectedEndpointFilter.split('__');
             const resolvedId = parts[0];
             const requestedSubOffice = parts[1] || '';
@@ -501,12 +559,23 @@ export default function App() {
 
       if (targetEndpoints.length === 0) {
         setData([]);
+        setLoading(false);
         return;
       }
 
-      const fetchPromises = targetEndpoints.flatMap((cfg) => {
-        if (!cfg.baseUrl) return [];
+      const globalFallbackToken = (
+        gatewayConfig?.token?.trim() ||
+        activeEndpoints.find(e => e.token?.trim())?.token?.trim() ||
+        gatewayEndpoints.find(e => e.token?.trim())?.token?.trim() ||
+        ''
+      );
+
+      // Helper to build clean endpoint fetch configurations
+      const endpointConfigs = targetEndpoints.map(cfg => {
         let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
+        if (import.meta.env.DEV && cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
+          cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
+        }
         let targetUrl = cleanBaseUrl;
         if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
           if (targetUrl.toLowerCase().endsWith('/api')) {
@@ -517,7 +586,7 @@ export default function App() {
         }
 
         const queryGlue = targetUrl.includes('?') ? '&' : '?';
-        const rawToken = (cfg.token || '').trim();
+        const rawToken = (cfg.token || '').trim() || globalFallbackToken;
         const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
 
         const endpointLabel = (cfg.sub_office || cfg.name || '').toLowerCase();
@@ -546,104 +615,75 @@ export default function App() {
           }
         }
 
-        const doFetch = async (isClaimVal) => {
-          let useFrom = apiFromDate;
-          let useTo = apiToDate;
-
-          // User requested not to rely on Date Range for Claimed tickets matching.
-          let arr = [];
-
-          if (isClaimVal === 1) {
-            // Chunking into 3-month intervals to prevent API 500 Internal Server errors
-            const pastD = new Date();
-            pastD.setFullYear(pastD.getFullYear() - 1);
-            
-            const futD = new Date();
-            futD.setDate(futD.getDate() + 2);
-
-            let currentStart = new Date(pastD);
-            const chunks = [];
-
-            while (currentStart < futD) {
-              let chunkEnd = new Date(currentStart);
-              chunkEnd.setMonth(chunkEnd.getMonth() + 3);
-              if (chunkEnd > futD) chunkEnd = futD;
-              
-              const sFrom = currentStart.toISOString().split('T')[0];
-              const sTo = chunkEnd.toISOString().split('T')[0];
-              
-              chunks.push(`${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${sFrom}&to=${sTo}`);
-              currentStart = new Date(chunkEnd);
-              currentStart.setDate(currentStart.getDate() + 1);
-            }
-
-            try {
-              const responses = await Promise.all(chunks.map(url => 
-                fetch(url, {
-                  method: 'GET',
-                  headers: { 'Authorization': authHeader, 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json' }
-                })
-              ));
-              
-              for (const res of responses) {
-                if (res.ok) {
-                  const result = await res.json();
-                  const deepData = result?.data?.data || result?.data || result;
-                  const chunkArr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-                  arr = [...arr, ...chunkArr];
-                }
-              }
-            } catch (err) {
-               console.warn("Chunked fetch failed:", err);
-            }
-          } else {
-             const fullUrl = `${targetUrl}${queryGlue}isClaim=${isClaimVal}&from=${useFrom}&to=${useTo}`;
-             const res = await fetch(fullUrl, {
-               method: 'GET',
-               headers: {
-                 'Authorization': authHeader,
-                 'Accept': 'application/json, text/plain, */*',
-                 'Content-Type': 'application/json'
-               }
-             });
-             if (!res.ok) throw new Error(`[${cfg.name || cfg.sub_office || 'Gateway'} (isClaim=${isClaimVal})] HTTP ${res.status}`);
-             const result = await res.json();
-             const deepData = result?.data?.data || result?.data || result;
-             arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-          }
-
-          if (isIliganEndpoint) {
-            arr = arr.filter(item => {
-              const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
-              if (isBaloi) return isBaloiOfficeAllowedSupervisor(uName);
-              if (isLala) return isLalaOfficeAllowedSupervisor(uName);
-              return isSetA ? isIliganSetAAllowedSupervisor(uName) : isIliganAllowedSupervisor(uName);
-            });
-          }
-
-          let mappedArr = arr.map(item => ({
-            ...item,
-            isClaim: isClaimVal,
-            sub_office: isIliganEndpoint ? fallbackSubOffice : (item.sub_office || item.location || fallbackSubOffice)
-          }));
-
-          return mappedArr;
+        return {
+          cfg,
+          targetUrl,
+          queryGlue,
+          authHeader,
+          isIliganEndpoint,
+          isSetA,
+          isLala,
+          isBaloi,
+          fallbackSubOffice
         };
-
-        return [doFetch(0), doFetch(1)];
       });
 
+      // Filter function for Iligan supervisor branches
+      const filterIligan = (arr, epMeta) => {
+        if (!epMeta.isIliganEndpoint) return arr;
+        return arr.filter(item => {
+          const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
+          if (epMeta.isBaloi) return isBaloiOfficeAllowedSupervisor(uName);
+          if (epMeta.isLala) return isLalaOfficeAllowedSupervisor(uName);
+          return epMeta.isSetA ? isIliganSetAAllowedSupervisor(uName) : isIliganAllowedSupervisor(uName);
+        });
+      };
 
-      const results = await Promise.allSettled(fetchPromises);
+      // ─── STAGE 1: Fast Fetch Primary Unclaimed Records (isClaim=0) ────────────
+      const fetchUnclaimedPromises = endpointConfigs.map(async (epMeta) => {
+        const fullUrl = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=0&from=${apiFromDate}&to=${apiToDate}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 9000);
+
+        try {
+          const res = await fetch(fullUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': epMeta.authHeader,
+              'Accept': 'application/json, text/plain, */*',
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          if (!res.ok) throw new Error(`[${epMeta.cfg.name || epMeta.cfg.sub_office || 'Gateway'}] HTTP ${res.status}`);
+          const result = await res.json();
+          const deepData = result?.data?.data || result?.data || result;
+          let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+          arr = filterIligan(arr, epMeta);
+
+          return arr.map(item => ({
+            ...item,
+            isClaim: 0,
+            sub_office: epMeta.isIliganEndpoint ? epMeta.fallbackSubOffice : (item.sub_office || item.location || epMeta.fallbackSubOffice)
+          }));
+        } catch (err) {
+          clearTimeout(timeoutId);
+          throw err;
+        }
+      });
+
+      const stage1Results = await Promise.allSettled(fetchUnclaimedPromises);
       const errors = [];
-      const combined = results.flatMap((r, idx) => {
+      const unclaimedCombined = stage1Results.flatMap((r, idx) => {
         if (r.status === 'fulfilled') return r.value;
         errors.push(r.reason?.message || `Gateway ${idx + 1} unreachable`);
         return [];
       });
 
       const seen = new Set();
-      const uniqueData = combined.filter((item, idx) => {
+      const uniqueUnclaimed = unclaimedCombined.filter((item, idx) => {
         const id = item.id || item.apiId || item._id;
         const key = id
           ? `${item.sub_office}::${id}`.toLowerCase()
@@ -651,16 +691,108 @@ export default function App() {
         return !seen.has(key) && seen.add(key);
       });
 
-      // Save to memory cache
-      memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: uniqueData };
-      setData(uniqueData);
+      // Instantly update UI with unclaimed ledger data & persist in cache
+      memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: uniqueUnclaimed };
+      setData(uniqueUnclaimed);
+      setLoading(false); // Stop loading immediately once primary unclaimed data is ready!
 
-      if (errors.length && uniqueData.length === 0) {
+      try {
+        localStorage.setItem(`stl_unclaimed_cache_${cacheKey}`, JSON.stringify(uniqueUnclaimed));
+        localStorage.setItem(`stl_unclaimed_ts_${cacheKey}`, String(Date.now()));
+      } catch {}
+
+      if (errors.length && uniqueUnclaimed.length === 0) {
         setErrorMsg(`Gateway connection warning: ${errors.join(', ')}`);
       }
+
+      // ─── STAGE 2: Progressive Background Sync for Claimed Records (isClaim=1) ─
+      (async () => {
+        try {
+          const pastD = new Date();
+          pastD.setFullYear(pastD.getFullYear() - 1);
+          const futD = new Date();
+          futD.setDate(futD.getDate() + 2);
+
+          // Fast 6-month chunking (2 fast parallel requests instead of 4-5)
+          let currentStart = new Date(pastD);
+          const dateChunks = [];
+          while (currentStart < futD) {
+            let chunkEnd = new Date(currentStart);
+            chunkEnd.setMonth(chunkEnd.getMonth() + 6);
+            if (chunkEnd > futD) chunkEnd = futD;
+            dateChunks.push({
+              from: currentStart.toISOString().split('T')[0],
+              to: chunkEnd.toISOString().split('T')[0]
+            });
+            currentStart = new Date(chunkEnd);
+            currentStart.setDate(currentStart.getDate() + 1);
+          }
+
+          const fetchClaimedPromises = endpointConfigs.flatMap((epMeta) => {
+            if (!epMeta.authHeader) return []; // Skip unauthenticated endpoints to prevent Laravel 500 RouteNotFoundException
+            return dateChunks.map(async (chunk) => {
+              const url = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=1&from=${chunk.from}&to=${chunk.to}`;
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 12000);
+              try {
+                const res = await fetch(url, {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': epMeta.authHeader,
+                    'Accept': 'application/json, text/plain, */*',
+                    'Content-Type': 'application/json'
+                  },
+                  signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (!res.ok) return [];
+                const result = await res.json();
+                const deepData = result?.data?.data || result?.data || result;
+                let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+                arr = filterIligan(arr, epMeta);
+                return arr.map(item => ({
+                  ...item,
+                  isClaim: 1,
+                  sub_office: epMeta.isIliganEndpoint ? epMeta.fallbackSubOffice : (item.sub_office || item.location || epMeta.fallbackSubOffice)
+                }));
+              } catch {
+                clearTimeout(timeoutId);
+                return [];
+              }
+            });
+          });
+
+          const stage2Results = await Promise.allSettled(fetchClaimedPromises);
+          const claimedCombined = stage2Results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+
+          if (claimedCombined.length > 0) {
+            setData(prev => {
+              const combinedAll = [...prev, ...claimedCombined];
+              const innerSeen = new Set();
+              const mergedUnique = combinedAll.filter((item, idx) => {
+                const id = item.id || item.apiId || item._id;
+                const key = id
+                  ? `${item.sub_office}::${id}`.toLowerCase()
+                  : `${item.sub_office}::${item.transactionId || item.transId || item.receipt_no || item.ticket_no}::${item.betNo || item.CombiNo}::${item.drawTime || item.draw}::${item.winAmount}::${idx}`.toLowerCase();
+                return !innerSeen.has(key) && innerSeen.add(key);
+              });
+              memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: mergedUnique };
+              try {
+                localStorage.setItem(`stl_unclaimed_cache_${cacheKey}`, JSON.stringify(mergedUnique));
+              } catch {}
+              return mergedUnique;
+            });
+          }
+        } catch (bgErr) {
+          console.warn('Background claimed tickets sync completed with warnings:', bgErr);
+        }
+      })();
+
     } catch (error) {
       setErrorMsg(error.message);
-      setData([]);
+      if (!hasLocalRendered) {
+        setData([]);
+      }
     } finally {
       isFetchingLiveRef.current = false;
       setLoading(false);
@@ -1101,6 +1233,7 @@ export default function App() {
     const tellerStatus = typeof payloadObj === 'object' ? payloadObj.tellerStatus : (payloadObj || 'ACTIVE');
     const hrValidEmail = typeof payloadObj === 'object' ? payloadObj.hrValidEmail : null;
     const isInactiveStatus = tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED';
+    const isApprovalRequired = isInactiveStatus || tellerStatus === 'APPROVE TELLER STATUS' || tellerStatus === 'FOR_APPROVAL';
 
     const winAmt = parseFloat(selectedTicket.winAmount ?? 0);
     const admP = commissionConfig?.adminPercent ?? 50;
@@ -1141,12 +1274,13 @@ export default function App() {
       receipt_status: 'NO_RECEIPT',
       teller_status: tellerStatus !== 'ACTIVE' ? tellerStatus : null,
       hr_valid_email: isInactiveStatus ? hrValidEmail : null,
-      unclaimed_approval_status: isInactiveStatus ? 'PENDING' : null,
+      unclaimed_approval_status: isApprovalRequired ? 'PENDING' : null,
+      unclaimed_approved_by: null,
       status: selectedTicket.status ?? (gatewayConfig?.isClaim === 1 ? 1 : 0)
     };
 
     try {
-      const { error } = await supabase.from('returned_winnings').insert([payload]);
+      const { error } = await supabase.from('returned_winnings').upsert([payload], { onConflict: 'transactionId' });
       if (error) throw error;
 
       await supabase.from('audit_logs').insert([{

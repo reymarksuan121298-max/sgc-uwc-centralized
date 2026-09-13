@@ -42,6 +42,7 @@ export default function Sidebar({
     navItems = [
       { id: 'pending', label: 'Unclaimed Winnings', Icon: CalendarCheck },
       { id: 'returned', label: 'Returned Winnings', Icon: ArrowLeftRight, badge: returnedCount },
+      { id: 'receipts', label: 'Remittance Proofs', Icon: Receipt, badge: receiptsCount },
       { id: 'settlement', label: 'Settlement Agreements', Icon: FileText },
     ];
   } else {
