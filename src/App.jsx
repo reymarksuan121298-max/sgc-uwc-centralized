@@ -575,7 +575,7 @@ export default function App() {
       // Helper to build clean endpoint fetch configurations
       const endpointConfigs = targetEndpoints.map(cfg => {
         let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
-        if (import.meta.env.DEV && cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
+        if (cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
           cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
         }
         let targetUrl = cleanBaseUrl;

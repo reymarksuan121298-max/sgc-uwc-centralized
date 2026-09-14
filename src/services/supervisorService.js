@@ -248,7 +248,10 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 7000);
-        const res = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+        const fetchUrl = (typeof window !== 'undefined' && url.toLowerCase().includes('stl-ldn-api.com'))
+          ? url.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn')
+          : url;
+        const res = await fetch(fetchUrl, { method: 'GET', headers, signal: controller.signal });
         clearTimeout(timeoutId);
         if (!res.ok) {
           console.warn(`[SupervisorService] ${url} returned HTTP ${res.status}`);

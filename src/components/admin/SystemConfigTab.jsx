@@ -180,7 +180,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     const startTime = Date.now();
 
     try {
-      const cleanUrl = endpoint.baseUrl.replace(/\/+$/, '');
+      let cleanUrl = endpoint.baseUrl.replace(/\/+$/, '');
+      if (typeof window !== 'undefined' && cleanUrl.toLowerCase().includes('stl-ldn-api.com')) {
+        cleanUrl = cleanUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
+      }
       const url = `${cleanUrl}/api/accountant/UnclaimedReceipts?isClaim=0&from=${fromStr}&to=${toStr}`;
 
       const res = await fetch(url, {

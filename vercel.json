@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api-proxy/stl-ldn/:path*",
+      "destination": "https://stl-ldn-api.com/:path*"
+    },
+    {
       "source": "/((?!assets/|.*\\..*).*)",
       "destination": "/index.html"
     }

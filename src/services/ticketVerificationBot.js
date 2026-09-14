@@ -119,6 +119,9 @@ export async function queryGatewayLive(searchKey, targetDate, gatewayEndpoints =
     for (const isClaimVal of isClaimParams) {
       for (const cfg of activeEndpoints) {
         let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
+        if (typeof window !== 'undefined' && cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
+          cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
+        }
         let targetUrl = cleanBaseUrl;
         if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
           if (targetUrl.toLowerCase().endsWith('/api')) {
