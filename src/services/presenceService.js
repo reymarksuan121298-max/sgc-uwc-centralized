@@ -60,9 +60,9 @@ class PresenceService {
       callback(new Set(this.onlineUserIds), { ...this.presenceMap });
     }
 
-    const userChanged = this.currentUser?.id !== currentUser?.id || 
-                        this.currentUser?.username !== currentUser?.username;
-    
+    const userChanged = this.currentUser?.id !== currentUser?.id ||
+      this.currentUser?.username !== currentUser?.username;
+
     if (currentUser && (!this.channel || userChanged)) {
       this.currentUser = currentUser;
       this.initPresenceChannel();
@@ -163,6 +163,14 @@ class PresenceService {
 
   async trackSelf() {
     if (!this.channel || !this.currentUser) return;
+
+    // Throttle track calls to prevent client_rate_limit_exceeded
+    const now = Date.now();
+    if (this._lastTrackTime && (now - this._lastTrackTime < 10000)) {
+      return;
+    }
+    this._lastTrackTime = now;
+
     try {
       await this.channel.track({
         id: String(this.currentUser.id || ''),
@@ -173,7 +181,8 @@ class PresenceService {
         online_at: new Date().toISOString(),
       });
     } catch (err) {
-      console.warn('[PresenceService] track failed:', err);
+      // Gracefully ignore rate-limit warning without crashing
+      console.warn('[PresenceService] track notice:', err?.message || err);
     }
   }
 
@@ -189,14 +198,15 @@ class PresenceService {
 
   startHeartbeat() {
     this.stopHeartbeat();
-    // Refresh presence every 25 seconds to guarantee active online presence
+    // Supabase maintains presence automatically while the WebSocket is connected.
+    // We only send a light refresh every 60 seconds to avoid exceeding presence rate limits.
     this.heartbeatTimer = setInterval(async () => {
       if (this.isSubscribed && this.channel && this.currentUser) {
         await this.trackSelf();
       } else if (this.currentUser) {
         this.initPresenceChannel();
       }
-    }, 25000);
+    }, 60000);
   }
 
   stopHeartbeat() {
@@ -211,7 +221,7 @@ class PresenceService {
     if (this.channel) {
       try {
         this.channel.untrack();
-      } catch {}
+      } catch { }
       supabase.removeChannel(this.channel);
       this.channel = null;
       this.isSubscribed = false;
@@ -224,7 +234,7 @@ class PresenceService {
   isUserOnline(userOrKey, customSet = null) {
     const set = customSet || this.onlineUserIds;
     if (!userOrKey || !set) return false;
-    
+
     if (typeof userOrKey === 'string') {
       const normalizedKey = this.normalize(userOrKey);
       return set.has(normalizedKey);
@@ -234,9 +244,9 @@ class PresenceService {
     const username = this.normalize(userOrKey.username);
     const fullName = this.normalize(userOrKey.full_name || userOrKey.fullName || userOrKey.name);
 
-    return (Boolean(id) && set.has(id)) || 
-           (Boolean(username) && set.has(username)) || 
-           (Boolean(fullName) && set.has(fullName));
+    return (Boolean(id) && set.has(id)) ||
+      (Boolean(username) && set.has(username)) ||
+      (Boolean(fullName) && set.has(fullName));
   }
 }
 

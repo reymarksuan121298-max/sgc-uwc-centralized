@@ -173,40 +173,41 @@ export default function RequestDeleteModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden text-slate-800">
         
-        {/* Header */}
-        <div className="bg-rose-600 text-white px-5 py-4 flex items-center justify-between shrink-0">
+        {/* Header (Pag-IBIG Navy & Gold Theme) */}
+        <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-rose-700/80 rounded-xl border border-rose-500/60 text-white">
-              <Trash2 size={18} />
+            <div className="p-2 bg-[#FFD700] text-[#002B66] rounded-xl font-black shadow-xs">
+              <Trash2 size={17} />
             </div>
             <div>
-              <h3 className="text-xs font-black uppercase tracking-wider">Request Claimed Ticket Deletion</h3>
-              <p className="text-[10px] text-rose-100 font-semibold">Attach Hard Copy Ticket • Admin Approval Required</p>
+              <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">Request Claimed Ticket Deletion</h3>
+              <p className="text-[10px] text-blue-200 font-semibold">Attach Hard Copy Ticket • Admin Approval Required</p>
             </div>
           </div>
           <button 
             type="button" 
             onClick={onClose} 
             disabled={isSubmitting}
-            className="text-rose-100 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Close"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto flex-1">
           
           {/* Informational Alert */}
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-900">
-            <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-xl flex items-start gap-2.5 text-amber-900 leading-relaxed font-medium">
+            <AlertTriangle size={17} className="text-amber-600 shrink-0 mt-0.5" />
             <p className="text-[11px] leading-relaxed">
               To request deletion and collection deduction for this ticket, you <strong>MUST upload a clear photo or scan of the physical hard copy ticket</strong> for Unclaimed Specialist verification.
             </p>
           </div>
 
-          {/* Ticket Details Summary Card */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 font-mono text-[11px]">
+          {/* Ticket Details Summary Card with Pag-IBIG Navy Stripe */}
+          <div className="bg-slate-50/90 border border-blue-200/80 border-l-4 border-l-[#002B66] rounded-xl p-3.5 space-y-2 font-mono text-[11px] shadow-2xs">
             <div className="flex justify-between border-b border-slate-200 pb-1.5">
               <span className="font-sans text-slate-500 font-bold">Transaction SRN / ID:</span>
               <span className="font-bold text-[#002B66]">{transId}</span>
@@ -224,12 +225,12 @@ export default function RequestDeleteModal({
           {/* HARD COPY TICKET UPLOAD SECTION (MANDATORY) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <Camera size={13} className="text-rose-600" />
+              <label className="text-[11px] font-black text-[#002B66] uppercase tracking-wider flex items-center gap-1.5">
+                <Camera size={13} className="text-[#002B66]" />
                 <span>Hard Copy Winning Ticket Photo</span>
                 <span className="text-rose-600 font-black">*</span>
               </label>
-              <span className="text-[9.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+              <span className="text-[9.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Required Proof
               </span>
             </div>
@@ -248,7 +249,7 @@ export default function RequestDeleteModal({
                 <button
                   type="button"
                   onClick={() => setIsTimestampModalOpen(true)}
-                  className="flex items-center justify-center gap-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-95 flex-1 cursor-pointer"
+                  className="flex items-center justify-center gap-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] border border-blue-900 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-95 flex-1 cursor-pointer"
                 >
                   <Clock size={16} />
                   <span>Open Timestamp Screen</span>
@@ -274,7 +275,7 @@ export default function RequestDeleteModal({
                   </div>
                 ) : (
                   <>
-                    <div className="p-3 bg-white rounded-full shadow-xs border border-slate-200 text-[#002B66] mb-2">
+                    <div className="p-3 bg-blue-50 rounded-full shadow-xs border border-blue-100 text-[#002B66] mb-2">
                       <UploadCloud size={24} />
                     </div>
                     <p className="font-black text-slate-800 text-[11px]">
@@ -340,7 +341,7 @@ export default function RequestDeleteModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Provide reason for deletion request..."
-              className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600"
+              className="w-full bg-slate-50/50 border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-[#002B66] focus:ring-2 focus:ring-[#002B66]/20 font-medium transition-all"
             />
           </div>
 
@@ -358,7 +359,7 @@ export default function RequestDeleteModal({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold uppercase text-[11px] hover:bg-slate-100 transition-colors cursor-pointer"
+              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold uppercase text-[11px] hover:bg-slate-100 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -367,8 +368,8 @@ export default function RequestDeleteModal({
               disabled={isSubmitting || !ticketImage}
               className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-black uppercase text-[11px] shadow-sm transition-all cursor-pointer active:scale-95 ${
                 !ticketImage
-                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                  : 'bg-rose-600 hover:bg-rose-700 text-white'
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200'
+                  : 'bg-[#002B66] hover:bg-blue-900 text-[#FFD700] border border-[#002B66] shadow-md'
               }`}
             >
               {isSubmitting ? (

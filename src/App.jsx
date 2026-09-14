@@ -17,6 +17,7 @@ import { notificationService } from './services/notificationService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { MessageSquare, Sparkles, Bot } from 'lucide-react';
 import { isIliganAllowedSupervisor, isIliganSetAAllowedSupervisor, isLalaOfficeAllowedSupervisor, isBaloiOfficeAllowedSupervisor } from './services/supervisorService';
+import { sendSupervisorReportToMessenger } from './services/messengerWebhookService';
 
 const DEFAULT_COMMISSIONS = {
   adminPercent: 50,
@@ -128,6 +129,7 @@ export default function App() {
   });
   const [openedQrTransIds, setOpenedQrTransIds] = useState(() => new Set());
   const [isCapturingImage, setIsCapturingImage] = useState(null);
+  const [isSendingToMessenger, setIsSendingToMessenger] = useState(null);
   const [copiedSupervisorKey, setCopiedSupervisorKey] = useState(null);
   const [copiedSupervisorKeys, setCopiedSupervisorKeys] = useState(() => {
     try {
@@ -1436,11 +1438,6 @@ export default function App() {
   }, [currentUser, userFeaturesConfig]);
 
   const handleCopySupervisorImage = async (userKey) => {
-    if (!userFeaturePermissions.canCopyTransaction) {
-      showToast('⚠️ Copy Transaction is disabled for your user account by Administrator.');
-      return;
-    }
-
     const captureNode = document.getElementById(`supervisor-card-${userKey}`);
     if (!captureNode) {
       alert("Could not find table element to capture screenshot.");
@@ -1449,6 +1446,14 @@ export default function App() {
 
     setIsCapturingImage(userKey);
     try {
+      // Find all elements that should be excluded and temporarily hide them to collapse container height
+      const excludeEls = captureNode.querySelectorAll('[data-screenshot-exclude="true"], .hide-in-screenshot');
+      const savedDisplays = [];
+      excludeEls.forEach((el) => {
+        savedDisplays.push({ el, display: el.style.display });
+        el.style.display = 'none';
+      });
+
       // Find all overflow containers inside the capture node
       const overflowEls = captureNode.querySelectorAll('.overflow-x-auto, .overflow-y-auto, [class*="overflow"]');
       const savedStyles = [];
@@ -1464,17 +1469,14 @@ export default function App() {
         backgroundColor: '#ffffff',
         style: {
           overflow: 'visible',
-          maxWidth: 'none'
-        },
-        filter: (node) => {
-          if (node.classList && (node.classList.contains('hide-in-screenshot') || node.classList.contains('no-screenshot'))) {
-            return false;
-          }
-          if (node.getAttribute && node.getAttribute('data-screenshot-exclude') === 'true') {
-            return false;
-          }
-          return true;
+          maxWidth: 'none',
+          height: 'auto'
         }
+      });
+
+      // Restore excluded elements
+      savedDisplays.forEach(({ el, display }) => {
+        el.style.display = display;
       });
 
       // Restore overflow styles
@@ -1485,19 +1487,6 @@ export default function App() {
 
       const response = await fetch(dataUrl);
       const blob = await response.blob();
-
-      // Mark supervisor key and associated ticket trans IDs as copied
-      setCopiedSupervisorKeys(prev => new Set(prev).add(userKey));
-      if (groupedData?.[userKey]) {
-        setCopiedTransIds(prev => {
-          const next = new Set(prev);
-          groupedData[userKey].forEach(item => {
-            const tId = getTicketTransId(item);
-            if (tId) next.add(tId);
-          });
-          return next;
-        });
-      }
 
       if (navigator.clipboard && window.ClipboardItem) {
         const item = new ClipboardItem({ [blob.type]: blob });
@@ -1519,6 +1508,93 @@ export default function App() {
       alert("Error capturing screenshot: " + (err.message || err));
     } finally {
       setIsCapturingImage(null);
+    }
+  };
+
+  const handleSendSupervisorToMessenger = async (userKey, items = [], supervisorDisplayName = '') => {
+    const captureNode = document.getElementById(`supervisor-card-${userKey}`);
+    if (!captureNode) {
+      alert("Could not find table element to capture screenshot.");
+      return;
+    }
+
+    setIsSendingToMessenger(userKey);
+    try {
+      // Temporarily hide elements excluded from screenshot
+      const excludeEls = captureNode.querySelectorAll('[data-screenshot-exclude="true"], .hide-in-screenshot');
+      const savedDisplays = [];
+      excludeEls.forEach((el) => {
+        savedDisplays.push({ el, display: el.style.display });
+        el.style.display = 'none';
+      });
+
+      // Temporarily unconstrain overflow
+      const overflowEls = captureNode.querySelectorAll('.overflow-x-auto, .overflow-y-auto, [class*="overflow"]');
+      const savedStyles = [];
+      overflowEls.forEach((el) => {
+        savedStyles.push({ el, overflow: el.style.overflow, overflowX: el.style.overflowX });
+        el.style.overflow = 'visible';
+        el.style.overflowX = 'visible';
+      });
+
+      const dataUrl = await toPng(captureNode, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        style: {
+          overflow: 'visible',
+          maxWidth: 'none',
+          height: 'auto'
+        }
+      });
+
+      // Restore styles
+      savedDisplays.forEach(({ el, display }) => {
+        el.style.display = display;
+      });
+      savedStyles.forEach(({ el, overflow, overflowX }) => {
+        el.style.overflow = overflow;
+        el.style.overflowX = overflowX;
+      });
+
+      const totalWin = items.reduce((sum, item) => {
+        const raw = item.winning_amount ?? item.win_amount ?? item.winAmount ?? item.amount ?? 0;
+        return sum + (Number(raw) || 0);
+      }, 0);
+
+      const totalBet = items.reduce((sum, item) => {
+        const raw = item.total_bet ?? item.bet_amount ?? item.betAmount ?? 10;
+        return sum + (Number(raw) || 0);
+      }, 0);
+
+      const displayName = supervisorDisplayName || userKey;
+
+      // Copy image blob directly to clipboard as instant fallback
+      try {
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        if (navigator.clipboard && window.ClipboardItem) {
+          const item = new ClipboardItem({ [blob.type]: blob });
+          await navigator.clipboard.write([item]);
+        }
+      } catch (clipErr) {
+        console.warn('Clipboard image copy fallback:', clipErr);
+      }
+
+      await sendSupervisorReportToMessenger({
+        supervisorName: displayName,
+        imageDataUrl: dataUrl,
+        itemCount: items.length,
+        totalWin,
+        totalBet
+      });
+
+      showToast(`Image & @${displayName} mention ready! (Paste with Ctrl+V in Messenger)`);
+    } catch (err) {
+      console.error("Failed to prepare Messenger report:", err);
+      showToast("Error preparing report: " + (err.message || err));
+    } finally {
+      setIsSendingToMessenger(null);
     }
   };
 

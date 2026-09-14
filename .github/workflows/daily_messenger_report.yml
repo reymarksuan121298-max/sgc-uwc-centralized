@@ -1,0 +1,34 @@
+name: Daily 9:00 AM Messenger Report Automation
+
+on:
+  schedule:
+    # 01:00 UTC = 09:00 AM Philippine Standard Time (PHT)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI (Run workflow button)
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Puppeteer Chrome
+        run: npx puppeteer browsers install chrome
+
+      - name: Run 9:00 AM Supervisor Messenger Report
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          MESSENGER_GROUP_THREAD_ID: '1654605116231296'
+        run: node scripts/dailySupervisorMessengerBot.js --now

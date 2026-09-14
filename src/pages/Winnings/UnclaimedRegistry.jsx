@@ -51,97 +51,6 @@ export default function UnclaimedRegistry({
   const [dynamicSupervisors, setDynamicSupervisors] = useState({});
   const activeEndpoints = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
 
-  // Active Date Key for local storage persistence
-  const activeDateKey = (activeDisplayDate || fromDate || 'all').toString().trim();
-
-  // Local Storage state for Synced Supervisors & Trans IDs
-  const [localSyncedSupervisors, setLocalSyncedSupervisors] = useState(() => {
-    try {
-      const savedDate = localStorage.getItem(`stl_synced_supervisors_${activeDateKey}`);
-      const savedGlobal = localStorage.getItem('stl_copied_supervisor_keys');
-      const dateSet = savedDate ? JSON.parse(savedDate) : [];
-      const globalSet = savedGlobal ? JSON.parse(savedGlobal) : [];
-      return new Set([...dateSet, ...globalSet]);
-    } catch {
-      return new Set();
-    }
-  });
-
-  const [localSyncedTransIds, setLocalSyncedTransIds] = useState(() => {
-    try {
-      const savedDate = localStorage.getItem(`stl_synced_trans_ids_${activeDateKey}`);
-      const savedGlobal = localStorage.getItem('stl_copied_trans_ids');
-      const dateSet = savedDate ? JSON.parse(savedDate) : [];
-      const globalSet = savedGlobal ? JSON.parse(savedGlobal) : [];
-      return new Set([...dateSet, ...globalSet]);
-    } catch {
-      return new Set();
-    }
-  });
-
-  // Reload local storage on date change
-  React.useEffect(() => {
-    try {
-      const savedDate = localStorage.getItem(`stl_synced_supervisors_${activeDateKey}`);
-      const savedGlobal = localStorage.getItem('stl_copied_supervisor_keys');
-      const dateSet = savedDate ? JSON.parse(savedDate) : [];
-      const globalSet = savedGlobal ? JSON.parse(savedGlobal) : [];
-      setLocalSyncedSupervisors(new Set([...dateSet, ...globalSet]));
-    } catch {}
-    try {
-      const savedDate = localStorage.getItem(`stl_synced_trans_ids_${activeDateKey}`);
-      const savedGlobal = localStorage.getItem('stl_copied_trans_ids');
-      const dateSet = savedDate ? JSON.parse(savedDate) : [];
-      const globalSet = savedGlobal ? JSON.parse(savedGlobal) : [];
-      setLocalSyncedTransIds(new Set([...dateSet, ...globalSet]));
-    } catch {}
-  }, [activeDateKey]);
-
-  // Sync props into local storage state whenever copiedSupervisorKeys or copiedTransIds change
-  React.useEffect(() => {
-    if (copiedSupervisorKeys && copiedSupervisorKeys.size > 0) {
-      setLocalSyncedSupervisors(prev => {
-        const next = new Set(prev);
-        let changed = false;
-        copiedSupervisorKeys.forEach(k => {
-          if (!next.has(k)) {
-            next.add(k);
-            changed = true;
-          }
-        });
-        if (changed) {
-          try {
-            localStorage.setItem(`stl_synced_supervisors_${activeDateKey}`, JSON.stringify(Array.from(next)));
-            localStorage.setItem('stl_copied_supervisor_keys', JSON.stringify(Array.from(next)));
-          } catch {}
-        }
-        return changed ? next : prev;
-      });
-    }
-  }, [copiedSupervisorKeys, activeDateKey]);
-
-  React.useEffect(() => {
-    if (copiedTransIds && copiedTransIds.size > 0) {
-      setLocalSyncedTransIds(prev => {
-        const next = new Set(prev);
-        let changed = false;
-        copiedTransIds.forEach(id => {
-          if (!next.has(id)) {
-            next.add(id);
-            changed = true;
-          }
-        });
-        if (changed) {
-          try {
-            localStorage.setItem(`stl_synced_trans_ids_${activeDateKey}`, JSON.stringify(Array.from(next)));
-            localStorage.setItem('stl_copied_trans_ids', JSON.stringify(Array.from(next)));
-          } catch {}
-        }
-        return changed ? next : prev;
-      });
-    }
-  }, [copiedTransIds, activeDateKey]);
-
   // Expand each endpoint's comma-separated sub_office into individual selectable options
   const subOfficeOptions = activeEndpoints.flatMap(ep => {
     const offices = (ep.sub_office && ep.sub_office !== 'All')
@@ -189,17 +98,11 @@ export default function UnclaimedRegistry({
     setLocalSearch(searchQuery);
   }, [searchQuery]);
 
-  const isSupervisorSynced = (userKey) => {
-    return localSyncedSupervisors.has(userKey) || copiedSupervisorKeys?.has?.(userKey);
-  };
-
-  const isTransIdSynced = (transId) => {
-    return localSyncedTransIds.has(transId) || copiedTransIds?.has?.(transId);
-  };
-
   const getRowMeta = (item, index, userKey) => {
     const transId = getTicketTransId(item, `REC-${index + 1}`);
+    const ageDays = getTicketAgeInDays(item);
     const isOverdue = isIncidentReportEligible(item);
+    const isTwoDays = ageDays === 2;
     return {
       transId,
       displayAccountName: item.fullName || item.outlet || item.username || 'N/A',
@@ -207,7 +110,8 @@ export default function UnclaimedRegistry({
       betCode: item.betCode || (item.rambolito ? 'RS3' : 'TS3'),
       drawFormatted: formatDrawTime(item.drawTime || item.draw, item.drawDate || item.created_at),
       showWarningBadge: isOverdue,
-      ageDays: getTicketAgeInDays(item),
+      ageDays,
+      isTwoDays,
       betAmount: parseFloat(item.betAmount ?? item.amount ?? item.gross ?? 0),
       winAmount: parseFloat(item.winAmount ?? 0)
     };
@@ -301,19 +205,6 @@ export default function UnclaimedRegistry({
           <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
             <h3 className="font-extrabold text-[#002B66] text-xs uppercase tracking-wider truncate">Unclaimed Winnings Summary</h3>
             <span className="text-[10px] font-bold bg-[#002B66] text-[#FFD700] px-2 py-0.5 rounded font-mono shadow-2xs shrink-0">{activeDisplayDate}</span>
-            {(() => {
-              const allKeys = Object.keys(groupedData);
-              const syncedCount = allKeys.filter(k => isSupervisorSynced(k)).length;
-              if (allKeys.length > 0 && syncedCount > 0) {
-                return (
-                  <span className="text-[10px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-md font-mono shadow-2xs shrink-0 flex items-center gap-1">
-                    <CheckCircle2 size={11} className="text-emerald-200" />
-                    {syncedCount}/{allKeys.length} SYNCED
-                  </span>
-                );
-              }
-              return null;
-            })()}
           </div>
           <button
             type="button"
@@ -335,7 +226,40 @@ export default function UnclaimedRegistry({
               Object.entries(groupedData).map(([userKey, items]) => {
                 const groupBetTotal = items.reduce((sum, item) => sum + parseFloat(item.betAmount ?? item.amount ?? item.gross ?? 0), 0);
                 const groupWinTotal = items.reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
-                const isGroupSynced = isSupervisorSynced(userKey);
+
+                const sortedItems = [...items].sort((a, b) => {
+                  const metaA = getRowMeta(a, 0, userKey);
+                  const metaB = getRowMeta(b, 0, userKey);
+
+                  const getPriority = (meta) => {
+                    if (meta.showWarningBadge) return 1;
+                    if (meta.isTwoDays) return 2;
+                    return 3;
+                  };
+
+                  const pA = getPriority(metaA);
+                  const pB = getPriority(metaB);
+
+                  if (pA !== pB) {
+                    return pA - pB;
+                  }
+
+                  // If both are Blue (2 days), sort A-Z by teller name
+                  if (metaA.isTwoDays && metaB.isTwoDays) {
+                    const nameA = (metaA.displayAccountName || '').toString().toLowerCase();
+                    const nameB = (metaB.displayAccountName || '').toString().toLowerCase();
+                    const nameCmp = nameA.localeCompare(nameB);
+                    if (nameCmp !== 0) return nameCmp;
+                    return (metaA.transId || '').localeCompare(metaB.transId || '');
+                  }
+
+                  return 0;
+                });
+
+                const hasHighlightedRows = items.some(item => {
+                  const meta = getRowMeta(item, 0, userKey);
+                  return meta.showWarningBadge || meta.isTwoDays;
+                });
 
                 return (
                   <div key={userKey} id={`supervisor-card-${userKey}`} className="mb-4 bg-white border border-slate-200 overflow-hidden shadow-xs">
@@ -347,51 +271,34 @@ export default function UnclaimedRegistry({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] bg-blue-100 text-[#002B66] px-2 py-0.5 rounded shrink-0">{items.length} items</span>
-                        {isGroupSynced && (
-                          <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded flex items-center gap-1 shadow-2xs">
-                            <Check size={11} className="text-emerald-600 stroke-[3]" />
-                            Synced
-                          </span>
-                        )}
-                        {canCopyTransaction && (
-                          <button
-                            type="button"
-                            data-screenshot-exclude="true"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (onCopySupervisorImage) onCopySupervisorImage(userKey);
-                            }}
-                            disabled={isCapturingImage === userKey}
-                            className={`hide-in-screenshot flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-md shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0 ${
-                              isGroupSynced
-                                ? 'bg-emerald-800 hover:bg-emerald-900 text-emerald-100'
-                                : 'bg-[#002B66] hover:bg-blue-900 text-[#FFD700]'
-                            }`}
-                            title={`Copy ${userKey} table as image`}
-                          >
-                            {isCapturingImage === userKey ? (
-                              <>
-                                <RefreshCw size={12} className="animate-spin" />
-                                <span>Capturing...</span>
-                              </>
-                            ) : copiedSupervisorKey === userKey ? (
-                              <>
-                                <Check size={12} className="text-emerald-400" />
-                                <span>Image Copied!</span>
-                              </>
-                            ) : isGroupSynced ? (
-                              <>
-                                <Check size={12} className="text-emerald-400" />
-                                <span>Synced (Copy)</span>
-                              </>
-                            ) : (
-                              <>
-                                <ImageIcon size={12} />
-                                <span>Copy Image</span>
-                              </>
-                            )}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          data-screenshot-exclude="true"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onCopySupervisorImage) onCopySupervisorImage(userKey);
+                          }}
+                          disabled={isCapturingImage === userKey}
+                          className="hide-in-screenshot flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-md shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0 bg-[#002B66] hover:bg-blue-900 text-[#FFD700]"
+                          title={`Copy ${userKey} table as image`}
+                        >
+                          {isCapturingImage === userKey ? (
+                            <>
+                              <RefreshCw size={12} className="animate-spin" />
+                              <span>Capturing...</span>
+                            </>
+                          ) : copiedSupervisorKey === userKey ? (
+                            <>
+                              <Check size={12} className="text-emerald-400" />
+                              <span>Image Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <ImageIcon size={12} />
+                              <span>Copy Image</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
 
@@ -410,32 +317,30 @@ export default function UnclaimedRegistry({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-800">
-                          {items.map((item, index) => {
+                          {sortedItems.map((item, index) => {
                             const meta = getRowMeta(item, index, userKey);
-                            const isRowSynced = isTransIdSynced(meta.transId);
 
                             return (
                               <tr
                                 key={index}
-                                className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 group border-b border-slate-100 ${meta.showWarningBadge ? 'bg-rose-50/30 hover:bg-rose-50/80 border-l-4 border-l-rose-500' : ''
+                                className={`transition-colors group border-b ${
+                                  meta.showWarningBadge
+                                  ? 'bg-rose-50 hover:bg-rose-100/90 border-rose-200 border-l-[5px] border-l-rose-500'
+                                  : meta.isTwoDays
+                                    ? 'bg-sky-100/80 hover:bg-sky-200/80 border-sky-200 border-l-[5px] border-l-sky-500 text-slate-900'
+                                    : 'odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 border-slate-100'
                                   }`}
                               >
-                                <td className="px-3 py-3 border-r border-slate-200 font-bold text-slate-800 uppercase text-xs whitespace-nowrap">{meta.displayAccountName}</td>
+                                <td className="px-3 py-2 border-r border-slate-200 font-bold text-slate-800 uppercase text-xs whitespace-nowrap">{meta.displayAccountName}</td>
                                 {!hideTransIdColumn && (
-                                  <td 
-                                    className="px-3 py-3 border-r border-slate-200 font-mono text-[#002B66] font-extrabold text-xs group-hover:underline whitespace-nowrap cursor-pointer hover:bg-blue-50/50"
+                                  <td
+                                    className="px-3 py-2 border-r border-slate-200 font-mono text-[#002B66] font-extrabold text-xs group-hover:underline whitespace-nowrap cursor-pointer hover:bg-blue-50/50"
                                     onClick={() => onRowClick && onRowClick(item, index)}
                                     title="Click to process return"
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="flex items-center gap-1.5 min-w-0">
                                         <span>{meta.transId}</span>
-                                        {isRowSynced && (
-                                          <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 border border-emerald-300/80 px-1.5 py-0.5 rounded shadow-2xs" title="Synced in Local Storage">
-                                            <Check size={10} className="stroke-[2.5]" />
-                                            Synced
-                                          </span>
-                                        )}
                                         {meta.showWarningBadge && (
                                           <button
                                             type="button"
@@ -458,13 +363,13 @@ export default function UnclaimedRegistry({
                                     </div>
                                   </td>
                                 )}
-                                <td className="px-3 py-3 border-r border-slate-200 font-mono text-xs text-slate-700 font-semibold whitespace-nowrap">{meta.drawFormatted}</td>
-                                <td className="px-3 py-3 border-r border-slate-200 text-center font-mono font-bold text-slate-900 text-xs whitespace-nowrap">{meta.betNo}</td>
-                                <td className="px-3 py-3 border-r border-slate-200 text-center font-mono font-bold text-slate-700 text-xs whitespace-nowrap">{meta.betCode}</td>
-                                <td className="px-3 py-3 border-r border-slate-200 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
+                                <td className="px-3 py-2 border-r border-slate-200 font-mono text-xs text-slate-700 font-semibold whitespace-nowrap">{meta.drawFormatted}</td>
+                                <td className="px-3 py-2 border-r border-slate-200 text-center font-mono font-bold text-slate-900 text-xs whitespace-nowrap">{meta.betNo}</td>
+                                <td className="px-3 py-2 border-r border-slate-200 text-center font-mono font-bold text-slate-700 text-xs whitespace-nowrap">{meta.betCode}</td>
+                                <td className="px-3 py-2 border-r border-slate-200 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
                                   ₱{meta.betAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </td>
-                                <td className="px-3 py-3 text-right font-mono font-extrabold text-emerald-700 text-xs whitespace-nowrap">
+                                <td className="px-3 py-2 text-right font-mono font-extrabold text-emerald-700 text-xs whitespace-nowrap">
                                   ₱{meta.winAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </td>
                               </tr>
@@ -476,24 +381,29 @@ export default function UnclaimedRegistry({
 
                     {/* Mobile Stack */}
                     <div className="block md:hidden p-3 space-y-2.5 bg-slate-50/50">
-                      {items.map((item, index) => {
+                      {sortedItems.map((item, index) => {
                         const meta = getRowMeta(item, index, userKey);
-                        const isRowSynced = isTransIdSynced(meta.transId);
 
                         return (
                           <div
                             key={index}
-                            className={`bg-white border border-slate-200 rounded-xl p-3 shadow-2xs transition-all space-y-2.5 relative overflow-hidden ${meta.showWarningBadge ? 'border-l-4 border-l-rose-500' : ''
+                            className={`border rounded-xl p-3 shadow-2xs transition-all space-y-2.5 relative overflow-hidden ${
+                              meta.showWarningBadge
+                              ? 'bg-rose-50/90 border-rose-300/80 border-l-4 border-l-rose-500'
+                              : meta.isTwoDays
+                                ? 'bg-sky-50/90 border-sky-300/80 border-l-4 border-l-sky-500'
+                                : 'bg-white border-slate-200'
                               }`}
                           >
-                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${meta.showWarningBadge ? 'bg-rose-500' : 'bg-[#002B66]'}`}></div>
+                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${meta.showWarningBadge ? 'bg-rose-500' : meta.isTwoDays ? 'bg-sky-500' : 'bg-[#002B66]'
+                              }`}></div>
                             <div className="flex items-center justify-between border-b border-slate-100 pb-2 pl-2">
                               <div>
                                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Teller</span>
                                 <span className="text-xs font-black text-slate-800 uppercase">{meta.displayAccountName}</span>
                               </div>
                               {!hideTransIdColumn && (
-                                <div 
+                                <div
                                   className="text-right cursor-pointer hover:bg-slate-50 p-1 -m-1 rounded-md active:scale-95 transition-all"
                                   onClick={() => onRowClick && onRowClick(item, index)}
                                   title="Click to process return"
@@ -501,12 +411,6 @@ export default function UnclaimedRegistry({
                                   <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Trans. ID</span>
                                   <div className="flex items-center justify-end gap-1.5">
                                     <span className="font-mono text-xs font-bold text-[#002B66]">{meta.transId}</span>
-                                    {isRowSynced && (
-                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 border border-emerald-300/80 px-1 py-0.2 rounded shadow-2xs" title="Synced in Local Storage">
-                                        <Check size={9} className="stroke-[2.5]" />
-                                        Synced
-                                      </span>
-                                    )}
                                     {meta.showWarningBadge && (
                                       <button
                                         type="button"
@@ -557,8 +461,10 @@ export default function UnclaimedRegistry({
                       })}
                     </div>
 
-                    <div className="bg-slate-100 px-4 py-2.5 font-black border-t border-slate-200 text-slate-900 text-xs font-mono flex items-center justify-between">
-                      <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal ({resolveSupervisorDisplayName(userKey, dynamicSupervisors)}):</span>
+                    <div 
+                      className="bg-slate-100 px-4 py-2.5 font-black border-t border-slate-200 text-slate-900 text-xs font-mono flex items-center justify-between"
+                    >
+                      <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal - {resolveSupervisorDisplayName(userKey, dynamicSupervisors)}</span>
                       <div className="flex items-center gap-4">
                         <span className="text-slate-700 font-bold">Bet: ₱{groupBetTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         <span className="text-emerald-700 font-extrabold">Win: ₱{groupWinTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
