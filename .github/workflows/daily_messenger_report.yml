@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
@@ -27,8 +27,8 @@ jobs:
 
       - name: Run 9:00 AM Supervisor Messenger Report
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://kiuykhakbpjesoofinil.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpdXlraGFrYnBqZXNvb2ZpbmlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDAxNDAsImV4cCI6MjA5NTE3NjE0MH0.g6eFVGHsX6svgWpWKGHNCFsYYF7kEhLGkEKBgAtcA4E' }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           MESSENGER_GROUP_THREAD_ID: '1654605116231296'
         run: node scripts/dailySupervisorMessengerBot.js --now

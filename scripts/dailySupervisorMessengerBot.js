@@ -17,8 +17,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const GROUP_THREAD_ID = process.env.MESSENGER_GROUP_THREAD_ID || '1654605116231296';
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://kiuykhakbpjesoofinil.supabase.co';
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpdXlraGFrYnBqZXNvb2ZpbmlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDAxNDAsImV4cCI6MjA5NTE3NjE0MH0.g6eFVGHsX6svgWpWKGHNCFsYYF7kEhLGkEKBgAtcA4E';
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
 
 /**
