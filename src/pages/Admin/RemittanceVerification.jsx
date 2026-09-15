@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, XCircle, Eye, Search, 
-  Check, RefreshCw, X 
+  Check, RefreshCw, X, Loader2 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { generateRemittanceSerial } from '../../utils/formatters';
@@ -12,6 +12,8 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
   const [usersMap, setUsersMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [isModalImageLoading, setIsModalImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
   const [approvingReceipt, setApprovingReceipt] = useState(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -61,6 +63,25 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
   useEffect(() => {
     fetchReceipts();
   }, []);
+
+  // Pre-fetch images in the background to ensure instant pop-up
+  useEffect(() => {
+    if (receipts && receipts.length > 0) {
+      receipts.forEach((r) => {
+        if (r.receipt_image_url) {
+          const img = new Image();
+          img.src = r.receipt_image_url;
+        }
+      });
+    }
+  }, [receipts]);
+
+  useEffect(() => {
+    if (selectedReceipt?.receipt_image_url) {
+      setIsModalImageLoading(true);
+      setImageError(false);
+    }
+  }, [selectedReceipt]);
 
   const getOfficerName = (item) => {
     if (!item) return 'N/A';
@@ -449,12 +470,33 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
 
             <div className="p-4 overflow-y-auto space-y-4">
               {selectedReceipt.receipt_image_url ? (
-                <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center max-h-[55vh]">
-                  <img 
-                    src={selectedReceipt.receipt_image_url} 
-                    alt="Proof" 
-                    className="max-h-[55vh] object-contain w-auto" 
-                  />
+                <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center min-h-[300px] max-h-[55vh]">
+                  {isModalImageLoading && !imageError && (
+                    <div className="absolute inset-0 bg-slate-800/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-10 animate-pulse">
+                      <Loader2 className="animate-spin text-blue-400" size={32} />
+                      <span className="text-xs font-bold text-slate-300">Loading Proof Image...</span>
+                    </div>
+                  )}
+                  {imageError ? (
+                    <div className="p-8 text-center text-rose-400 font-bold text-xs">
+                      Failed to load image preview.
+                    </div>
+                  ) : (
+                    <img 
+                      src={selectedReceipt.receipt_image_url} 
+                      alt="Proof" 
+                      loading="eager"
+                      decoding="async"
+                      onLoad={() => setIsModalImageLoading(false)}
+                      onError={() => {
+                        setIsModalImageLoading(false);
+                        setImageError(true);
+                      }}
+                      className={`max-h-[55vh] object-contain w-auto transition-opacity duration-200 ${
+                        isModalImageLoading ? 'opacity-0' : 'opacity-100'
+                      }`}
+                    />
+                  )}
                 </div>
               ) : (
                 <div className="p-12 text-center text-slate-400">No Image Uploaded</div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink,
   FileCheck, ShieldAlert, AlertTriangle, UserCheck, Check, Ban,
@@ -20,6 +20,17 @@ export default function ViewHardCopyTicketModal({
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [activeTab, setActiveTab] = useState('DETAILS');
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && ticket) {
+      setIsImageLoading(true);
+      setImageError(false);
+      setZoom(1);
+      setRotation(0);
+    }
+  }, [isOpen, ticket]);
 
   if (!isOpen || !ticket) return null;
 
@@ -182,21 +193,48 @@ export default function ViewHardCopyTicketModal({
             </div>
 
             {/* Image Viewport */}
-            <div className="flex-1 flex items-center justify-center p-4 overflow-auto min-h-0">
+            <div className="flex-1 flex items-center justify-center p-4 overflow-auto min-h-0 relative">
               {ticketImage ? (
-                <div
-                  className="transition-transform duration-150 ease-out flex items-center justify-center"
-                  style={{
-                    transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                    transformOrigin: 'center center'
-                  }}
-                >
-                  <img
-                    src={ticketImage}
-                    alt={`Hard copy ticket proof for ${transId}`}
-                    className="max-w-full max-h-[460px] object-contain rounded-lg shadow-2xl border border-slate-700/50"
-                  />
-                </div>
+                <>
+                  {isImageLoading && !imageError && (
+                    <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center gap-2 z-10 animate-pulse">
+                      <Loader2 className="animate-spin text-[#FFD700]" size={36} />
+                      <span className="text-xs font-bold text-slate-300">Loading Hard Copy Ticket...</span>
+                    </div>
+                  )}
+                  {imageError ? (
+                    <div className="text-center p-8 text-rose-400 space-y-2">
+                      <AlertTriangle size={36} className="mx-auto text-rose-500 opacity-80" />
+                      <p className="font-bold text-xs">Failed to Load Ticket Image</p>
+                      <p className="text-[11px] text-slate-400 max-w-xs">
+                        The ticket image could not be fetched or the URL has expired.
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      className={`transition-transform duration-150 ease-out flex items-center justify-center ${
+                        isImageLoading ? 'opacity-0' : 'opacity-100'
+                      }`}
+                      style={{
+                        transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                        transformOrigin: 'center center'
+                      }}
+                    >
+                      <img
+                        src={ticketImage}
+                        alt={`Hard copy ticket proof for ${transId}`}
+                        loading="eager"
+                        decoding="async"
+                        onLoad={() => setIsImageLoading(false)}
+                        onError={() => {
+                          setIsImageLoading(false);
+                          setImageError(true);
+                        }}
+                        className="max-w-full max-h-[460px] object-contain rounded-lg shadow-2xl border border-slate-700/50"
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="text-center p-8 text-slate-400 space-y-2">
                   <AlertTriangle size={36} className="mx-auto text-amber-500 opacity-80" />

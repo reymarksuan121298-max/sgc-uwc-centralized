@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, XCircle, Clock, Eye, Download, Search, 
-  Smartphone, Building2, Landmark, FileText, Check, AlertCircle, RefreshCw, X 
+  Smartphone, Building2, Landmark, FileText, Check, AlertCircle, RefreshCw, X, Loader2 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { generateRemittanceSerial } from '../../utils/formatters';
@@ -14,6 +14,8 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
   const [statusFilter, setStatusFilter] = useState('PENDING'); // Default to PENDING for fast queue triage
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [isModalImageLoading, setIsModalImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -58,6 +60,26 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
   useEffect(() => {
     fetchReceipts();
   }, []);
+
+  // Background Preloader for Instant Image Rendering
+  useEffect(() => {
+    if (receipts && receipts.length > 0) {
+      receipts.forEach(r => {
+        if (r.receipt_image_url && typeof r.receipt_image_url === 'string') {
+          const img = new Image();
+          img.src = r.receipt_image_url;
+        }
+      });
+    }
+  }, [receipts]);
+
+  // Reset image loading state when selectedReceipt changes
+  useEffect(() => {
+    if (selectedReceipt) {
+      setIsModalImageLoading(true);
+      setImageError(false);
+    }
+  }, [selectedReceipt]);
 
   const getOfficerName = (item) => {
     if (!item) return 'N/A';
@@ -444,12 +466,34 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
 
             <div className="p-4 space-y-3">
               {selectedReceipt.receipt_image_url && (
-                <div className="bg-slate-100 rounded-xl p-2 max-h-[50vh] overflow-auto flex items-center justify-center border border-slate-200">
-                  <img 
-                    src={selectedReceipt.receipt_image_url} 
-                    alt="Receipt Full View" 
-                    className="max-h-[45vh] w-full object-contain rounded-lg shadow-sm"
-                  />
+                <div className="relative bg-slate-100 rounded-xl p-2 min-h-[220px] max-h-[50vh] overflow-auto flex flex-col items-center justify-center border border-slate-200">
+                  {isModalImageLoading && !imageError && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-100/90 backdrop-blur-xs rounded-xl z-10 animate-pulse">
+                      <Loader2 className="animate-spin text-blue-600" size={32} />
+                      <span className="text-xs font-semibold text-slate-500">Loading receipt proof...</span>
+                    </div>
+                  )}
+                  {imageError ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-rose-500 gap-1">
+                      <AlertCircle size={32} />
+                      <span className="text-xs font-bold">Failed to load receipt proof</span>
+                    </div>
+                  ) : (
+                    <img 
+                      src={selectedReceipt.receipt_image_url} 
+                      alt="Receipt Full View" 
+                      loading="eager"
+                      decoding="async"
+                      onLoad={() => setIsModalImageLoading(false)}
+                      onError={() => {
+                        setIsModalImageLoading(false);
+                        setImageError(true);
+                      }}
+                      className={`max-h-[45vh] w-full object-contain rounded-lg shadow-sm transition-opacity duration-200 ${
+                        isModalImageLoading ? 'opacity-0' : 'opacity-100'
+                      }`}
+                    />
+                  )}
                 </div>
               )}
 

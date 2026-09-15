@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Receipt, Search, Filter, CheckCircle2, Clock, XCircle, 
-  Eye, Download, RefreshCw, Building2, Smartphone, Landmark, FileText, Check, AlertCircle, X 
+  Eye, Download, RefreshCw, Building2, Smartphone, Landmark, FileText, Check, AlertCircle, X, Loader2 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { generateRemittanceSerial } from '../../utils/formatters';
@@ -16,6 +16,8 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PENDING', 'VERIFIED', 'REJECTED'
   const [channelFilter, setChannelFilter] = useState('ALL');
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [isModalImageLoading, setIsModalImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -69,6 +71,26 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
   useEffect(() => {
     fetchReceipts();
   }, [currentUser]);
+
+  // Background Preloader for Instant Image Rendering
+  useEffect(() => {
+    if (receipts && receipts.length > 0) {
+      receipts.forEach(r => {
+        if (r.receipt_image_url && typeof r.receipt_image_url === 'string') {
+          const img = new Image();
+          img.src = r.receipt_image_url;
+        }
+      });
+    }
+  }, [receipts]);
+
+  // Reset image loading state when selectedReceipt changes
+  useEffect(() => {
+    if (selectedReceipt) {
+      setIsModalImageLoading(true);
+      setImageError(false);
+    }
+  }, [selectedReceipt]);
 
   const getOfficerName = (item) => {
     if (!item) return 'N/A';
@@ -602,13 +624,35 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
                 </div>
               </div>
 
-              {/* Receipt Image Container */}
-              <div className="bg-slate-900/5 rounded-xl p-2 border border-slate-200 flex items-center justify-center max-h-[52vh] overflow-auto">
-                <img 
-                  src={selectedReceipt.receipt_image_url} 
-                  alt="Official Remittance Receipt" 
-                  className="rounded-lg object-contain max-h-[50vh] w-full"
-                />
+              {/* Receipt Image Container with Instant Skeleton & Smooth Fade-in */}
+              <div className="relative bg-slate-900/5 rounded-xl p-2 border border-slate-200 flex flex-col items-center justify-center min-h-[220px] max-h-[52vh] overflow-auto">
+                {isModalImageLoading && !imageError && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-100/90 backdrop-blur-xs rounded-xl z-10 animate-pulse">
+                    <Loader2 className="animate-spin text-blue-600" size={32} />
+                    <span className="text-xs font-semibold text-slate-500">Loading receipt proof...</span>
+                  </div>
+                )}
+                {imageError ? (
+                  <div className="py-12 flex flex-col items-center justify-center text-rose-500 gap-1">
+                    <AlertCircle size={32} />
+                    <span className="text-xs font-bold">Failed to load image preview</span>
+                  </div>
+                ) : (
+                  <img 
+                    src={selectedReceipt.receipt_image_url} 
+                    alt="Official Remittance Receipt" 
+                    loading="eager"
+                    decoding="async"
+                    onLoad={() => setIsModalImageLoading(false)}
+                    onError={() => {
+                      setIsModalImageLoading(false);
+                      setImageError(true);
+                    }}
+                    className={`rounded-lg object-contain max-h-[50vh] w-full transition-opacity duration-200 ${
+                      isModalImageLoading ? 'opacity-0' : 'opacity-100'
+                    }`}
+                  />
+                )}
               </div>
 
               {/* Officer Remarks */}
