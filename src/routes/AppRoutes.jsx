@@ -118,6 +118,8 @@ export default function AppRoutes({
         <ReturnedWinnings
           groupedData={returnedGroupedData}
           filteredData={returnedFilteredData}
+          liveData={liveData}
+          isLoadingLive={isLoadingLive}
           formatDrawTime={formatDrawTime}
           currentUser={currentUser}
           onDeleteRecord={onDeleteRecord}

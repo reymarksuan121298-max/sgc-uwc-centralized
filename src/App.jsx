@@ -16,6 +16,7 @@ import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
 import { notificationService } from './services/notificationService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { isIliganAllowedSupervisor, isIliganSetAAllowedSupervisor, isLalaOfficeAllowedSupervisor, isBaloiOfficeAllowedSupervisor } from './services/supervisorService';
+import { extractDateFromTransId } from './services/ticketVerificationBot';
 
 const DEFAULT_COMMISSIONS = {
   adminPercent: 50,
@@ -72,9 +73,19 @@ export default function App() {
   const [data, setData] = useState([]);
   const [returnedData, setReturnedData] = useState([]);
   const [receipts, setReceipts] = useState([]);
+  const [extraClaimedIds, setExtraClaimedIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem('stl_verified_claimed_tids');
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) return new Set(arr);
+      }
+    } catch {}
+    return new Set();
+  });
 
   const liveClaimedTransactionIds = useMemo(() => {
-    const ids = new Set();
+    const ids = new Set(extraClaimedIds);
     if (data && data.length) {
       data.forEach(r => {
         const isClaimedFlag = (
@@ -94,7 +105,7 @@ export default function App() {
       });
     }
     return ids;
-  }, [data]);
+  }, [data, extraClaimedIds]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [showDailyTable, setShowDailyTable] = useState(true);
@@ -427,8 +438,151 @@ export default function App() {
   const isFetchingLiveRef = useRef(false);
   const memoryCacheRef = useRef({ key: '', timestamp: 0, data: [] });
   const realtimeDebounceTimerRef = useRef(null);
+  const rateLimitBackoffUntilRef = useRef(0);
+  const lastClaimedSyncRef = useRef(0);
+  const initialLoadDoneRef = useRef(false);
 
-  const fetchReturnedFromSupabase = useCallback(async () => {
+  const isSyncingReturnedClaimedRef = useRef(false);
+
+  const syncReturnedTicketsClaimStatus = useCallback(async (returnedList, endpointsOverride = null, configOverride = null) => {
+    if (!returnedList || !Array.isArray(returnedList) || returnedList.length === 0) return;
+    if (isSyncingReturnedClaimedRef.current) return;
+
+    const epsToUse = (endpointsOverride && endpointsOverride.length > 0) ? endpointsOverride : gatewayEndpoints;
+    const cfgToUse = configOverride || gatewayConfig;
+
+    let targetEndpoints = [];
+    if (epsToUse && epsToUse.length > 0) {
+      targetEndpoints = epsToUse.filter(e => e.is_active !== false && e.baseUrl);
+    } else if (cfgToUse && cfgToUse.baseUrl) {
+      targetEndpoints = [cfgToUse];
+    }
+
+    const validEndpoints = targetEndpoints.filter(cfg => {
+      const rawUrl = (cfg.baseUrl || '').toLowerCase();
+      const name = (cfg.name || '').toLowerCase();
+      const sub = (cfg.sub_office || '').toLowerCase();
+      return !rawUrl.includes('stl-ldn') && !name.includes('stl-ldn') && sub !== 'stl-ldn';
+    });
+
+    if (validEndpoints.length === 0) return;
+
+    // Group unverified returned tickets by their target date (from trans ID or draw schedule)
+    const dateToTidsMap = new Map();
+    returnedList.forEach(item => {
+      const tid = String(item.transactionId || item.transId || item.receipt_no || item.ticket_no || '').trim();
+      if (!tid) return;
+      if (liveClaimedTransactionIds?.has?.(tid)) return; // Already recognized as claimed
+
+      let tDate = extractDateFromTransId(tid);
+      if (!tDate && item.drawDate) tDate = parseToDateString(item.drawDate);
+      if (!tDate && item.drawTime) tDate = parseToDateString(item.drawTime);
+      if (!tDate && item.date_returned) tDate = parseToDateString(item.date_returned);
+      if (!tDate && item.created_at) tDate = parseToDateString(item.created_at);
+
+      if (tDate) {
+        if (!dateToTidsMap.has(tDate)) {
+          dateToTidsMap.set(tDate, new Set());
+        }
+        dateToTidsMap.get(tDate).add(tid.toLowerCase());
+      }
+    });
+
+    if (dateToTidsMap.size === 0) return;
+
+    isSyncingReturnedClaimedRef.current = true;
+
+    try {
+      const newlyFoundClaimedTids = [];
+      const newlyFoundRecords = [];
+
+      for (const [targetDate, expectedTids] of dateToTidsMap.entries()) {
+        for (const cfg of validEndpoints) {
+          let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
+          let targetUrl = cleanBaseUrl;
+          if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
+            if (targetUrl.toLowerCase().endsWith('/api')) {
+              targetUrl = `${targetUrl}/accountant/UnclaimedReceipts`;
+            } else {
+              targetUrl = `${targetUrl}/api/accountant/UnclaimedReceipts`;
+            }
+          }
+          const queryGlue = targetUrl.includes('?') ? '&' : '?';
+          const rawToken = (cfg.token || '').trim();
+          const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
+
+          const fullUrl = `${targetUrl}${queryGlue}isClaim=1&from=${targetDate}&to=${targetDate}`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+          try {
+            const res = await fetch(fullUrl, {
+              method: 'GET',
+              headers: {
+                'Authorization': authHeader,
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/json'
+              },
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+              const json = await res.json();
+              const deepData = json?.data?.data || json?.data || json;
+              const arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+
+              arr.forEach(rec => {
+                const recTid = String(rec.transactionId || rec.transId || rec.receipt_no || rec.ticket_no || '').trim();
+                if (recTid && expectedTids.has(recTid.toLowerCase())) {
+                  newlyFoundClaimedTids.push(recTid);
+                  newlyFoundRecords.push({ ...rec, isClaim: 1 });
+                }
+              });
+            }
+          } catch {
+            clearTimeout(timeoutId);
+          }
+        }
+        await new Promise(r => setTimeout(r, 120));
+      }
+
+      if (newlyFoundClaimedTids.length > 0) {
+        setExtraClaimedIds(prev => {
+          const next = new Set(prev);
+          newlyFoundClaimedTids.forEach(tid => {
+            next.add(tid);
+            next.add(tid.toUpperCase());
+            next.add(tid.toLowerCase());
+          });
+          try {
+            localStorage.setItem('stl_verified_claimed_tids', JSON.stringify(Array.from(next)));
+          } catch {}
+          return next;
+        });
+
+        if (newlyFoundRecords.length > 0) {
+          setData(prev => {
+            const combined = [...prev, ...newlyFoundRecords];
+            const seen = new Set();
+            return combined.filter(item => {
+              const id = item.id || item.apiId || item._id;
+              const k = id
+                ? `${item.sub_office}::${id}`.toLowerCase()
+                : `${item.sub_office}::${item.transactionId || item.transId || item.receipt_no || item.ticket_no}`.toLowerCase();
+              return !seen.has(k) && seen.add(k);
+            });
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Background check for returned tickets claimed status:', err);
+    } finally {
+      isSyncingReturnedClaimedRef.current = false;
+    }
+  }, [gatewayEndpoints, gatewayConfig, liveClaimedTransactionIds]);
+
+  const fetchReturnedFromSupabase = useCallback(async (endpointsOverride = null, configOverride = null) => {
     try {
       let query = supabase
         .from('returned_winnings')
@@ -442,11 +596,14 @@ export default function App() {
 
       const { data: sData, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
-      if (sData) setReturnedData(sData);
+      if (sData) {
+        setReturnedData(sData);
+        syncReturnedTicketsClaimStatus(sData, endpointsOverride, configOverride);
+      }
     } catch (err) {
       console.warn("Returned winnings fetch:", err.message);
     }
-  }, [currentUser, isSSR]);
+  }, [currentUser, isSSR, syncReturnedTicketsClaimStatus]);
 
   const fetchReceiptsFromSupabase = useCallback(async () => {
     try {
@@ -490,6 +647,16 @@ export default function App() {
     const cacheKey = `${selectedEndpointFilter}_${currentUser?.sub_office || 'All'}_${apiFromDate}_${apiToDate}`;
     const now = Date.now();
 
+    // If server is currently in rate-limit backoff window, serve from cache and do not spam
+    if (now < rateLimitBackoffUntilRef.current && !force) {
+      const cached = memoryCacheRef.current.data;
+      if (cached && cached.length > 0) {
+        setData(cached);
+      }
+      setLoading(false);
+      return;
+    }
+
     // 1. Fast Memory Cache (60s TTL)
     if (!force && memoryCacheRef.current.key === cacheKey && (now - memoryCacheRef.current.timestamp) < 60000 && memoryCacheRef.current.data?.length > 0) {
       setData(memoryCacheRef.current.data);
@@ -528,8 +695,6 @@ export default function App() {
       if (epsToUse && epsToUse.length > 0) {
         const activeEndpoints = epsToUse.filter(e => e.is_active !== false && e.baseUrl);
 
-        // Sales Service Representatives (SSR) are restricted to their assigned sub-office
-        // Unclaimed Specialists & Admins have full access to handle all SSR / Sub-Office records
         const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
 
         if (isRestrictedBranchSSR) {
@@ -570,62 +735,75 @@ export default function App() {
       );
 
       // Helper to build clean endpoint fetch configurations
-      const endpointConfigs = targetEndpoints.map(cfg => {
-        let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
-        if (cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
-          cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
-        }
-        let targetUrl = cleanBaseUrl;
-        if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
-          if (targetUrl.toLowerCase().endsWith('/api')) {
-            targetUrl = `${targetUrl}/accountant/UnclaimedReceipts`;
-          } else {
-            targetUrl = `${targetUrl}/api/accountant/UnclaimedReceipts`;
+      const endpointConfigs = targetEndpoints
+        .filter(cfg => {
+          const rawUrl = (cfg.baseUrl || '').toLowerCase();
+          const name = (cfg.name || '').toLowerCase();
+          const sub = (cfg.sub_office || '').toLowerCase();
+          // Exclude stl-ldn endpoint from UnclaimedReceipts calls (only used for supervisor lookups)
+          if (rawUrl.includes('stl-ldn') || name.includes('stl-ldn') || sub === 'stl-ldn') {
+            return false;
           }
-        }
-
-        const queryGlue = targetUrl.includes('?') ? '&' : '?';
-        const rawToken = (cfg.token || '').trim() || globalFallbackToken;
-        const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
-
-        const endpointLabel = (cfg.sub_office || cfg.name || '').toLowerCase();
-        const isIliganEndpoint = endpointLabel.includes('iligan') ||
-                                 (cfg.baseUrl || '').toLowerCase().includes('stl-ldn-api');
-
-        let fallbackSubOffice = cfg.requestedSubOffice || (cfg.sub_office && cfg.sub_office !== 'All' ? cfg.sub_office : 'Mandaue Central');
-        let isSetA = false;
-        let isLala = false;
-        let isBaloi = false;
-        
-        if (isIliganEndpoint) {
-          if (cfg.requestedSubOffice) {
-            const req = cfg.requestedSubOffice.toLowerCase();
-            isSetA = req.includes('set a');
-            isLala = req.includes('lala');
-            isBaloi = req.includes('baloi');
-            fallbackSubOffice = cfg.requestedSubOffice;
-          } else {
-            isSetA = endpointLabel.includes('set a');
-            isLala = endpointLabel.includes('lala');
-            isBaloi = endpointLabel.includes('baloi');
-            if (!cfg.sub_office || cfg.sub_office === 'All' || endpointLabel === 'stl-ldn') {
-              fallbackSubOffice = isBaloi ? 'BALOI OFFICE' : (isLala ? 'LALA OFFICE' : (isSetA ? 'ILIGAN SET A' : 'ILIGAN SET B'));
+          return true;
+        })
+        .map(cfg => {
+          let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
+          let targetUrl = cleanBaseUrl;
+          if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
+            if (targetUrl.toLowerCase().endsWith('/api')) {
+              targetUrl = `${targetUrl}/accountant/UnclaimedReceipts`;
+            } else {
+              targetUrl = `${targetUrl}/api/accountant/UnclaimedReceipts`;
             }
           }
-        }
 
-        return {
-          cfg,
-          targetUrl,
-          queryGlue,
-          authHeader,
-          isIliganEndpoint,
-          isSetA,
-          isLala,
-          isBaloi,
-          fallbackSubOffice
-        };
-      });
+          const queryGlue = targetUrl.includes('?') ? '&' : '?';
+          const rawToken = (cfg.token || '').trim() || globalFallbackToken;
+          const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
+
+          const endpointLabel = (cfg.sub_office || cfg.name || '').toLowerCase();
+          const isIliganEndpoint = endpointLabel.includes('iligan');
+
+          let fallbackSubOffice = cfg.requestedSubOffice || (cfg.sub_office && cfg.sub_office !== 'All' ? cfg.sub_office : 'Mandaue Central');
+          let isSetA = false;
+          let isLala = false;
+          let isBaloi = false;
+          
+          if (isIliganEndpoint) {
+            if (cfg.requestedSubOffice) {
+              const req = cfg.requestedSubOffice.toLowerCase();
+              isSetA = req.includes('set a');
+              isLala = req.includes('lala');
+              isBaloi = req.includes('baloi');
+              fallbackSubOffice = cfg.requestedSubOffice;
+            } else {
+              isSetA = endpointLabel.includes('set a');
+              isLala = endpointLabel.includes('lala');
+              isBaloi = endpointLabel.includes('baloi');
+              if (!cfg.sub_office || cfg.sub_office === 'All') {
+                fallbackSubOffice = isBaloi ? 'BALOI OFFICE' : (isLala ? 'LALA OFFICE' : (isSetA ? 'ILIGAN SET A' : 'ILIGAN SET B'));
+              }
+            }
+          }
+
+          return {
+            cfg,
+            targetUrl,
+            queryGlue,
+            authHeader,
+            isIliganEndpoint,
+            isSetA,
+            isLala,
+            isBaloi,
+            fallbackSubOffice
+          };
+        });
+
+      if (endpointConfigs.length === 0) {
+        setData([]);
+        setLoading(false);
+        return;
+      }
 
       // Filter function for Iligan supervisor branches
       const filterIligan = (arr, epMeta) => {
@@ -655,6 +833,13 @@ export default function App() {
             signal: controller.signal
           });
           clearTimeout(timeoutId);
+
+          if (res.status === 429) {
+            // Activate backoff for 60 seconds
+            rateLimitBackoffUntilRef.current = Date.now() + 60000;
+            console.warn(`[${epMeta.cfg.name || 'Gateway'}] Rate limited (429), backing off for 60s.`);
+            return [];
+          }
 
           if (!res.ok) throw new Error(`[${epMeta.cfg.name || epMeta.cfg.sub_office || 'Gateway'}] HTTP ${res.status}`);
           const result = await res.json();
@@ -704,35 +889,19 @@ export default function App() {
         setErrorMsg(`Gateway connection warning: ${errors.join(', ')}`);
       }
 
-      // ─── STAGE 2: Progressive Background Sync for Claimed Records (isClaim=1) ─
-      (async () => {
-        try {
-          const pastD = new Date();
-          pastD.setFullYear(pastD.getFullYear() - 1);
-          const futD = new Date();
-          futD.setDate(futD.getDate() + 2);
+      // ─── STAGE 2: Progressive Throttled Sync for Claimed Records (isClaim=1) ──
+      // Runs only once every 45 seconds and only if not currently rate limited
+      const canSyncClaimed = (now - lastClaimedSyncRef.current > 45000) && (now >= rateLimitBackoffUntilRef.current);
+      if (canSyncClaimed) {
+        lastClaimedSyncRef.current = now;
+        setTimeout(async () => {
+          try {
+            const fetchClaimedPromises = endpointConfigs.map(async (epMeta) => {
+              if (!epMeta.authHeader) return [];
 
-          // Fast 6-month chunking (2 fast parallel requests instead of 4-5)
-          let currentStart = new Date(pastD);
-          const dateChunks = [];
-          while (currentStart < futD) {
-            let chunkEnd = new Date(currentStart);
-            chunkEnd.setMonth(chunkEnd.getMonth() + 6);
-            if (chunkEnd > futD) chunkEnd = futD;
-            dateChunks.push({
-              from: currentStart.toISOString().split('T')[0],
-              to: chunkEnd.toISOString().split('T')[0]
-            });
-            currentStart = new Date(chunkEnd);
-            currentStart.setDate(currentStart.getDate() + 1);
-          }
-
-          const fetchClaimedPromises = endpointConfigs.flatMap((epMeta) => {
-            if (!epMeta.authHeader) return []; // Skip unauthenticated endpoints to prevent Laravel 500 RouteNotFoundException
-            return dateChunks.map(async (chunk) => {
-              const url = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=1&from=${chunk.from}&to=${chunk.to}`;
+              const url = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=1&from=${apiFromDate}&to=${apiToDate}`;
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 12000);
+              const timeoutId = setTimeout(() => controller.abort(), 10000);
               try {
                 const res = await fetch(url, {
                   method: 'GET',
@@ -744,6 +913,10 @@ export default function App() {
                   signal: controller.signal
                 });
                 clearTimeout(timeoutId);
+                if (res.status === 429) {
+                  rateLimitBackoffUntilRef.current = Date.now() + 60000;
+                  return [];
+                }
                 if (!res.ok) return [];
                 const result = await res.json();
                 const deepData = result?.data?.data || result?.data || result;
@@ -759,33 +932,33 @@ export default function App() {
                 return [];
               }
             });
-          });
 
-          const stage2Results = await Promise.allSettled(fetchClaimedPromises);
-          const claimedCombined = stage2Results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+            const stage2Results = await Promise.allSettled(fetchClaimedPromises);
+            const claimedCombined = stage2Results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 
-          if (claimedCombined.length > 0) {
-            setData(prev => {
-              const combinedAll = [...prev, ...claimedCombined];
-              const innerSeen = new Set();
-              const mergedUnique = combinedAll.filter((item, idx) => {
-                const id = item.id || item.apiId || item._id;
-                const key = id
-                  ? `${item.sub_office}::${id}`.toLowerCase()
-                  : `${item.sub_office}::${item.transactionId || item.transId || item.receipt_no || item.ticket_no}::${item.betNo || item.CombiNo}::${item.drawTime || item.draw}::${item.winAmount}::${idx}`.toLowerCase();
-                return !innerSeen.has(key) && innerSeen.add(key);
+            if (claimedCombined.length > 0) {
+              setData(prev => {
+                const combinedAll = [...prev, ...claimedCombined];
+                const innerSeen = new Set();
+                const mergedUnique = combinedAll.filter((item, idx) => {
+                  const id = item.id || item.apiId || item._id;
+                  const key = id
+                    ? `${item.sub_office}::${id}`.toLowerCase()
+                    : `${item.sub_office}::${item.transactionId || item.transId || item.receipt_no || item.ticket_no}::${item.betNo || item.CombiNo}::${item.drawTime || item.draw}::${item.winAmount}::${idx}`.toLowerCase();
+                  return !innerSeen.has(key) && innerSeen.add(key);
+                });
+                memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: mergedUnique };
+                try {
+                  localStorage.setItem(`stl_unclaimed_cache_${cacheKey}`, JSON.stringify(mergedUnique));
+                } catch {}
+                return mergedUnique;
               });
-              memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: mergedUnique };
-              try {
-                localStorage.setItem(`stl_unclaimed_cache_${cacheKey}`, JSON.stringify(mergedUnique));
-              } catch {}
-              return mergedUnique;
-            });
+            }
+          } catch (bgErr) {
+            console.warn('Claimed tickets background sync notice:', bgErr);
           }
-        } catch (bgErr) {
-          console.warn('Background claimed tickets sync completed with warnings:', bgErr);
-        }
-      })();
+        }, 1500); // 1.5s delay to prevent hammering simultaneously with Stage 1
+      }
 
     } catch (error) {
       setErrorMsg(error.message);
@@ -841,15 +1014,16 @@ export default function App() {
           fetchPendingChatCount(),
           fetchData(true, fromDate, toDate, settingsRes?.loadedEndpoints, settingsRes?.loadedConfig)
         ]);
+        initialLoadDoneRef.current = true;
       }
     })();
 
     return () => { isMounted = false; };
   }, [currentUser]);
 
-  // Re-fetch on filter changes
+  // Re-fetch on filter changes (only after initial load has finished)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !initialLoadDoneRef.current) return;
     if (gatewayEndpoints.length > 0 || gatewayConfig?.baseUrl) {
       fetchData(false);
     }
@@ -1702,7 +1876,10 @@ export default function App() {
           selectedSettlementTicketId={selectedSettlementTicketId}
           onSaveAgreement={handleSaveAgreement}
           onSyncLedger={fetchReturnedFromSupabase}
-          onSyncClaimedTickets={() => fetchData(true)}
+          onSyncClaimedTickets={() => {
+            fetchData(true);
+            syncReturnedTicketsClaimStatus(returnedData);
+          }}
           liveClaimedTransactionIds={liveClaimedTransactionIds}
           onUserUpdated={handleUserUpdated}
           onConfigUpdated={loadSystemSettings}

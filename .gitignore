@@ -26,3 +26,4 @@ dist-ssr
 .vercel
 scripts/.fb_profile
 .fb_profile
+.env*

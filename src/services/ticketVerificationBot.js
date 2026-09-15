@@ -118,10 +118,14 @@ export async function queryGatewayLive(searchKey, targetDate, gatewayEndpoints =
 
     for (const isClaimVal of isClaimParams) {
       for (const cfg of activeEndpoints) {
-        let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
-        if (typeof window !== 'undefined' && cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
-          cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
+        const rawUrl = (cfg.baseUrl || '').toLowerCase();
+        const name = (cfg.name || '').toLowerCase();
+        const sub = (cfg.sub_office || '').toLowerCase();
+        if (rawUrl.includes('stl-ldn') || name.includes('stl-ldn') || sub === 'stl-ldn') {
+          continue; // stl-ldn is supervisor-only and does not support UnclaimedReceipts
         }
+
+        let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
         let targetUrl = cleanBaseUrl;
         if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
           if (targetUrl.toLowerCase().endsWith('/api')) {

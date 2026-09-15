@@ -23,6 +23,8 @@ const SUPERVISOR_NAMES = DEFAULT_SUPERVISOR_NAMES;
 export default function ReturnedWinnings({
   groupedData = {},
   filteredData = [],
+  liveData = [],
+  isLoadingLive = false,
   formatDrawTime,
   currentUser,
   onDeleteRecord,
@@ -62,11 +64,15 @@ export default function ReturnedWinnings({
     const tid = getTicketTransId(item);
     const rawTid = String(item.transactionId || item.transId || item.receipt_no || item.ticket_no || '').trim();
     
-    // Check if Trans ID has isClaim=1 in the live source gateway API
+    // 1. Check if Trans ID has isClaim=1 in the live source gateway API claimed cache set
     if (tid && (
       liveClaimedTransactionIds?.has?.(tid) || 
       liveClaimedTransactionIds?.has?.(tid.toUpperCase()) || 
-      liveClaimedTransactionIds?.has?.(tid.toLowerCase()) ||
+      liveClaimedTransactionIds?.has?.(tid.toLowerCase())
+    )) {
+      return true;
+    }
+    if (rawTid && (
       liveClaimedTransactionIds?.has?.(rawTid) ||
       liveClaimedTransactionIds?.has?.(rawTid.toUpperCase()) ||
       liveClaimedTransactionIds?.has?.(rawTid.toLowerCase())
@@ -74,8 +80,8 @@ export default function ReturnedWinnings({
       return true;
     }
 
-    // Direct isClaim=1 property check on live record
-    return Boolean(
+    // 2. Direct isClaim=1 property check (from live source record or ticket loaded with live isClaim)
+    if (
       item.isClaim == 1 ||
       item.isClaim === '1' ||
       item.isClaim === true ||
@@ -92,7 +98,26 @@ export default function ReturnedWinnings({
       item.is_claimed === '1' ||
       item.is_claimed === true ||
       item.is_claimed === 'true'
-    );
+    ) {
+      return true;
+    }
+
+    // 3. Fallback search inside liveData array from live source gateway API
+    if (Array.isArray(liveData) && liveData.length > 0) {
+      const matchInLive = liveData.find(ld => {
+        const lTid = String(ld.transactionId || ld.transId || ld.receipt_no || ld.ticket_no || '').trim().toLowerCase();
+        const matchesTid = (tid && lTid === tid.toLowerCase()) || (rawTid && lTid === rawTid.toLowerCase());
+        if (!matchesTid) return false;
+        return (
+          ld.isClaim == 1 || ld.isClaim === '1' || ld.isClaim === true || ld.isClaim === 'true' ||
+          ld.is_claim == 1 || ld.is_claim === '1' || ld.isClaimed == 1 || ld.isClaimed === '1' ||
+          Boolean(ld.claimDate)
+        );
+      });
+      if (matchInLive) return true;
+    }
+
+    return false;
   };
 
   // Pending Deletion Requests
