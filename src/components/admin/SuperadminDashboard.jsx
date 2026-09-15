@@ -68,10 +68,10 @@ export default function SuperadminDashboard({
       totalReturnAmountOut += out;
 
       // 50% Admin, 30% Agent, 10% Staff, 10% Collector
-      const adm = parseFloat(i.admin_commission ?? (win * 0.50));
-      const agt = parseFloat(i.agent_commission ?? (win * 0.30));
-      const stf = parseFloat(i.staff_commission ?? (win * 0.10));
-      const col = parseFloat(i.collector_commission ?? (win * 0.10));
+      const adm = parseFloat(i.admin_commission) > 0 ? parseFloat(i.admin_commission) : (win * 0.50);
+      const agt = parseFloat(i.agent_commission) > 0 ? parseFloat(i.agent_commission) : (win * 0.30);
+      const stf = parseFloat(i.staff_commission) > 0 ? parseFloat(i.staff_commission) : (win * 0.10);
+      const col = parseFloat(i.collector_commission) > 0 ? parseFloat(i.collector_commission) : (win * 0.10);
 
       totalAdminComm += adm;
       totalAgentComm += agt;
@@ -100,7 +100,7 @@ export default function SuperadminDashboard({
         if (isMatch) {
           const win = parseFloat(i.winAmount ?? 0);
           const out = parseFloat(i.return_amount_out ?? win);
-          const adm = parseFloat(i.admin_commission ?? (win * 0.50));
+          const adm = parseFloat(i.admin_commission) > 0 ? parseFloat(i.admin_commission) : (win * 0.50);
           count += 1;
           totalWin += win;
           returnOut += out;
@@ -120,11 +120,20 @@ export default function SuperadminDashboard({
       };
     });
 
-    const pendingReceiptsCount = receipts.filter(r => r.verification_status === 'PENDING').length;
-    const verifiedReceiptsCount = receipts.filter(r => r.verification_status === 'VERIFIED').length;
-    const verifiedRemittanceTotal = receipts
+    const activeReceipts = (receipts && receipts.length > 0) ? receipts : [];
+    const pendingReceiptsCount = activeReceipts.filter(r => r.verification_status === 'PENDING').length;
+    const verifiedReceiptsCount = activeReceipts.filter(r => r.verification_status === 'VERIFIED').length;
+    const totalReceiptsAmount = activeReceipts.reduce((sum, r) => sum + parseFloat(r.remittance_amount || 0), 0);
+    const verifiedRemittanceTotal = activeReceipts
       .filter(r => r.verification_status === 'VERIFIED')
       .reduce((sum, r) => sum + parseFloat(r.remittance_amount || 0), 0);
+
+    // 4-Tier Commission Matrix based on Total Collections / Remittances
+    const totalCollections = totalReceiptsAmount;
+    const totalAdminComm = totalCollections * 0.50;
+    const totalAgentComm = totalCollections * 0.30;
+    const totalStaffComm = totalCollections * 0.10;
+    const totalCollectorComm = totalCollections * 0.10;
 
     return {
       totalUnclaimedWin,
@@ -134,6 +143,7 @@ export default function SuperadminDashboard({
       totalReturnAmountOut,
       returnedCount: returnedData.length,
       underSettlementCount,
+      totalCollections,
       totalAdminComm,
       totalAgentComm,
       totalStaffComm,
@@ -141,6 +151,7 @@ export default function SuperadminDashboard({
       pendingReceiptsCount,
       verifiedReceiptsCount,
       verifiedRemittanceTotal,
+      totalReceiptsAmount,
       subOffices: subOfficesStats
     };
   }, [unclaimedData, returnedData, receipts, dbSubOffices]);

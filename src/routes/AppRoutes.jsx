@@ -63,7 +63,8 @@ export default function AppRoutes({
   liveClaimedTransactionIds,
   // Profile props
   onUserUpdated,
-  onConfigUpdated
+  onConfigUpdated,
+  receipts = []
 }) {
   switch (activeTab) {
     case 'superadmin':
@@ -73,6 +74,7 @@ export default function AppRoutes({
           totals={totals}
           data={liveData}
           returnedData={returnedFilteredData}
+          receipts={receipts}
           formatDrawTime={formatDrawTime}
         />
       );

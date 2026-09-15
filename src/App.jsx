@@ -1703,6 +1703,7 @@ export default function App() {
           liveClaimedTransactionIds={liveClaimedTransactionIds}
           onUserUpdated={handleUserUpdated}
           onConfigUpdated={loadSystemSettings}
+          receipts={receipts}
         />
       </MainLayout>
 

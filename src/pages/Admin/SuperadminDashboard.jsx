@@ -14,6 +14,13 @@ export default function SuperadminDashboard({
 }) {
   // Load official sub-offices directly from database table
   const [dbSubOffices, setDbSubOffices] = useState([]);
+  const [dbReceipts, setDbReceipts] = useState(receipts || []);
+
+  useEffect(() => {
+    if (receipts && receipts.length > 0) {
+      setDbReceipts(receipts);
+    }
+  }, [receipts]);
 
   useEffect(() => {
     const fetchSubOffices = async () => {
@@ -30,21 +37,44 @@ export default function SuperadminDashboard({
       }
     };
 
-    fetchSubOffices();
+    const fetchReceipts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('remittance_receipts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          setDbReceipts(data);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch remittance_receipts:', err);
+      }
+    };
 
-    const channel = supabase
+    fetchSubOffices();
+    fetchReceipts();
+
+    const subOfficesChannel = supabase
       .channel('superadmin_sub_offices_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
         fetchSubOffices();
       })
       .subscribe();
 
+    const receiptsChannel = supabase
+      .channel('superadmin_receipts_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'remittance_receipts' }, () => {
+        fetchReceipts();
+      })
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(subOfficesChannel);
+      supabase.removeChannel(receiptsChannel);
     };
   }, []);
 
-  // Financial & Commission Aggregations
+  // Financial & Commission Aggregations based on Collections
   const stats = useMemo(() => {
     let totalUnclaimedWin = 0;
     let totalUnclaimedBet = 0;
@@ -55,10 +85,6 @@ export default function SuperadminDashboard({
 
     let totalReturnedWin = 0;
     let totalReturnAmountOut = 0;
-    let totalAdminComm = 0;
-    let totalAgentComm = 0;
-    let totalStaffComm = 0;
-    let totalCollectorComm = 0;
     let underSettlementCount = 0;
 
     returnedData.forEach((i) => {
@@ -66,20 +92,20 @@ export default function SuperadminDashboard({
       const out = parseFloat(i.return_amount_out ?? win);
       totalReturnedWin += win;
       totalReturnAmountOut += out;
-
-      // 50% Admin, 30% Agent, 10% Staff, 10% Collector
-      const adm = parseFloat(i.admin_commission ?? (win * 0.50));
-      const agt = parseFloat(i.agent_commission ?? (win * 0.30));
-      const stf = parseFloat(i.staff_commission ?? (win * 0.10));
-      const col = parseFloat(i.collector_commission ?? (win * 0.10));
-
-      totalAdminComm += adm;
-      totalAgentComm += agt;
-      totalStaffComm += stf;
-      totalCollectorComm += col;
-
       if (i.isUnderSettlement) underSettlementCount += 1;
     });
+
+    const activeReceipts = (dbReceipts && dbReceipts.length > 0) ? dbReceipts : (receipts || []);
+    const pendingVerificationCount = activeReceipts.filter(r => r.verification_status === 'PENDING').length;
+    const verifiedReceiptsCount = activeReceipts.filter(r => r.verification_status === 'VERIFIED').length;
+    const totalReceiptsAmount = activeReceipts.reduce((sum, r) => sum + parseFloat(r.remittance_amount ?? 0), 0);
+
+    // 4-Tier Commission Matrix based on Total Collections / Remittances
+    const totalCollections = totalReceiptsAmount;
+    const totalAdminComm = totalCollections * 0.50;
+    const totalAgentComm = totalCollections * 0.30;
+    const totalStaffComm = totalCollections * 0.10;
+    const totalCollectorComm = totalCollections * 0.10;
 
     // Map sub-offices strictly from database sub_offices table
     const subOfficesStats = dbSubOffices.map((office) => {
@@ -87,7 +113,6 @@ export default function SuperadminDashboard({
       let count = 0;
       let totalWin = 0;
       let returnOut = 0;
-      let adminComm = 0;
 
       returnedData.forEach((i) => {
         const itemOffice = (i.sub_office || '').toLowerCase().trim();
@@ -100,13 +125,23 @@ export default function SuperadminDashboard({
         if (isMatch) {
           const win = parseFloat(i.winAmount ?? 0);
           const out = parseFloat(i.return_amount_out ?? win);
-          const adm = parseFloat(i.admin_commission ?? (win * 0.50));
           count += 1;
           totalWin += win;
           returnOut += out;
-          adminComm += adm;
         }
       });
+
+      // Remittance collections for this sub-office
+      let officeReceiptsAmount = 0;
+      activeReceipts.forEach((r) => {
+        const rOffice = (r.sub_office || '').toLowerCase().trim();
+        const targetOffice = officeName.toLowerCase().trim();
+        if (rOffice === targetOffice || (targetOffice.includes('mandaue') && (!rOffice || rOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === rOffice)))) {
+          officeReceiptsAmount += parseFloat(r.remittance_amount ?? 0);
+        }
+      });
+
+      const adminComm = officeReceiptsAmount * 0.50;
 
       return {
         id: office.id,
@@ -116,13 +151,10 @@ export default function SuperadminDashboard({
         count,
         totalWin,
         returnOut,
+        remittanceAmount: officeReceiptsAmount,
         adminComm
       };
     });
-
-    const pendingVerificationCount = receipts.filter(r => r.verification_status === 'PENDING').length;
-    const verifiedReceiptsCount = receipts.filter(r => r.verification_status === 'VERIFIED').length;
-    const totalReceiptsAmount = receipts.reduce((sum, r) => sum + parseFloat(r.remittance_amount ?? 0), 0);
 
     return {
       totalUnclaimedWin,
@@ -131,6 +163,7 @@ export default function SuperadminDashboard({
       totalReturnedWin,
       totalReturnAmountOut,
       returnedCount: returnedData.length,
+      totalCollections,
       totalAdminComm,
       totalAgentComm,
       totalStaffComm,
@@ -139,9 +172,10 @@ export default function SuperadminDashboard({
       pendingVerificationCount,
       verifiedReceiptsCount,
       totalReceiptsAmount,
-      subOffices: subOfficesStats
+      subOffices: subOfficesStats,
+      activeReceiptsCount: activeReceipts.length
     };
-  }, [returnedData, unclaimedData, receipts, dbSubOffices]);
+  }, [returnedData, unclaimedData, receipts, dbReceipts, dbSubOffices]);
 
   return (
     <div className="w-full space-y-6">
@@ -177,7 +211,7 @@ export default function SuperadminDashboard({
               ₱{stats.totalReceiptsAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h3>
             <span className="text-[11px] text-slate-500 font-bold mt-0.5 block">
-              {receipts.length} Proofs Attached
+              {stats.activeReceiptsCount} Proofs Attached
             </span>
           </div>
           <div className="bg-blue-50 text-[#002B66] p-3 rounded-2xl shrink-0 border border-blue-100">
@@ -239,12 +273,12 @@ export default function SuperadminDashboard({
                 4-Tier Commission Allocation Matrix
               </h3>
               <p className="text-xs text-blue-200 font-medium">
-                Real-time automated distribution breakdown based on active returned winnings
+                Real-time automated distribution breakdown based on total collections & remittances
               </p>
             </div>
           </div>
           <span className="text-[11px] font-mono font-bold bg-blue-900/60 border border-blue-700/60 px-3 py-1 rounded-full text-[#FFD700]">
-            Total Distributed: ₱{stats.totalReturnedWin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            Total Distributed: ₱{stats.totalReceiptsAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </span>
         </div>
 
