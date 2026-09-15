@@ -1,15 +1,84 @@
 import { supabase } from '../config/supabaseClient';
 import { hashPassword } from '../utils/cryptoUtils';
 
-export const userService = {
-  async fetchUsers() {
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('*')
-      .order('created_at', { ascending: false });
+// In-memory cache for all users and active users with 3-minute TTL & in-flight deduplication
+let allUsersCache = null;
+let allUsersCacheTime = 0;
+let inFlightAllUsersPromise = null;
 
-    if (error) throw error;
-    return data || [];
+let activeUsersCache = null;
+let activeUsersCacheTime = 0;
+let inFlightActiveUsersPromise = null;
+
+const USERS_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+export const userService = {
+  invalidateCache() {
+    allUsersCache = null;
+    allUsersCacheTime = 0;
+    inFlightAllUsersPromise = null;
+    activeUsersCache = null;
+    activeUsersCacheTime = 0;
+    inFlightActiveUsersPromise = null;
+  },
+
+  async fetchUsers(force = false) {
+    const now = Date.now();
+    if (!force && allUsersCache && (now - allUsersCacheTime < USERS_TTL_MS)) {
+      return allUsersCache;
+    }
+
+    if (inFlightAllUsersPromise && !force) {
+      return inFlightAllUsersPromise;
+    }
+
+    inFlightAllUsersPromise = (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_users')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        allUsersCache = data || [];
+        allUsersCacheTime = Date.now();
+        return allUsersCache;
+      } finally {
+        inFlightAllUsersPromise = null;
+      }
+    })();
+
+    return inFlightAllUsersPromise;
+  },
+
+  async fetchActiveUsers(force = false) {
+    const now = Date.now();
+    if (!force && activeUsersCache && (now - activeUsersCacheTime < USERS_TTL_MS)) {
+      return activeUsersCache;
+    }
+
+    if (inFlightActiveUsersPromise && !force) {
+      return inFlightActiveUsersPromise;
+    }
+
+    inFlightActiveUsersPromise = (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_users')
+          .select('id, username, full_name, role, sub_office, is_active, last_login_at')
+          .eq('is_active', true)
+          .order('full_name', { ascending: true });
+
+        if (error) throw error;
+        activeUsersCache = data || [];
+        activeUsersCacheTime = Date.now();
+        return activeUsersCache;
+      } finally {
+        inFlightActiveUsersPromise = null;
+      }
+    })();
+
+    return inFlightActiveUsersPromise;
   },
 
   async createUser(userData, actorUser) {
@@ -30,6 +99,8 @@ export const userService = {
       .single();
 
     if (error) throw error;
+
+    this.invalidateCache();
 
     await supabase.from('audit_logs').insert([{
       actor_username: actorUser?.username || 'admin',
@@ -66,6 +137,8 @@ export const userService = {
 
     if (error) throw error;
 
+    this.invalidateCache();
+
     await supabase.from('audit_logs').insert([{
       actor_username: actorUser?.username || 'admin',
       actor_role: actorUser?.role || 'Super Admin',
@@ -87,6 +160,8 @@ export const userService = {
       .eq('id', user.id);
 
     if (error) throw error;
+
+    this.invalidateCache();
 
     await supabase.from('audit_logs').insert([{
       actor_username: actorUser?.username || 'admin',

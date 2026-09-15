@@ -5,6 +5,8 @@ import {
   MapPin, UserCheck, Server, ArrowRight 
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
+import { systemService } from '../../services/systemService';
+import { userService } from '../../services/userService';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 
 export default function SubOfficeManagement({ currentUser }) {
@@ -37,21 +39,21 @@ export default function SubOfficeManagement({ currentUser }) {
   };
 
   // Load Sub-Offices directly from sub_offices table, plus endpoints & users
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     setLoading(true);
     try {
-      const [soRes, settingsRes, usersRes] = await Promise.all([
+      const [soRes, settingsData, usersData] = await Promise.all([
         supabase.from('sub_offices').select('*').order('created_at', { ascending: true }),
-        supabase.from('system_settings').select('*'),
-        supabase.from('app_users').select('id, username, sub_office, role, is_active')
+        systemService.fetchSettings(force),
+        userService.fetchUsers(force)
       ]);
 
       if (soRes.data) {
         setSubOffices(soRes.data);
       }
 
-      if (settingsRes.data && settingsRes.data.length) {
-        settingsRes.data.forEach(row => {
+      if (settingsData && settingsData.length) {
+        settingsData.forEach(row => {
           if (row.key === 'api_endpoints' || row.key === 'gateway_endpoints') {
             try {
               const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
@@ -61,8 +63,8 @@ export default function SubOfficeManagement({ currentUser }) {
         });
       }
 
-      if (usersRes.data) {
-        setUsers(usersRes.data);
+      if (usersData) {
+        setUsers(usersData);
       }
     } catch (err) {
       console.error('Error loading sub-offices:', err);
@@ -74,14 +76,21 @@ export default function SubOfficeManagement({ currentUser }) {
   useEffect(() => {
     loadData();
 
+    let debounceTimer = null;
+    const triggerDebouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadData(true);
+      }, 500);
+    };
+
     const channel = supabase
       .channel('sub_offices_realtime_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
-        loadData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, triggerDebouncedReload)
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, []);

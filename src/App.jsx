@@ -14,6 +14,7 @@ import TicketVerificationBotModal from './components/chat/TicketVerificationBotM
 import ProfileSettingsModal from './components/common/ProfileSettingsModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
 import { notificationService } from './services/notificationService';
+import { systemService } from './services/systemService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { isIliganAllowedSupervisor, isIliganSetAAllowedSupervisor, isLalaOfficeAllowedSupervisor, isBaloiOfficeAllowedSupervisor } from './services/supervisorService';
 
@@ -355,14 +356,10 @@ export default function App() {
   }, [currentUser]);
 
 
-  // Load dynamic settings from system_settings table
-  const loadSystemSettings = useCallback(async () => {
+  // Load dynamic settings from system_settings table via cached systemService
+  const loadSystemSettings = useCallback(async (force = false) => {
     try {
-      const { data: sData, error } = await supabase.from('system_settings').select('*');
-      if (error) {
-        console.warn('System settings query notice:', error.message);
-        return null;
-      }
+      const sData = await systemService.fetchSettings(force);
       if (sData && sData.length) {
         let loadedEndpoints = [];
         let loadedConfig = null;
@@ -845,7 +842,7 @@ export default function App() {
     })();
 
     return () => { isMounted = false; };
-  }, [currentUser]);
+  }, [currentUser?.id || currentUser?.username]);
 
   // Re-fetch on filter changes
   useEffect(() => {

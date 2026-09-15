@@ -12,6 +12,7 @@ import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole, isOperationalNotification } from '../../utils/permissions';
 import { notificationService } from '../../services/notificationService';
 import { presenceService } from '../../services/presenceService';
+import { userService } from '../../services/userService';
 import CreateGroupChatModal from '../chat/CreateGroupChatModal';
 import AgentMascotAvatar from '../chat/AgentMascotAvatar';
 
@@ -363,16 +364,11 @@ export default function Header({
     return list;
   }, [cleanNotifications, notificationTab]);
 
-  // Fetch all active users from database
-  const fetchActiveUsers = async () => {
+  // Fetch all active users from cache/database
+  const fetchActiveUsers = async (force = false) => {
     setIsLoadingUsers(true);
     try {
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('id, username, full_name, role, sub_office, is_active, last_login_at')
-        .eq('is_active', true)
-        .order('full_name', { ascending: true });
-
+      const data = await userService.fetchActiveUsers(force);
       if (data && data.length > 0) {
         setActiveUsers(data);
       }
@@ -433,30 +429,41 @@ export default function Header({
     }
   };
 
+  const userDebounceRef = useRef(null);
+  const chatDebounceRef = useRef(null);
+
   useEffect(() => {
     fetchActiveUsers();
     fetchLatestMessages();
 
-    // Listen to user status & new chat message updates in real-time
+    // Listen to user status & new chat message updates in real-time with debouncing
     const channelUsers = supabase
       .channel('header_active_users_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => {
-        fetchActiveUsers();
+        if (userDebounceRef.current) clearTimeout(userDebounceRef.current);
+        userDebounceRef.current = setTimeout(() => {
+          fetchActiveUsers(true);
+        }, 500);
       })
       .subscribe();
 
     const channelChats = supabase
       .channel('header_latest_chats_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_verification_chats' }, () => {
-        fetchLatestMessages();
+        if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
+        chatDebounceRef.current = setTimeout(() => {
+          fetchLatestMessages();
+        }, 500);
       })
       .subscribe();
 
     return () => {
+      if (userDebounceRef.current) clearTimeout(userDebounceRef.current);
+      if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
       supabase.removeChannel(channelUsers);
       supabase.removeChannel(channelChats);
     };
-  }, [currentUser]);
+  }, [currentUser?.id || currentUser?.username]);
 
   // Filter users by role permissions, excluding the logged-in user, and applying search query
   const filteredUsers = useMemo(() => {

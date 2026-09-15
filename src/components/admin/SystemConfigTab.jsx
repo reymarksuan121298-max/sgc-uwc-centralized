@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole } from '../../utils/permissions';
+import { systemService } from '../../services/systemService';
+import { userService } from '../../services/userService';
 import ConfirmPopover from '../common/ConfirmPopover';
 
 export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
@@ -78,28 +80,28 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = async (force = false) => {
     setLoading(true);
     try {
-      const [settingsRes, subOfficesRes, usersRes] = await Promise.all([
-        supabase.from('system_settings').select('*'),
-        supabase.from('sub_offices').select('name').order('name', { ascending: true }),
-        supabase.from('app_users').select('id, username, full_name, role, sub_office, is_active').order('username', { ascending: true })
+      const [settingsData, subOfficesData, usersData] = await Promise.all([
+        systemService.fetchSettings(force),
+        systemService.fetchSubOffices(force),
+        userService.fetchUsers(force)
       ]);
 
-      if (subOfficesRes.data && subOfficesRes.data.length) {
+      if (subOfficesData && subOfficesData.length) {
         const branchSet = new Set(['All']);
-        subOfficesRes.data.forEach(so => {
-          if (so.name && so.name.trim()) branchSet.add(so.name.trim());
+        subOfficesData.forEach(soName => {
+          if (soName && soName.trim()) branchSet.add(soName.trim());
         });
         setSubOfficesList(Array.from(branchSet));
       }
 
-      if (usersRes.data) {
-        setUsersList(usersRes.data);
+      if (usersData) {
+        setUsersList(usersData);
       }
 
-      const data = settingsRes.data || [];
+      const data = settingsData || [];
       let foundEndpoints = [];
 
       if (data.length) {
@@ -146,20 +148,23 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
   useEffect(() => {
     loadSettings();
 
+    let debounceTimer = null;
+    const triggerDebouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadSettings(true);
+      }, 500);
+    };
+
     const channel = supabase
       .channel('system_config_realtime_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
-        loadSettings();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => {
-        loadSettings();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => {
-        loadSettings();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, triggerDebouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, triggerDebouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, triggerDebouncedReload)
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -365,6 +370,9 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
           })
       ]);
 
+      // Invalidate memory cache so all components fetch fresh settings
+      systemService.invalidateCache();
+
       // Log into audit trail
       await supabase.from('audit_logs').insert([{
         actor_username: currentUser?.username || 'admin',
@@ -408,6 +416,8 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
       if (error) throw error;
 
+      systemService.invalidateCache();
+
       await supabase.from('audit_logs').insert([{
         actor_username: currentUser?.username || 'admin',
         actor_role: currentUser?.role || 'Super Admin',
@@ -441,6 +451,8 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
         });
 
       if (error) throw error;
+
+      systemService.invalidateCache();
 
       await supabase.from('audit_logs').insert([{
         actor_username: currentUser?.username || 'admin',

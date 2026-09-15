@@ -12,6 +12,7 @@ import { supabase } from '../../config/supabaseClient';
 import { scanTicketImage } from '../../utils/ticketOcrScanner';
 import { canApproveDeletionRequests, isAdminRole, formatRoleName, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 import { presenceService } from '../../services/presenceService';
+import { userService } from '../../services/userService';
 import CreateGroupChatModal from './CreateGroupChatModal';
 import ViewUserProfileModal from '../common/ViewUserProfileModal';
 
@@ -182,15 +183,10 @@ export default function TicketVerificationChatModal({
     }
   }, [selectedContact, isOpen]);
 
-  // Fetch active users for 1-on-1 Direct Chat list
-  const fetchActiveUsers = useCallback(async () => {
+  // Fetch active users for 1-on-1 Direct Chat list from cache
+  const fetchActiveUsers = useCallback(async (force = false) => {
     try {
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('id, username, full_name, role, sub_office, is_active, last_login_at, avatar_url')
-        .eq('is_active', true)
-        .order('full_name', { ascending: true });
-
+      const data = await userService.fetchActiveUsers(force);
       if (data && data.length > 0) {
         setActiveUsers(data);
       }

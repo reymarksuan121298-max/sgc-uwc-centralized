@@ -6,6 +6,8 @@ import {
 import { supabase } from '../../config/supabaseClient';
 import { ROLES, formatRoleName } from '../../utils/permissions';
 import { useGlobalPresence } from '../../hooks/useGlobalPresence';
+import { userService } from '../../services/userService';
+import { systemService } from '../../services/systemService';
 
 export default function UserManagementTab({ currentUser }) {
   const { isUserOnline } = useGlobalPresence(currentUser);
@@ -40,30 +42,30 @@ export default function UserManagementTab({ currentUser }) {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (force = false) => {
     setLoading(true);
     try {
-      const [usersRes, subOfficesRes, allSettingsRes] = await Promise.all([
-        supabase.from('app_users').select('*').order('created_at', { ascending: false }),
-        supabase.from('sub_offices').select('*').order('name', { ascending: true }),
-        supabase.from('system_settings').select('*')
+      const [usersData, subOfficesData, allSettingsData] = await Promise.all([
+        userService.fetchUsers(force),
+        systemService.fetchSubOffices(force),
+        systemService.fetchSettings(force)
       ]);
 
-      if (usersRes.data) setUsers(usersRes.data);
+      if (usersData) setUsers(usersData);
 
       // Load ONLY from dedicated sub_offices database table
       const branchSet = new Set(['All']);
-      if (subOfficesRes.data && subOfficesRes.data.length) {
-        subOfficesRes.data.forEach(so => {
-          if (so.name && so.name.trim()) {
-            branchSet.add(so.name.trim());
+      if (subOfficesData && subOfficesData.length) {
+        subOfficesData.forEach(soName => {
+          if (soName && soName.trim()) {
+            branchSet.add(soName.trim());
           }
         });
       }
 
       // Load gateway endpoints for connection reference only
-      if (allSettingsRes.data && allSettingsRes.data.length) {
-        allSettingsRes.data.forEach(row => {
+      if (allSettingsData && allSettingsData.length) {
+        allSettingsData.forEach(row => {
           if (!row.value) return;
           let parsed = row.value;
           while (typeof parsed === 'string') {
@@ -93,14 +95,22 @@ export default function UserManagementTab({ currentUser }) {
   useEffect(() => {
     fetchUsers();
 
+    let debounceTimer = null;
+    const triggerDebouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchUsers(true);
+      }, 500);
+    };
+
     const channel = supabase
       .channel('user_mgmt_tab_sub_offices_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
-        fetchUsers();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, triggerDebouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, triggerDebouncedReload)
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, []);
