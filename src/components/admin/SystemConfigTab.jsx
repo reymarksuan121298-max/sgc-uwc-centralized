@@ -9,6 +9,7 @@ import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole } from '../../utils/permissions';
 import { systemService } from '../../services/systemService';
 import { userService } from '../../services/userService';
+import { clearSupervisorCache } from '../../services/supervisorService';
 import ConfirmPopover from '../common/ConfirmPopover';
 
 export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
@@ -372,6 +373,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
       // Invalidate memory cache so all components fetch fresh settings
       systemService.invalidateCache();
+      clearSupervisorCache();
 
       // Log into audit trail
       await supabase.from('audit_logs').insert([{

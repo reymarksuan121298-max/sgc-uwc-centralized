@@ -169,26 +169,36 @@ export function isBaloiOfficeAllowedSupervisor(key) {
 
 // In-memory cache keyed by sub-office label
 const supervisorCache = new Map();
+const inFlightPromises = new Map();
+
+/**
+ * Clear supervisor cache when gateway endpoints or settings change.
+ */
+export function clearSupervisorCache() {
+  supervisorCache.clear();
+  supervisorUrlCache.clear();
+}
 
 /**
  * Resolve the Bearer auth header from gateway endpoints.
- * Prefers an Iligan/LDN-labeled endpoint; falls back to any active endpoint
- * since all endpoints share the same token.
+ * Only returns a token if an endpoint is explicitly configured for Iligan / LDN.
+ * Does NOT fall back to other office tokens (e.g. Mandaue) to avoid 401 Unauthorized errors.
  */
 function getIliganAuthHeader(gatewayEndpoints = []) {
   const eps = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
 
-  // Prefer an endpoint explicitly labeled for Iligan/LDN
-  let ep = eps.find(e => {
+  // Look strictly for an endpoint configured for Iligan / LDN
+  const ep = eps.find(e => {
     const sub = (e.sub_office || e.name || '').toLowerCase();
     const url = (e.baseUrl || '').toLowerCase();
     return sub.includes('iligan') || url.includes('stl-ldn-api') || sub.includes('ldn');
   });
 
-  // Fall back to any active endpoint (all share the same token)
-  if (!ep && eps.length > 0) ep = eps.find(e => e.token) || eps[0];
+  if (!ep || !ep.token) {
+    return '';
+  }
 
-  const rawToken = (ep?.token || '').trim();
+  const rawToken = ep.token.trim();
   return rawToken
     ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`)
     : '';
@@ -206,8 +216,8 @@ const SUPERVISOR_CACHE_TTL = 10 * 60 * 1000;
  * @returns {Promise<Object>}
  */
 async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
+  // If no Iligan/LDN auth token is configured, skip network requests silently and use static fallbacks
   if (!authHeader) {
-    console.warn('[SupervisorService] Skipping supervisor fetch: Missing or invalid auth token for Iligan endpoint.');
     return {};
   }
 
@@ -225,7 +235,7 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
       try {
         const cached = supervisorUrlCache.get(url);
         if (cached && (now - cached.timestamp) < SUPERVISOR_CACHE_TTL) {
-          const rawList = cached.data;
+          const rawList = cached.data || [];
           rawList.forEach(item => {
             if (!item) return;
             const name = (
@@ -247,16 +257,19 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
         const fetchUrl = (typeof window !== 'undefined' && url.toLowerCase().includes('stl-ldn-api.com'))
           ? url.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn')
           : url;
         const res = await fetch(fetchUrl, { method: 'GET', headers, signal: controller.signal });
         clearTimeout(timeoutId);
+
         if (!res.ok) {
-          console.warn(`[SupervisorService] ${url} returned HTTP ${res.status}`);
+          // Cache empty result on 401/403/errors to prevent repeated API flooding
+          supervisorUrlCache.set(url, { timestamp: now, data: [] });
           return;
         }
+
         const json = await res.json();
         const rawList = Array.isArray(json)
           ? json
@@ -295,7 +308,8 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
           }
         });
       } catch (err) {
-        console.warn(`[SupervisorService] Failed to fetch from ${url}:`, err);
+        // Cache error state with timestamp so failed URLs are not constantly hammered
+        supervisorUrlCache.set(url, { timestamp: now, data: [] });
       }
     })
   );
@@ -321,7 +335,7 @@ export async function fetchIliganSupervisors(gatewayEndpoints = []) {
     isIliganAllowedSupervisor
   );
 
-  if (Object.keys(result).length > 0) supervisorCache.set(cacheKey, result);
+  supervisorCache.set(cacheKey, result);
   return result;
 }
 
@@ -347,7 +361,7 @@ export async function fetchIliganSetASupervisors(gatewayEndpoints = []) {
     ILIGAN_SET_A_ALLOWED_SUPERVISORS.length > 0 ? isIliganSetAAllowedSupervisor : null
   );
 
-  if (Object.keys(result).length > 0) supervisorCache.set(cacheKey, result);
+  supervisorCache.set(cacheKey, result);
   return result;
 }
 
@@ -369,7 +383,7 @@ export async function fetchLalaOfficeSupervisors(gatewayEndpoints = []) {
     LALA_OFFICE_ALLOWED_SUPERVISORS.length > 0 ? isLalaOfficeAllowedSupervisor : null
   );
 
-  if (Object.keys(result).length > 0) supervisorCache.set(cacheKey, result);
+  supervisorCache.set(cacheKey, result);
   return result;
 }
 
@@ -391,7 +405,7 @@ export async function fetchBaloiOfficeSupervisors(gatewayEndpoints = []) {
     BALOI_OFFICE_ALLOWED_SUPERVISORS.length > 0 ? isBaloiOfficeAllowedSupervisor : null
   );
 
-  if (Object.keys(result).length > 0) supervisorCache.set(cacheKey, result);
+  supervisorCache.set(cacheKey, result);
   return result;
 }
 
@@ -401,13 +415,31 @@ export async function fetchBaloiOfficeSupervisors(gatewayEndpoints = []) {
  * @returns {Promise<Object>}
  */
 export async function fetchAllIliganSupervisors(gatewayEndpoints = []) {
-  const [setA, setB, lala, baloi] = await Promise.all([
-    fetchIliganSetASupervisors(gatewayEndpoints),
-    fetchIliganSupervisors(gatewayEndpoints),
-    fetchLalaOfficeSupervisors(gatewayEndpoints),
-    fetchBaloiOfficeSupervisors(gatewayEndpoints)
-  ]);
-  return { ...setB, ...setA, ...lala, ...baloi };
+  const cacheKey = 'ALL_ILIGAN_SUPERVISORS';
+  if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
+
+  if (inFlightPromises.has(cacheKey)) {
+    return inFlightPromises.get(cacheKey);
+  }
+
+  const promise = (async () => {
+    try {
+      const [setA, setB, lala, baloi] = await Promise.all([
+        fetchIliganSetASupervisors(gatewayEndpoints),
+        fetchIliganSupervisors(gatewayEndpoints),
+        fetchLalaOfficeSupervisors(gatewayEndpoints),
+        fetchBaloiOfficeSupervisors(gatewayEndpoints)
+      ]);
+      const merged = { ...setB, ...setA, ...lala, ...baloi };
+      supervisorCache.set(cacheKey, merged);
+      return merged;
+    } finally {
+      inFlightPromises.delete(cacheKey);
+    }
+  })();
+
+  inFlightPromises.set(cacheKey, promise);
+  return promise;
 }
 
 // ─── Display Name Resolution ──────────────────────────────────────────────────
