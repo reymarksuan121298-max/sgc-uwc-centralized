@@ -55,10 +55,6 @@ export default function SuperadminDashboard({
 
     let totalReturnedWin = 0;
     let totalReturnAmountOut = 0;
-    let totalAdminComm = 0;
-    let totalAgentComm = 0;
-    let totalStaffComm = 0;
-    let totalCollectorComm = 0;
     let underSettlementCount = 0;
 
     returnedData.forEach((i) => {
@@ -66,58 +62,7 @@ export default function SuperadminDashboard({
       const out = parseFloat(i.return_amount_out ?? win);
       totalReturnedWin += win;
       totalReturnAmountOut += out;
-
-      // 50% Admin, 30% Agent, 10% Staff, 10% Collector
-      const adm = parseFloat(i.admin_commission) > 0 ? parseFloat(i.admin_commission) : (win * 0.50);
-      const agt = parseFloat(i.agent_commission) > 0 ? parseFloat(i.agent_commission) : (win * 0.30);
-      const stf = parseFloat(i.staff_commission) > 0 ? parseFloat(i.staff_commission) : (win * 0.10);
-      const col = parseFloat(i.collector_commission) > 0 ? parseFloat(i.collector_commission) : (win * 0.10);
-
-      totalAdminComm += adm;
-      totalAgentComm += agt;
-      totalStaffComm += stf;
-      totalCollectorComm += col;
-
       if (i.isUnderSettlement) underSettlementCount += 1;
-    });
-
-    // Map sub-offices strictly from database sub_offices table
-    const subOfficesStats = dbSubOffices.map((office) => {
-      const officeName = office.name || '';
-      let count = 0;
-      let totalWin = 0;
-      let returnOut = 0;
-      let adminComm = 0;
-
-      returnedData.forEach((i) => {
-        const itemOffice = (i.sub_office || '').toLowerCase().trim();
-        const targetOffice = officeName.toLowerCase().trim();
-        
-        // Match ticket if it references this sub-office name, or if Mandaue Central is default
-        const isMatch = itemOffice === targetOffice || 
-          (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === itemOffice)));
-
-        if (isMatch) {
-          const win = parseFloat(i.winAmount ?? 0);
-          const out = parseFloat(i.return_amount_out ?? win);
-          const adm = parseFloat(i.admin_commission) > 0 ? parseFloat(i.admin_commission) : (win * 0.50);
-          count += 1;
-          totalWin += win;
-          returnOut += out;
-          adminComm += adm;
-        }
-      });
-
-      return {
-        id: office.id,
-        subOffice: office.name,
-        location: office.location,
-        status: office.status || 'ACTIVE',
-        count,
-        totalWin,
-        returnOut,
-        adminComm
-      };
     });
 
     const activeReceipts = (receipts && receipts.length > 0) ? receipts : [];
@@ -134,6 +79,55 @@ export default function SuperadminDashboard({
     const totalAgentComm = totalCollections * 0.30;
     const totalStaffComm = totalCollections * 0.10;
     const totalCollectorComm = totalCollections * 0.10;
+
+    // Map sub-offices strictly from database sub_offices table
+    const subOfficesStats = dbSubOffices.map((office) => {
+      const officeName = office.name || '';
+      let count = 0;
+      let totalWin = 0;
+      let returnOut = 0;
+
+      returnedData.forEach((i) => {
+        const itemOffice = (i.sub_office || '').toLowerCase().trim();
+        const targetOffice = officeName.toLowerCase().trim();
+        
+        // Match ticket if it references this sub-office name, or if Mandaue Central is default
+        const isMatch = itemOffice === targetOffice || 
+          (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === itemOffice)));
+
+        if (isMatch) {
+          const win = parseFloat(i.winAmount ?? 0);
+          const out = parseFloat(i.return_amount_out ?? win);
+          count += 1;
+          totalWin += win;
+          returnOut += out;
+        }
+      });
+
+      // Remittance collections for this sub-office
+      let officeReceiptsAmount = 0;
+      activeReceipts.forEach((r) => {
+        const rOffice = (r.sub_office || '').toLowerCase().trim();
+        const targetOffice = officeName.toLowerCase().trim();
+        if (rOffice === targetOffice || (targetOffice.includes('mandaue') && (!rOffice || rOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === rOffice)))) {
+          officeReceiptsAmount += parseFloat(r.remittance_amount ?? 0);
+        }
+      });
+
+      const adminComm = officeReceiptsAmount * 0.50;
+
+      return {
+        id: office.id,
+        subOffice: office.name,
+        location: office.location,
+        status: office.status || 'ACTIVE',
+        count,
+        totalWin,
+        returnOut,
+        remittanceAmount: officeReceiptsAmount,
+        adminComm
+      };
+    });
 
     return {
       totalUnclaimedWin,
