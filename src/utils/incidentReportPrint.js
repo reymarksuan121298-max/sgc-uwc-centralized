@@ -1,5 +1,6 @@
 import { formatDrawTime } from './formatters';
 import { getTicketAgeInDays, getTicketDate } from './ticketAge';
+import { systemService } from '../services/systemService';
 
 const escapeHtml = (text) => {
   if (text === null || text === undefined) return '';
@@ -39,23 +40,22 @@ export const openIncidentReportPrint = async (ticket) => {
   const drawSchedule = formatDrawTime(ticket.drawTime || ticket.draw, ticket.drawDate || ticket.created_at);
   const betCombination = `${ticket.betNo || ticket.CombiNo || ticket.SoldOutCombiNo || 'N/A'} (${ticket.betCode || (ticket.rambolito ? 'RS3' : 'TS3')})`;
   
-  const subOffice = ticket.sub_office || ticket.subOffice || ticket.branch || 'Central Office';
-  let subOfficeAddress = ticket.sub_office_address || 'Address not listed, please update sub-office configuration';
+  const rawSubOffice = ticket.sub_office || ticket.subOffice || ticket.branch || '';
+  let subOffice = ticket.sub_office_name || '';
+  let subOfficeAddress = ticket.sub_office_address || '';
 
   try {
-    const { supabase } = await import('../config/supabaseClient');
-    const { data } = await supabase
-      .from('sub_offices')
-      .select('*')
-      .ilike('name', subOffice)
-      .maybeSingle();
-
-    if (data && (data.location || data.address)) {
-      subOfficeAddress = data.location || data.address;
+    const resolved = await systemService.resolveSubOfficeDetails(rawSubOffice);
+    if (resolved) {
+      subOffice = resolved.name || subOffice || 'Mandaue City';
+      subOfficeAddress = resolved.address || subOfficeAddress || 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City';
     }
   } catch (err) {
-    console.warn('Failed to fetch dynamic sub-office address for IR Print Preview:', err);
+    console.warn('Failed to fetch dynamic sub-office address from database for IR Print Preview:', err);
   }
+
+  if (!subOffice) subOffice = 'Mandaue City';
+  if (!subOfficeAddress) subOfficeAddress = 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City';
 
   if (!reportWindow) {
     window.print();

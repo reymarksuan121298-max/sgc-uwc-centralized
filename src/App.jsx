@@ -520,11 +520,13 @@ export default function App() {
     setErrorMsg(null);
 
     try {
+      const activeEndpoints = (epsToUse && epsToUse.length > 0)
+        ? epsToUse.filter(e => e && e.is_active !== false && e.baseUrl)
+        : ((gatewayEndpoints || []).filter(e => e && e.is_active !== false && e.baseUrl));
+
       let targetEndpoints = [];
 
       if (epsToUse && epsToUse.length > 0) {
-        const activeEndpoints = epsToUse.filter(e => e.is_active !== false && e.baseUrl);
-
         // Sales Service Representatives (SSR) are restricted to their assigned sub-office
         // Unclaimed Specialists & Admins have full access to handle all SSR / Sub-Office records
         const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';

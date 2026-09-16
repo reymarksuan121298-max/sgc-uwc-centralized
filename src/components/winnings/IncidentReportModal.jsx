@@ -3,7 +3,7 @@ import { AlertTriangle, FileText, Printer, X, ShieldAlert } from 'lucide-react';
 import { formatDrawTime, getTicketTransId } from '../../utils/formatters';
 import { getTicketAgeInDays, getTicketDate } from '../../utils/ticketAge';
 import { openIncidentReportPrint } from '../../utils/incidentReportPrint';
-import { supabase } from '../../config/supabaseClient';
+import { systemService } from '../../services/systemService';
 
 export default function IncidentReportModal({ ticket, onClose }) {
   if (!ticket) return null;
@@ -13,29 +13,26 @@ export default function IncidentReportModal({ ticket, onClose }) {
   const ageInDays = getTicketAgeInDays(ticket);
   const reportNumber = `IR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(transId).replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '000000'}`;
   
-  const [subOfficeAddress, setSubOfficeAddress] = React.useState('');
-  const [isLoadingAddress, setIsLoadingAddress] = React.useState(true);
-  
+  const rawOffice = ticket.sub_office || ticket.subOffice || '';
+  const [subOfficeName, setSubOfficeName] = React.useState('Mandaue City');
+  const [subOfficeAddress, setSubOfficeAddress] = React.useState('Barlaps, A.S. Fortuna St., Bakilid, Mandaue City');
+
   React.useEffect(() => {
-    const fetchAddress = async () => {
-      const officeName = ticket.sub_office || ticket.subOffice || 'Mandaue Central';
+    let isMounted = true;
+    const loadOffice = async () => {
       try {
-        const { data } = await supabase
-          .from('sub_offices')
-          .select('location')
-          .ilike('name', officeName)
-          .single();
-        if (data && data.location) {
-          setSubOfficeAddress(data.location);
+        const resolved = await systemService.resolveSubOfficeDetails(rawOffice);
+        if (isMounted && resolved) {
+          setSubOfficeName(resolved.name || 'Mandaue City');
+          setSubOfficeAddress(resolved.address || 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City');
         }
       } catch (err) {
-        console.warn('Could not fetch sub-office address', err);
-      } finally {
-        setIsLoadingAddress(false);
+        console.warn('Failed to load sub-office from database:', err);
       }
     };
-    fetchAddress();
-  }, [ticket]);
+    loadOffice();
+    return () => { isMounted = false; };
+  }, [rawOffice]);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
@@ -48,7 +45,7 @@ export default function IncidentReportModal({ ticket, onClose }) {
               <ShieldAlert size={20} />
             </div>
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-blue-200">CENTRALIZED PORTAL • SUB-OFFICE: {ticket.sub_office || ticket.subOffice || 'MANDAUE CENTRAL'}</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-blue-200">CENTRALIZED PORTAL • SUB-OFFICE: {subOfficeName}</p>
               <h2 className="text-sm sm:text-base font-black uppercase tracking-wider">Operational Incident Report Issuance</h2>
             </div>
           </div>
@@ -148,9 +145,8 @@ export default function IncidentReportModal({ ticket, onClose }) {
 
           <button 
             type="button" 
-            onClick={() => openIncidentReportPrint({ ...ticket, sub_office_address: subOfficeAddress })} 
-            disabled={isLoadingAddress}
-            className="flex items-center gap-2 rounded-xl bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 text-xs font-black shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            onClick={() => openIncidentReportPrint({ ...ticket, sub_office: subOfficeName, sub_office_address: subOfficeAddress })} 
+            className="flex items-center gap-2 rounded-xl bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 text-xs font-black shadow-md transition-all active:scale-95 cursor-pointer"
           >
             <Printer size={15} />
             <span>Open Print Preview (A4)</span>

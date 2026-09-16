@@ -315,11 +315,36 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   // Helper: resolve physical address from dbSubOffices by name
   const getSubOfficeAddress = (name) => {
-    if (!name || !dbSubOffices.length) return 'Address not listed – please update sub-office configuration';
-    const match = dbSubOffices.find(
+    const cleanStr = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanSearch = cleanStr(name);
+    const defaultAddress = 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City';
+
+    if (!name || !dbSubOffices.length) {
+      return (!name || name.toLowerCase().includes('mandaue'))
+        ? defaultAddress
+        : 'Address not listed – please update sub-office configuration';
+    }
+
+    let match = dbSubOffices.find(
       (so) => (so.name || '').toLowerCase().trim() === (name || '').toLowerCase().trim()
     );
-    return match?.location || match?.address || 'Address not listed – please update sub-office configuration';
+    if (!match && name) {
+      match = dbSubOffices.find(
+        (so) =>
+          (so.name && so.name.toLowerCase().includes(name.toLowerCase().trim())) ||
+          (name && name.toLowerCase().includes((so.name || '').toLowerCase().trim()))
+      );
+    }
+    if (!match && cleanSearch) {
+      match = dbSubOffices.find((so) => {
+        const cName = cleanStr(so.name);
+        return (cName && cleanSearch) && (cName.includes(cleanSearch) || cleanSearch.includes(cName));
+      });
+    }
+    if (!match && (cleanSearch.includes('mandaue') || !cleanSearch)) {
+      match = dbSubOffices.find((so) => (so.name || '').toLowerCase().includes('mandaue')) || dbSubOffices[0];
+    }
+    return match?.location || match?.address || (name.toLowerCase().includes('mandaue') ? defaultAddress : 'Address not listed – please update sub-office configuration');
   };
 
   const ticketSubOfficeAddress = getSubOfficeAddress(ticketSubOffice);
