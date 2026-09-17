@@ -394,7 +394,14 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
                   </div>
                   <div>
                     <span className="text-[9px] font-sans font-bold text-slate-400 uppercase block">Amount Out</span>
-                    <span className="font-black text-emerald-700">₱{parseFloat(item.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-black text-emerald-700">
+                      ₱{Math.max(0, parseFloat(item.remittance_amount || 0) - parseFloat(item.deposited_charges || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                    {parseFloat(item.deposited_charges || 0) > 0 && (
+                      <span className="text-[9px] text-rose-500 font-bold block">
+                        Less ₱{parseFloat(item.deposited_charges).toFixed(2)} charges
+                      </span>
+                    )}
                   </div>
                   <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between">
                     <span className="text-[9px] font-sans font-bold text-slate-400 uppercase">Officer:</span>
@@ -592,11 +599,19 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
                 <span className="font-bold text-slate-800">{approvingReceipt.sub_office} ({approvingReceipt.payment_channel})</span>
               </div>
               <div className="flex justify-between items-center pt-0.5">
-                <span className="text-slate-500 font-sans font-bold">Remitted Amount:</span>
+                <span className="text-slate-500 font-sans font-bold">Remitted Amount (Net):</span>
                 <span className="font-extrabold text-emerald-800 text-sm">
-                  ₱{parseFloat(approvingReceipt.remittance_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ₱{Math.max(0, parseFloat(approvingReceipt.remittance_amount || 0) - parseFloat(approvingReceipt.deposited_charges || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
+              {parseFloat(approvingReceipt.deposited_charges || 0) > 0 && (
+                <div className="flex justify-between items-center text-[10px] text-slate-500">
+                  <span>Gross / Less Charges:</span>
+                  <span>
+                    ₱{parseFloat(approvingReceipt.remittance_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} (Less ₱{parseFloat(approvingReceipt.deposited_charges).toFixed(2)})
+                  </span>
+                </div>
+              )}
             </div>
             <p className="text-[11px] text-slate-500 italic">
               This will update the remittance status to VERIFIED and mark all enclosed returned tickets as verified.

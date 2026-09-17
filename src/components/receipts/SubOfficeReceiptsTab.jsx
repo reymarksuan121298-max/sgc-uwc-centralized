@@ -316,13 +316,14 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
 
   const exportCSV = () => {
     if (!filteredReceipts.length) return alert('No receipts to export.');
-    const headers = ['SRN / Trans ID', 'Sub-Office', 'Channel', 'Ref No.', 'Amount', 'Date', 'Status', 'Officer Full Name', 'Uploaded By', 'Verified By'];
+    const headers = ['SRN / Trans ID', 'Sub-Office', 'Channel', 'Ref No.', 'Amount', 'Charges', 'Date', 'Status', 'Officer Full Name', 'Uploaded By', 'Verified By'];
     const rows = filteredReceipts.map(r => [
       `"${r.batch_serial_no || r.transactionId || r.reference_number || 'N/A'}"`,
       `"${r.sub_office}"`,
       `"${r.payment_channel}"`,
       `"${r.reference_number}"`,
-      parseFloat(r.remittance_amount || 0).toFixed(2),
+      Math.max(0, parseFloat(r.remittance_amount || 0) - parseFloat(r.deposited_charges || 0)).toFixed(2),
+      parseFloat(r.deposited_charges || 0).toFixed(2),
       `"${r.receipt_date}"`,
       `"${r.verification_status}"`,
       `"${getOfficerName(r)}"`,
@@ -464,6 +465,7 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
                 <th className="px-4 py-3 border-r border-blue-900">Payment Channel</th>
                 <th className="px-4 py-3 border-r border-blue-900">Reference No.</th>
                 <th className="px-4 py-3 border-r border-blue-900 text-right">Amount (₱)</th>
+                <th className="px-4 py-3 border-r border-blue-900 text-right leading-tight">Charges (₱)</th>
                 <th className="px-4 py-3 border-r border-blue-900 text-center">Status</th>
                 <th className="px-4 py-3 border-r border-blue-900">Date & Officer</th>
                 <th className="px-4 py-3 border-r border-blue-900">Approved By</th>
@@ -473,13 +475,13 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500 font-bold uppercase tracking-wider">
+                  <td colSpan={10} className="p-8 text-center text-slate-500 font-bold uppercase tracking-wider">
                     Loading remittance records...
                   </td>
                 </tr>
               ) : !filteredReceipts.length ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500 font-bold uppercase tracking-wider">
+                  <td colSpan={10} className="p-8 text-center text-slate-500 font-bold uppercase tracking-wider">
                     No remittance receipts found.
                   </td>
                 </tr>
@@ -505,7 +507,10 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
                       {item.reference_number}
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 font-mono font-extrabold text-emerald-700 text-right">
-                      ₱{parseFloat(item.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ₱{Math.max(0, parseFloat(item.remittance_amount || 0) - parseFloat(item.deposited_charges || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 border-r border-slate-100 font-mono font-bold text-rose-500 text-right">
+                      {item.deposited_charges > 0 ? `-₱${parseFloat(item.deposited_charges).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 text-center">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
@@ -605,7 +610,14 @@ export default function SubOfficeReceiptsTab({ currentUser }) {
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount</span>
-                  <span className="font-extrabold text-emerald-700">₱{parseFloat(selectedReceipt.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-extrabold text-emerald-700">
+                    ₱{Math.max(0, parseFloat(selectedReceipt.remittance_amount || 0) - parseFloat(selectedReceipt.deposited_charges || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                  {parseFloat(selectedReceipt.deposited_charges || 0) > 0 && (
+                    <span className="text-[9px] text-rose-500 font-bold block">
+                      Less ₱{parseFloat(selectedReceipt.deposited_charges).toFixed(2)} charges
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>

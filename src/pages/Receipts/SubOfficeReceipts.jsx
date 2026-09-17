@@ -328,7 +328,7 @@ export default function SubOfficeReceipts({ currentUser }) {
       `"${r.sub_office}"`,
       `"${r.payment_channel}"`,
       `"${r.reference_number}"`,
-      parseFloat(r.remittance_amount || 0).toFixed(2),
+      Math.max(0, parseFloat(r.remittance_amount || 0) - parseFloat(r.deposited_charges || 0)).toFixed(2),
       parseFloat(r.deposited_charges || 0).toFixed(2),
       `"${r.receipt_date}"`,
       `"${r.verification_status}"`,
@@ -513,7 +513,7 @@ export default function SubOfficeReceipts({ currentUser }) {
                       {item.reference_number}
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 font-mono font-extrabold text-emerald-700 text-right">
-                      ₱{parseFloat(item.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ₱{Math.max(0, parseFloat(item.remittance_amount || 0) - parseFloat(item.deposited_charges || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 font-mono font-bold text-rose-500 text-right">
                       {item.deposited_charges > 0 ? `-₱${parseFloat(item.deposited_charges).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
@@ -616,7 +616,14 @@ export default function SubOfficeReceipts({ currentUser }) {
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount</span>
-                  <span className="font-extrabold text-emerald-700">₱{parseFloat(selectedReceipt.remittance_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-extrabold text-emerald-700">
+                    ₱{Math.max(0, parseFloat(selectedReceipt.remittance_amount || 0) - parseFloat(selectedReceipt.deposited_charges || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                  {parseFloat(selectedReceipt.deposited_charges || 0) > 0 && (
+                    <span className="text-[9px] text-rose-500 font-bold block">
+                      Less ₱{parseFloat(selectedReceipt.deposited_charges).toFixed(2)} charges
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
