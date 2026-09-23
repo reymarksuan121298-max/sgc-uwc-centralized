@@ -198,8 +198,8 @@ export default function ConfirmReturnModal({
                   className="w-full bg-white border border-amber-400 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-amber-500/30 font-semibold"
                   required
                 />
-                <p className="text-[9px] text-amber-800 leading-tight">
-                  Required to verify AWOL/Inactive status. Subject for Unclaimed Specialist approval.
+                <p className="text-[9px] text-amber-800 leading-tight font-medium">
+                  An official approval link will be emailed to HR to directly approve this teller status. Unclaimed specialists cannot approve this record.
                 </p>
               </div>
             )}

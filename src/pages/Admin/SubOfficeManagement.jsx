@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  Building2, Plus, Search, Edit2, Trash2, CheckCircle2, 
-  AlertCircle, Globe, Shield, RefreshCw, Power, Phone, 
-  MapPin, UserCheck, Server, ArrowRight 
+import {
+  Building2, Plus, Search, Edit2, Trash2, CheckCircle2,
+  AlertCircle, Globe, Shield, RefreshCw, Power, Phone,
+  MapPin, UserCheck, Server, ArrowRight
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { systemService } from '../../services/systemService';
@@ -17,18 +17,18 @@ export default function SubOfficeManagement({ currentUser }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [deletingOffice, setDeletingOffice] = useState(null);
-  
+
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOffice, setEditingOffice] = useState(null);
-  
+
   // Form fields
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
   const [headName, setHeadName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [status, setStatus] = useState('ACTIVE');
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [toast, setToast] = useState(null);
@@ -58,7 +58,7 @@ export default function SubOfficeManagement({ currentUser }) {
             try {
               const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
               if (Array.isArray(parsed)) setGatewayEndpoints(parsed);
-            } catch {}
+            } catch { }
           }
         });
       }
@@ -308,7 +308,7 @@ export default function SubOfficeManagement({ currentUser }) {
               <tr className="bg-[#002B66] text-white text-[11px] font-black uppercase tracking-wider border-b border-blue-950">
                 <th className="px-3.5 py-3 border-r border-blue-950">Branch Details</th>
                 <th className="px-3.5 py-3 border-r border-blue-950">Location / Address</th>
-                <th className="px-3.5 py-3 border-r border-blue-950">Branch Head & Contact</th>
+                <th className="px-3.5 py-3 border-r border-blue-950">Branch HR</th>
                 <th className="px-3.5 py-3 border-r border-blue-950 text-center">Status</th>
                 <th className="px-3.5 py-3 text-center">Actions</th>
               </tr>
@@ -352,11 +352,10 @@ export default function SubOfficeManagement({ currentUser }) {
                       </td>
 
                       <td className="px-3.5 py-3 border-r border-slate-200 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                          isActive 
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
-                            : 'bg-slate-100 text-slate-600 border-slate-300'
-                        }`}>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border ${isActive
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'bg-slate-100 text-slate-600 border-slate-300'
+                          }`}>
                           {isActive ? <CheckCircle2 size={10} /> : <Power size={10} />}
                           <span>{office.status}</span>
                         </span>
@@ -425,11 +424,10 @@ export default function SubOfficeManagement({ currentUser }) {
                       </div>
                     </div>
 
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                      isActive 
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
-                        : 'bg-slate-100 text-slate-600 border-slate-300'
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${isActive
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-slate-100 text-slate-600 border-slate-300'
+                      }`}>
                       {office.status}
                     </span>
                   </div>
@@ -476,14 +474,14 @@ export default function SubOfficeManagement({ currentUser }) {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
-            
+
             {/* Modal Header */}
             <div className="bg-[#002B66] text-white px-5 py-3.5 flex justify-between items-center border-b-2 border-[#FFD700] shrink-0">
               <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs sm:text-sm">
                 <Building2 size={18} className="text-[#FFD700]" />
                 <span>{editingOffice ? `Edit Sub-Office • ${editingOffice.name}` : 'Create New Sub-Office Branch'}</span>
               </div>
-              <button 
+              <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="text-slate-300 hover:text-white p-1 rounded-lg"

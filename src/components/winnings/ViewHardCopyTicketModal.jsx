@@ -402,18 +402,14 @@ export default function ViewHardCopyTicketModal({
 
             {/* Action Buttons for Approver / Viewer */}
             <div className="p-5 pt-3 border-t border-slate-200 bg-white space-y-2 mt-auto">
-              {ticket.unclaimed_approval_status === 'PENDING' && canApprove && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onApproveTellerStatus && onApproveTellerStatus(ticket);
-                    onClose();
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#FFD700] hover:bg-amber-400 text-[#002B66] border border-amber-400 font-black uppercase text-[11px] rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-                >
-                  <Check size={14} className="stroke-[3]" />
-                  <span>Approve Teller Status</span>
-                </button>
+              {ticket.unclaimed_approval_status === 'PENDING' && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center gap-2 text-xs">
+                  <Clock size={16} className="text-amber-700 shrink-0" />
+                  <div className="text-amber-900 leading-tight">
+                    <span className="font-bold uppercase text-[10px] block">Awaiting HR Email Approval</span>
+                    <span className="text-[11px] text-slate-700">Sent to: <strong className="font-mono text-[#002B66]">{ticket.hr_valid_email || 'HR Email'}</strong>. Direct HR email approval required.</span>
+                  </div>
+                </div>
               )}
 
               {isPending && canApprove ? (

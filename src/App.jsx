@@ -12,6 +12,7 @@ import TicketQrModal from './components/winnings/TicketQrModal';
 import TicketVerificationChatModal from './components/chat/TicketVerificationChatModal';
 import TicketVerificationBotModal from './components/chat/TicketVerificationBotModal';
 import ProfileSettingsModal from './components/common/ProfileSettingsModal';
+import HrApprovalModal from './components/winnings/HrApprovalModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
 import { notificationService } from './services/notificationService';
 import { systemService } from './services/systemService';
@@ -112,6 +113,20 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('pw_token')) {
       setIsProfileModalOpen(true);
+    }
+  }, []);
+
+  // Direct HR Inactive Teller Status Approval via Email Link
+  const [hrApprovalTicketId, setHrApprovalTicketId] = useState(null);
+  const [hrApprovalEmail, setHrApprovalEmail] = useState(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hrTransId = params.get('hr_approval_transId') || params.get('hr_transId') || params.get('hr_token');
+    const hrEmail = params.get('hr_email');
+    if (hrTransId) {
+      setHrApprovalTicketId(hrTransId);
+      if (hrEmail) setHrApprovalEmail(hrEmail);
     }
   }, []);
   const [isSaving, setIsSaving] = useState(false);
@@ -1293,6 +1308,7 @@ export default function App() {
 
       if (isInactiveStatus && hrValidEmail) {
         try {
+          const approvalLink = `${window.location.origin}${window.location.pathname}?hr_approval_transId=${encodeURIComponent(String(selectedTicket.computedTransId).trim())}&hr_email=${encodeURIComponent(hrValidEmail.trim())}`;
           const { serviceId, hrInactiveTemplateId, publicKey } = EMAILJS_CONFIG;
           if (serviceId && hrInactiveTemplateId && publicKey) {
             const emailRes = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
@@ -1304,10 +1320,16 @@ export default function App() {
                 user_id: publicKey,
                 template_params: {
                   to_email: hrValidEmail,
+                  hr_email: hrValidEmail,
                   teller_status: tellerStatus,
                   teller_name: selectedTicket.fullName || selectedTicket.outlet || 'Unknown Teller',
                   transaction_id: String(selectedTicket.computedTransId).trim(),
                   submitted_by: currentUser?.full_name || currentUser?.username || 'SSR UI',
+                  sub_office: targetSubOffice,
+                  win_amount: `₱${winAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  approval_link: approvalLink,
+                  link: approvalLink,
+                  action_url: approvalLink,
                 },
               }),
             });
@@ -1317,7 +1339,7 @@ export default function App() {
               console.error("EmailJS Error Response:", errTxt);
               alert("Warning: Ticket saved, but EmailJS failed to send the HR notification. Error: " + errTxt);
             } else {
-              console.log("EmailJS successfully sent HR notification.");
+              console.log("EmailJS successfully sent HR notification with direct approval link.");
             }
           } else {
              console.warn("EmailJS configuration is missing, aborting send.");
@@ -1785,6 +1807,22 @@ export default function App() {
         onClose={() => setIsProfileModalOpen(false)}
         currentUser={currentUser}
         onUserUpdated={handleUserUpdated}
+      />
+
+      {/* Standalone Dedicated HR Inactive Teller Status Approval Modal */}
+      <HrApprovalModal
+        isOpen={Boolean(hrApprovalTicketId)}
+        transId={hrApprovalTicketId}
+        hrEmail={hrApprovalEmail}
+        onClose={() => {
+          setHrApprovalTicketId(null);
+          setHrApprovalEmail(null);
+        }}
+        onApproved={async (transId, status) => {
+          showToast(`Teller status for ${transId} has been ${status.toLowerCase()} by HR!`);
+          await fetchReturnedFromSupabase();
+          await fetchData();
+        }}
       />
     </>
   );
