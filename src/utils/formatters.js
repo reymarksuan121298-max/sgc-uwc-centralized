@@ -119,3 +119,28 @@ export const generateRemittanceSerial = (subOfficeName = 'Mandaue Central', seed
   return `${abbr}-${yymmdd}-${sequence}`;
 };
 
+/**
+ * Helper to identify inactive/separated teller records (AWOL, Pull-out, Terminated, Pending HR approval)
+ */
+export const isInactiveTellerRecord = (item) => {
+  if (!item) return false;
+  const ts = String(
+    item.teller_status ||
+    item.tellerStatus ||
+    item.raw_data?.teller_status ||
+    item.raw_data?.tellerStatus ||
+    ''
+  ).toUpperCase().trim();
+
+  return (
+    ts === 'PULL-OUT' ||
+    ts === 'AWOL' ||
+    ts === 'TERMINATED' ||
+    ts === 'PULLOUT' ||
+    ts === 'PULLOUTS' ||
+    ts === 'APPROVE TELLER STATUS' ||
+    item.unclaimed_approval_status === 'PENDING' ||
+    item.raw_data?.unclaimed_approval_status === 'PENDING'
+  );
+};
+

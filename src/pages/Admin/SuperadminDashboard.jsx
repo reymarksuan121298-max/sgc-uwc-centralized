@@ -5,6 +5,7 @@ import {
   Coins, FileText, ChevronRight, Activity, Percent
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
+import { isInactiveTellerRecord } from '../../utils/formatters';
 
 export default function SuperadminDashboard({
   returnedData = [],
@@ -86,12 +87,15 @@ export default function SuperadminDashboard({
     let totalReturnedWin = 0;
     let totalReturnAmountOut = 0;
     let underSettlementCount = 0;
+    let activeReturnedCount = 0;
 
     returnedData.forEach((i) => {
+      if (isInactiveTellerRecord(i)) return; // Exclude AWOL / Pull-out / Terminated
       const win = parseFloat(i.winAmount ?? 0);
       const out = parseFloat(i.return_amount_out ?? win);
       totalReturnedWin += win;
       totalReturnAmountOut += out;
+      activeReturnedCount += 1;
       if (i.isUnderSettlement) underSettlementCount += 1;
     });
 
@@ -115,6 +119,7 @@ export default function SuperadminDashboard({
       let returnOut = 0;
 
       returnedData.forEach((i) => {
+        if (isInactiveTellerRecord(i)) return;
         const itemOffice = (i.sub_office || '').toLowerCase().trim();
         const targetOffice = officeName.toLowerCase().trim();
 
@@ -162,7 +167,7 @@ export default function SuperadminDashboard({
       unclaimedCount: unclaimedData.length,
       totalReturnedWin,
       totalReturnAmountOut,
-      returnedCount: returnedData.length,
+      returnedCount: activeReturnedCount,
       totalCollections,
       totalAdminComm,
       totalAgentComm,

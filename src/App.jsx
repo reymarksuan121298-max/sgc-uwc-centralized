@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toPng } from 'html-to-image';
 import { supabase } from './config/supabaseClient';
 import { EMAILJS_CONFIG } from './config/emailjsConfig';
-import { getLocalDateString, parseToDateString, formatDrawTime, getTicketTransId } from './utils/formatters';
+import { getLocalDateString, parseToDateString, formatDrawTime, getTicketTransId, isInactiveTellerRecord } from './utils/formatters';
 import { isAdminRole, isSuperAdminRole, isSSRRole, isUnclaimedSpecialistRole, isOperationalNotification, canViewTab } from './utils/permissions';
 import MainLayout from './layouts/MainLayout';
 import AppRoutes from './routes/AppRoutes';
@@ -1672,6 +1672,10 @@ export default function App() {
     setIsQrModalOpen(true);
   };
 
+  const activeReturnedCount = useMemo(() => {
+    return (returnedData || []).filter(item => !isInactiveTellerRecord(item)).length;
+  }, [returnedData]);
+
   return (
     <>
       <MainLayout
@@ -1686,7 +1690,7 @@ export default function App() {
         isSyncing={loading}
         toastMessage={toastMessage}
         pendingCount={pendingFilteredData.length}
-        returnedCount={returnedData.length}
+        returnedCount={activeReturnedCount}
         pendingTicketsChatCount={pendingTicketsChatCount}
         onOpenTicketChat={handleOpenTicketChat}
         onOpenBot={() => setIsBotOpen(true)}
