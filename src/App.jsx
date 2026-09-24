@@ -122,11 +122,11 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const hrTransId = params.get('hr_approval_transId') || params.get('hr_transId') || params.get('hr_token');
-    const hrEmail = params.get('hr_email');
+    const hrTransId = params.get('hr_approval_transId') || params.get('hr_transId') || params.get('hr_token') || params.get('ticket_id') || params.get('transId');
+    const hrEmail = params.get('hr_email') || params.get('email');
     if (hrTransId) {
-      setHrApprovalTicketId(hrTransId);
-      if (hrEmail) setHrApprovalEmail(hrEmail);
+      setHrApprovalTicketId(hrTransId.trim());
+      if (hrEmail) setHrApprovalEmail(hrEmail.trim());
     }
   }, []);
   const [isSaving, setIsSaving] = useState(false);
@@ -1609,7 +1609,7 @@ export default function App() {
     return () => { isMounted = false; };
   }, [currentUser?.username]);
 
-  // If not logged in, render Login page (along with ProfileSettingsModal if reset token exists)
+  // If not logged in, render Login page (along with ProfileSettingsModal and HrApprovalModal)
   if (!currentUser) {
     return (
       <>
@@ -1619,6 +1619,26 @@ export default function App() {
           onClose={() => setIsProfileModalOpen(false)}
           currentUser={currentUser}
           onUserUpdated={handleUserUpdated}
+        />
+        <HrApprovalModal
+          isOpen={Boolean(hrApprovalTicketId)}
+          transId={hrApprovalTicketId}
+          hrEmail={hrApprovalEmail}
+          onClose={() => {
+            setHrApprovalTicketId(null);
+            setHrApprovalEmail(null);
+          }}
+          onApproved={async (transId, status) => {
+            showToast(`Teller status for ${transId} has been ${status.toLowerCase()} by HR!`);
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('hr_approval_transId');
+              url.searchParams.delete('hr_transId');
+              url.searchParams.delete('hr_token');
+              url.searchParams.delete('hr_email');
+              window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+            } catch {}
+          }}
         />
       </>
     );

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FileText, Save, Printer, ListOrdered, PlusCircle, Calendar, ChevronLeft, ChevronRight, CreditCard, X, ChevronDown, ChevronUp } from 'lucide-react';
-import {openSettlementAgreementPrint} from './utils/settlementAgreementPrint';
+import { FileText, Save, Printer, ListOrdered, PlusCircle, Calendar, ChevronLeft, ChevronRight, CreditCard, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { openSettlementAgreementPrint } from './utils/settlementAgreementPrint';
 import { supabase } from './config/supabaseClient';
+import TransactionSelectSearch from './components/winnings/TransactionSelectSearch';
 
 const getSemiMonthlyDueDate = (startDateStr, installmentIndex) => {
   const date = new Date(`${startDateStr}T00:00:00`);
@@ -162,185 +163,220 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
   // States for Editable Signatories
   const [hrManagerName, setHrManagerName] = useState('Authorized HR / Management');
   const [supervisorName, setSupervisorName] = useState('Sales Supervisor');
-  
-  const [installments, setInstallments] = useState(() =>
-    createInstallmentRows({
-      count: 10,
-      amountPerInstallment: '500',
-      winAmount: parseFloat(filteredData[0]?.winAmount || 5000),
-      agreementDate: new Date().toISOString().split('T')[0],
-      frequency: 'weekly'
-    })
-  );
 
-  // Find selected ticket from filteredData
-  const selectedTicket = filteredData.find(
-    (item) => (item.transactionId || item.transId || item.receipt_no) === selectedTicketId
-  ) || filteredData[0] || {
-    transactionId: '081628-OIIIRA0CN',
-    drawDate: '2026-08-16',
-    drawTime: '5:00 PM',
-    betNo: '784',
-    winAmount: 5000.00,
-    username: 'sample_user',
-    fullName: 'Sample Claimant'
-  };
+  // Helper to identify inactive teller records (AWOL, Pull-out, Terminated)
+  const isInactiveTeller = (item) => {
+    const ts = String(
+      item.teller_status ||
+      item.tellerStatus ||
+      item.account_status ||
+      item.accountStatus ||
+      item.status ||
+      ''
+    ).toUpperCase().trim();
+    return (
+      ts === 'AWOL' ||
+      ts === 'PULL-OUT' ||
+      ts === 'PULLOUT' ||
+      ts === 'PULLOUTS' ||
+      ts === 'TERMINATED' ||
+      ts === 'APPROVE TELLER STATUS' ||
+      item.unclaimed_approval_status === 'PENDING'
+    );
+    // Helper to identify tickets already remitted or in Collections
+    const isInCollections = (item) => {
+      const rs = String(item.receipt_status || item.receiptStatus || '').toUpperCase().trim();
+      const st = String(item.status || '').toUpperCase().trim();
+      return (
+        (rs && rs !== 'NO_RECEIPT') ||
+        st === 'COLLECTED' ||
+        st === 'REMITTED' ||
+        st === 'IN_COLLECTIONS' ||
+        Boolean(item.batch_serial_no) ||
+        Boolean(item.deposit_ref)
+      );
+    };
 
-  const getSelectedTicketId = (ticket) => ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
-  const getWinAmount = (ticket) => parseFloat(ticket?.winAmount || 5000);
+    const availableTickets = filteredData.filter((item) => !item.isUnderSettlement && !isInactiveTeller(item) && !isInCollections(item));
 
-  // Helper function to format date cleanly in English
-  const formatTransactionDate = (dateString) => {
-    if (!dateString) return 'August 16, 2026';
-    try {
-      const dateObj = new Date(dateString);
-      if (isNaN(dateObj.getTime())) return dateString; 
-      return dateObj.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } catch {
-      return dateString;
-    }
-  };
+    const [installments, setInstallments] = useState(() =>
+      createInstallmentRows({
+        count: 10,
+        amountPerInstallment: '500',
+        winAmount: parseFloat(availableTickets[0]?.winAmount || 5000),
+        agreementDate: new Date().toISOString().split('T')[0],
+        frequency: 'weekly'
+      })
+    );
 
-  // Handler for custom payment amount changes (weekly / periodic payment)
-  const handleAmountChange = (value) => {
-    setCustomAmount(value);
-    const winAmt = getWinAmount(selectedTicket);
-    const amt = parseFloat(value);
-    if (!isNaN(amt) && amt > 0) {
-      const computedCount = Math.min(100, Math.max(1, Math.ceil(winAmt / amt)));
-      setInstallmentsCount(computedCount);
+    // Find selected ticket from availableTickets
+    const selectedTicket = availableTickets.find(
+      (item) => (item.transactionId || item.transId || item.receipt_no) === selectedTicketId
+    ) || availableTickets[0] || {
+      transactionId: '081628-OIIIRA0CN',
+      drawDate: '2026-08-16',
+      drawTime: '5:00 PM',
+      betNo: '784',
+      winAmount: 5000.00,
+      username: 'sample_user',
+      fullName: 'Sample Claimant'
+    };
+
+    const getSelectedTicketId = (ticket) => ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
+    const getWinAmount = (ticket) => parseFloat(ticket?.winAmount || 5000);
+
+    // Helper function to format date cleanly in English
+    const formatTransactionDate = (dateString) => {
+      if (!dateString) return 'August 16, 2026';
+      try {
+        const dateObj = new Date(dateString);
+        if (isNaN(dateObj.getTime())) return dateString;
+        return dateObj.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      } catch {
+        return dateString;
+      }
+    };
+
+    // Handler for custom payment amount changes (weekly / periodic payment)
+    const handleAmountChange = (value) => {
+      setCustomAmount(value);
+      const winAmt = getWinAmount(selectedTicket);
+      const amt = parseFloat(value);
+      if (!isNaN(amt) && amt > 0) {
+        const computedCount = Math.min(100, Math.max(1, Math.ceil(winAmt / amt)));
+        setInstallmentsCount(computedCount);
+        setInstallments(createInstallmentRows({
+          count: computedCount,
+          amountPerInstallment: value,
+          winAmount: winAmt,
+          agreementDate,
+          frequency
+        }));
+      }
+    };
+
+    // Handler for total number of installments change
+    const handleInstallmentCountChange = (count) => {
+      const nextCount = parseInt(count, 10) || 1;
+      const winAmt = getWinAmount(selectedTicket);
+      setInstallmentsCount(nextCount);
+      const perInst = (winAmt / nextCount).toFixed(2);
+      setCustomAmount(perInst);
       setInstallments(createInstallmentRows({
-        count: computedCount,
-        amountPerInstallment: value,
+        count: nextCount,
+        amountPerInstallment: perInst,
         winAmount: winAmt,
         agreementDate,
         frequency
       }));
-    }
-  };
+    };
 
-  // Handler for total number of installments change
-  const handleInstallmentCountChange = (count) => {
-    const nextCount = parseInt(count, 10) || 1;
-    const winAmt = getWinAmount(selectedTicket);
-    setInstallmentsCount(nextCount);
-    const perInst = (winAmt / nextCount).toFixed(2);
-    setCustomAmount(perInst);
-    setInstallments(createInstallmentRows({
-      count: nextCount,
-      amountPerInstallment: perInst,
-      winAmount: winAmt,
-      agreementDate,
-      frequency
-    }));
-  };
-
-  const handleFrequencyChange = (nextFrequency) => {
-    setFrequency(nextFrequency);
-    setInstallments(createInstallmentRows({
-      count: installmentsCount,
-      amountPerInstallment: customAmount,
-      winAmount: getWinAmount(selectedTicket),
-      agreementDate,
-      frequency: nextFrequency,
-      preserveExisting: true,
-      existingRows: installments
-    }));
-  };
-
-  const handleAgreementDateChange = (nextAgreementDate) => {
-    setAgreementDate(nextAgreementDate);
-    setInstallments(createInstallmentRows({
-      count: installmentsCount,
-      amountPerInstallment: customAmount,
-      winAmount: getWinAmount(selectedTicket),
-      agreementDate: nextAgreementDate,
-      frequency,
-      preserveExisting: true,
-      existingRows: installments
-    }));
-  };
-
-  const handleTicketChange = (ticketId) => {
-    const nextTicket = filteredData.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
-    setSelectedTicketId(ticketId);
-    const winAmt = getWinAmount(nextTicket);
-    const perInst = (winAmt / installmentsCount).toFixed(2);
-    setCustomAmount(perInst);
-    setInstallments(createInstallmentRows({
-      count: installmentsCount,
-      amountPerInstallment: perInst,
-      winAmount: winAmt,
-      agreementDate,
-      frequency
-    }));
-  };
-
-  // Handler for updating a single installment row
-  const handleRowChange = (index, field, value) => {
-    const updated = [...installments];
-    updated[index][field] = value;
-    setInstallments(updated);
-  };
-
-  const handleSave = () => {
-    if (onSaveAgreement) {
-      const totalAmountVal = installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0);
-      
-      onSaveAgreement({
-        transactionId: selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no,
-        ticket: selectedTicket,
+    const handleFrequencyChange = (nextFrequency) => {
+      setFrequency(nextFrequency);
+      setInstallments(createInstallmentRows({
+        count: installmentsCount,
+        amountPerInstallment: customAmount,
+        winAmount: getWinAmount(selectedTicket),
         agreementDate,
-        reason,
+        frequency: nextFrequency,
+        preserveExisting: true,
+        existingRows: installments
+      }));
+    };
+
+    const handleAgreementDateChange = (nextAgreementDate) => {
+      setAgreementDate(nextAgreementDate);
+      setInstallments(createInstallmentRows({
+        count: installmentsCount,
+        amountPerInstallment: customAmount,
+        winAmount: getWinAmount(selectedTicket),
+        agreementDate: nextAgreementDate,
         frequency,
-        customAmount,
-        installmentsCount: installments.length,
-        installments,
-        signatories: {
-          claimant: selectedTicket.fullName || selectedTicket.username || 'Accountable Payer',
-          hrManager: hrManagerName,
-          supervisor: supervisorName
-        },
-        isUnderSettlement: true,
-        settlementTerms: JSON.stringify({ reason, frequency, installmentsCount: installments.length, installments }),
-        totalInstallmentAmount: totalAmountVal,
-        settlementStatus: 'PENDING'
-      });
-    } else {
-      console.warn('onSaveAgreement callback is not provided!');
-    }
-  };
+        preserveExisting: true,
+        existingRows: installments
+      }));
+    };
 
-  const handlePrint = () => {
-    openSettlementAgreementPrint();
-  };
+    const handleTicketChange = (ticketId) => {
+      const nextTicket = filteredData.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
+      setSelectedTicketId(ticketId);
+      const winAmt = getWinAmount(nextTicket);
+      const perInst = (winAmt / installmentsCount).toFixed(2);
+      setCustomAmount(perInst);
+      setInstallments(createInstallmentRows({
+        count: installmentsCount,
+        amountPerInstallment: perInst,
+        winAmount: winAmt,
+        agreementDate,
+        frequency
+      }));
+    };
 
-  // Helper to parse settlementTerms
-  const parseSettlementTerms = (terms) => {
-    if (!terms) return null;
-    try {
-      return typeof terms === 'string' ? JSON.parse(terms) : terms;
-    } catch {
-      return null;
-    }
-  };
+    // Handler for updating a single installment row
+    const handleRowChange = (index, field, value) => {
+      const updated = [...installments];
+      updated[index][field] = value;
+      setInstallments(updated);
+    };
 
-  const steps = [
-    { number: 1, label: 'Select Ticket' },
-    { number: 2, label: 'Agreement Details' },
-    { number: 3, label: 'Payment Schedule' },
-    { number: 4, label: 'Review & Actions' }
-  ];
+    const handleSave = () => {
+      if (onSaveAgreement) {
+        const totalAmountVal = installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0);
 
-  return (
-    <div className="space-y-4 w-full pb-12 print:max-w-none print:pb-0 print:space-y-0">
-      
-      {/* CREATE AGREEMENT VIEW */ }
-      <>
+        onSaveAgreement({
+          transactionId: selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no,
+          ticket: selectedTicket,
+          agreementDate,
+          reason,
+          frequency,
+          customAmount,
+          installmentsCount: installments.length,
+          installments,
+          signatories: {
+            claimant: selectedTicket.fullName || selectedTicket.username || 'Accountable Payer',
+            hrManager: hrManagerName,
+            supervisor: supervisorName
+          },
+          isUnderSettlement: true,
+          settlementTerms: JSON.stringify({ reason, frequency, installmentsCount: installments.length, installments }),
+          totalInstallmentAmount: totalAmountVal,
+          settlementStatus: 'PENDING'
+        });
+      } else {
+        console.warn('onSaveAgreement callback is not provided!');
+      }
+    };
+
+    const handlePrint = () => {
+      openSettlementAgreementPrint();
+    };
+
+    // Helper to parse settlementTerms
+    const parseSettlementTerms = (terms) => {
+      if (!terms) return null;
+      try {
+        return typeof terms === 'string' ? JSON.parse(terms) : terms;
+      } catch {
+        return null;
+      }
+    };
+
+    const steps = [
+      { number: 1, label: 'Select Ticket' },
+      { number: 2, label: 'Agreement Details' },
+      { number: 3, label: 'Payment Schedule' },
+      { number: 4, label: 'Review & Actions' }
+    ];
+
+    return (
+      <div className="space-y-4 w-full pb-12 print:max-w-none print:pb-0 print:space-y-0">
+
+        {/* CREATE AGREEMENT VIEW */}
+        <>
           <div className="print:hidden bg-[#002B66] rounded-xl shadow-lg p-4 sm:p-5 text-white">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div>
@@ -355,9 +391,8 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                   key={step.number}
                   type="button"
                   onClick={() => setCurrentStep(step.number)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer ${
-                    currentStep === step.number ? 'bg-[#FFD700] text-[#002B66] shadow-md' : 'bg-white/10 text-blue-100 hover:bg-white/20'
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer ${currentStep === step.number ? 'bg-[#FFD700] text-[#002B66] shadow-md' : 'bg-white/10 text-blue-100 hover:bg-white/20'
+                    }`}
                 >
                   <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center shrink-0">{step.number}</span>
                   <span>{step.label}</span>
@@ -388,29 +423,16 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
           </div>
 
           {/* Selector for Ticket from Returned Winnings */}
-          <div className={`${currentStep === 1 ? '' : 'hidden'} print:hidden bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm flex flex-col md:flex-row gap-3 md:items-center justify-between text-xs`}>
+          <div className={`${currentStep === 1 ? '' : 'hidden'} print:hidden bg-blue-50/80 border border-blue-200 p-4 rounded-xl shadow-xs flex flex-col md:flex-row gap-3 md:items-center justify-between text-xs`}>
             <div>
               <span className="block font-black uppercase tracking-wider text-[#002B66]">1. Select Ticket</span>
-              <span className="text-[11px] text-slate-500">Choose the returned winning record for this agreement.</span>
+              <span className="text-[11px] text-slate-500">Choose or search the returned winning record for this agreement.</span>
             </div>
-            <select
-              value={selectedTicketId || (filteredData[0]?.transactionId || filteredData[0]?.transId || '')}
-              onChange={(e) => handleTicketChange(e.target.value)}
-              className="w-full md:w-auto bg-white border border-blue-200 px-3 py-2 rounded-lg font-mono font-bold text-slate-800 outline-none focus:border-[#002B66] focus:ring-2 focus:ring-blue-200"
-            >
-              {filteredData.length > 0 ? (
-                filteredData.map((item, idx) => {
-                  const tid = item.transactionId || item.transId || item.receipt_no || `TID-${idx}`;
-                  return (
-                    <option key={idx} value={tid}>
-                      {tid} - {item.fullName || item.outlet || item.username || 'Accountable Payer'} (₱{parseFloat(item.winAmount || 0).toLocaleString()})
-                    </option>
-                  );
-                })
-              ) : (
-                <option value="">No returned tickets available (Using Sample)</option>
-              )}
-            </select>
+            <TransactionSelectSearch
+              tickets={availableTickets}
+              selectedId={selectedTicketId || (availableTickets[0]?.transactionId || availableTickets[0]?.transId || '')}
+              onSelect={(tid) => handleTicketChange(tid)}
+            />
           </div>
 
           <div className={`${currentStep === 4 ? '' : 'hidden'} print:hidden bg-white border border-slate-200 rounded-xl shadow-sm p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs`}>
@@ -422,14 +444,14 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
 
           {/* PRINTABLE DOCUMENT CONTAINER / STEP CARD CONTAINER */}
           <div id="settlement-agreement-print-area" className={`${currentStep === 4 ? 'bg-white border border-slate-300 rounded-xl shadow-md p-6 sm:p-8 max-w-4xl mx-auto' : 'bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs'} space-y-6 text-slate-900 font-sans w-full print:w-full print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0`}>
-            
+
             {/* HEADER WITH LOGOS */}
             <div className={`${currentStep === 4 ? '' : 'hidden'} flex justify-between items-center border-b-2 border-[#002B66] pb-1`}>
               <div className="flex items-center gap-3">
-                <img 
-                  src="/lbp.png" 
-                  alt="Lucky Betplay Logo" 
-                  className="w-12 h-12 object-contain rounded" 
+                <img
+                  src="/lbp.png"
+                  alt="Lucky Betplay Logo"
+                  className="w-12 h-12 object-contain rounded"
                 />
                 <div>
                   <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
@@ -437,10 +459,10 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <img 
-                  src="/stl.jpg" 
-                  alt="STL Logo" 
-                  className="w-10 h-10 object-contain rounded border border-slate-200 shadow-sm" 
+                <img
+                  src="/stl.jpg"
+                  alt="STL Logo"
+                  className="w-10 h-10 object-contain rounded border border-slate-200 shadow-sm"
                 />
               </div>
             </div>
@@ -451,7 +473,7 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
             </div>
 
             <p className={`${currentStep === 2 || currentStep === 4 ? '' : 'hidden'} print:block text-xs text-slate-700 leading-relaxed`}>
-                This Settlement Agreement ("Agreement") is made on{' '}
+              This Settlement Agreement ("Agreement") is made on{' '}
               <input
                 type="date"
                 value={agreementDate}
@@ -502,7 +524,7 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                 2. SUMMARY / REASON FOR SETTLEMENT
               </h3>
               <div className="bg-amber-50/90 border border-amber-300 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm">
-                
+
                 {/* QUICK CLICKABLE TEMPLATES (Hidden when printing) */}
                 <div className="print:hidden space-y-1.5 border-b border-amber-200/80 pb-2.5">
                   <div className="flex items-center justify-between">
@@ -521,11 +543,10 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                           key={idx}
                           type="button"
                           onClick={() => setReason(tmpl.text)}
-                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                            isSelected
-                              ? 'bg-amber-700 text-white border-amber-800 shadow-sm ring-2 ring-amber-400/50'
-                              : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:text-amber-950'
-                          }`}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${isSelected
+                            ? 'bg-amber-700 text-white border-amber-800 shadow-sm ring-2 ring-amber-400/50'
+                            : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400 hover:text-amber-950'
+                            }`}
                         >
                           {tmpl.label}
                         </button>
@@ -755,6 +776,8 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
             )}
           </div>
         </>
-    </div>
-  );
+      </div>
+    );
+  }
+
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   FileText,
   Save,
@@ -12,11 +12,13 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Building2
+  Building2,
+  Search
 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
 import ModernDropdown from '../../components/common/ModernDropdown';
+import TransactionSelectSearch from '../../components/winnings/TransactionSelectSearch';
 
 const SUPERVISORS = {
   // Numeric IDs from backend database
@@ -232,10 +234,51 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     };
   }, []);
 
-  // Filtered available tickets based on sub-office scope
+  // Helper to identify inactive/separated teller records (AWOL, Pull-out, Terminated)
+  const isInactiveTeller = (item) => {
+    const ts = String(
+      item.teller_status ||
+      item.tellerStatus ||
+      item.account_status ||
+      item.accountStatus ||
+      item.status ||
+      ''
+    ).toUpperCase().trim();
+    return (
+      ts === 'AWOL' ||
+      ts === 'PULL-OUT' ||
+      ts === 'PULLOUT' ||
+      ts === 'PULLOUTS' ||
+      ts === 'TERMINATED' ||
+      ts === 'APPROVE TELLER STATUS' ||
+      item.unclaimed_approval_status === 'PENDING'
+    );
+  };
+
+  // Helper to identify tickets already remitted or in Collections
+  const isInCollections = (item) => {
+    const rs = String(item.receipt_status || item.receiptStatus || '').toUpperCase().trim();
+    const st = String(item.status || '').toUpperCase().trim();
+    return (
+      (rs && rs !== 'NO_RECEIPT') ||
+      st === 'COLLECTED' ||
+      st === 'REMITTED' ||
+      st === 'IN_COLLECTIONS' ||
+      Boolean(item.batch_serial_no) ||
+      Boolean(item.deposit_ref)
+    );
+  };
+
+  // Filtered available tickets based on sub-office scope and active status
   const availableTickets = filteredData.filter((item) => {
     // Hide tickets that are already under settlement
     if (item.isUnderSettlement) return false;
+
+    // Do not fetch / include AWOL, Pull-out, or Terminated records for settlement agreement
+    if (isInactiveTeller(item)) return false;
+
+    // Do not fetch tickets that are already remitted / in Collections
+    if (isInCollections(item)) return false;
 
     if (selectedSubOfficeFilter === 'ALL') return true;
     const itemOffice = (item.sub_office || item.subOffice || item.branch || '').toLowerCase().trim();
@@ -258,6 +301,25 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   // Settlement agreements fetched from settlement_agreements table
   const [savedAgreementsList, setSavedAgreementsList] = useState([]);
   const [isLoadingAgreements, setIsLoadingAgreements] = useState(false);
+  const [savedSearchQuery, setSavedSearchQuery] = useState('');
+
+  // Filtered saved agreements based on search query
+  const filteredSavedAgreements = useMemo(() => {
+    if (!savedSearchQuery.trim()) return savedAgreementsList;
+    const q = savedSearchQuery.toLowerCase().trim().replace(/[\s-]+/g, '');
+    return savedAgreementsList.filter((item) => {
+      const tid = (item.transactionId || item.transId || item.receipt_no || '').toLowerCase().replace(/[\s-]+/g, '');
+      const rawTid = (item.transactionId || item.transId || item.receipt_no || '').toLowerCase();
+      const payer = (item.fullName || item.username || '').toLowerCase();
+      const office = (item.sub_office || '').toLowerCase();
+      return (
+        tid.includes(q) ||
+        rawTid.includes(savedSearchQuery.toLowerCase().trim()) ||
+        payer.includes(savedSearchQuery.toLowerCase().trim()) ||
+        office.includes(savedSearchQuery.toLowerCase().trim())
+      );
+    });
+  }, [savedAgreementsList, savedSearchQuery]);
 
   // States for Editable Form
   const [selectedTicketId, setSelectedTicketId] = useState(initialTicketId || '');
@@ -743,7 +805,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       {activeSubTab === 'list' ? (
         /* SAVED AGREEMENTS LIST VIEW */
         <div className="space-y-4 print:block">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="bg-[#002B66] text-[#FFD700] p-2 rounded-lg">
                 <ListOrdered size={20} />
@@ -753,6 +815,30 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 <p className="text-[11px] text-slate-500 font-semibold">List of recorded settlement agreements retrieved from the database.</p>
               </div>
             </div>
+
+            {/* Search Input for Saved Agreements */}
+            {savedAgreementsList.length > 0 && (
+              <div className="relative w-full sm:w-72">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={savedSearchQuery}
+                  onChange={(e) => setSavedSearchQuery(e.target.value)}
+                  placeholder="Search transaction ID, payer..."
+                  className="w-full bg-slate-50 border border-slate-200 pl-8 pr-8 py-1.5 text-xs rounded-lg outline-none focus:border-[#002B66] focus:bg-white focus:ring-1 focus:ring-[#002B66] transition-all font-medium"
+                />
+                {savedSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSavedSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            )}
+
             {paymentError && !paymentModalItem && (
               <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{paymentError}</p>
             )}
@@ -768,9 +854,24 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 No database records are currently tagged with <code className="text-blue-600 font-mono">isUnderSettlement = true</code> or settlement terms. Create and save an agreement first.
               </p>
             </div>
+          ) : filteredSavedAgreements.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-2 shadow-sm">
+              <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                <Search size={18} />
+              </div>
+              <h4 className="text-sm font-bold text-slate-800">No Matching Agreements</h4>
+              <p className="text-xs text-slate-500">No saved agreement matches "{savedSearchQuery}".</p>
+              <button
+                type="button"
+                onClick={() => setSavedSearchQuery('')}
+                className="text-xs font-bold text-[#002B66] hover:underline cursor-pointer pt-1"
+              >
+                Clear Search
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {savedAgreementsList.map((item, index) => {
+              {filteredSavedAgreements.map((item, index) => {
                 // All data comes from returned_winnings; nested settlement info is in settlementTerms JSONB
                 const parsedTerms = parseSettlementTerms(item.settlementTerms);
                 const { payments, paidAmount, remainingAmount, status } = getPaymentSummary(item);
@@ -935,29 +1036,16 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           </div>
 
           {/* Selector for Ticket from Returned Winnings */}
-          <div className={`${currentStep === 1 ? '' : 'hidden'} print:hidden bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm flex flex-col md:flex-row gap-3 md:items-center justify-between text-xs`}>
+          <div className={`${currentStep === 1 ? '' : 'hidden'} print:hidden bg-blue-50/80 border border-blue-200 p-4 rounded-xl shadow-xs flex flex-col md:flex-row gap-3 md:items-center justify-between text-xs`}>
             <div>
               <span className="block font-black uppercase tracking-wider text-[#002B66]">1. Select Ticket</span>
-              <span className="text-[11px] text-slate-500">Choose the returned winning record for this agreement.</span>
+              <span className="text-[11px] text-slate-500">Choose or search the returned winning record for this agreement.</span>
             </div>
-            <select
-              value={selectedTicketId || (availableTickets[0]?.transactionId || availableTickets[0]?.transId || '')}
-              onChange={(e) => handleTicketChange(e.target.value)}
-              className="w-full md:w-auto bg-white border border-blue-200 px-3 py-2 rounded-lg font-mono font-bold text-slate-800 outline-none focus:border-[#002B66] focus:ring-2 focus:ring-blue-200"
-            >
-              {availableTickets.length > 0 ? (
-                availableTickets.map((item, idx) => {
-                  const tid = item.transactionId || item.transId || item.receipt_no || `TID-${idx}`;
-                  return (
-                    <option key={idx} value={tid}>
-                      {tid} - {item.fullName || item.outlet || item.username || 'Accountable Payer'} (₱{parseFloat(item.winAmount || 0).toLocaleString()})
-                    </option>
-                  );
-                })
-              ) : (
-                <option value="">No returned tickets available (Using Sample)</option>
-              )}
-            </select>
+            <TransactionSelectSearch
+              tickets={availableTickets}
+              selectedId={selectedTicketId || (availableTickets[0]?.transactionId || availableTickets[0]?.transId || '')}
+              onSelect={(tid) => handleTicketChange(tid)}
+            />
           </div>
 
           <div className={`${currentStep === 4 ? '' : 'hidden'} print:hidden bg-white border border-slate-200 rounded-xl shadow-sm p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs`}>

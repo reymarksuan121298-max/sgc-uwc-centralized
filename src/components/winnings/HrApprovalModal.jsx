@@ -202,7 +202,7 @@ export default function HrApprovalModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="bg-white border border-slate-300 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden text-xs flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150">
         
         {/* Navy and Gold Brand Header */}
