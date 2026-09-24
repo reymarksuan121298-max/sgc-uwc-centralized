@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, XCircle, Eye, Search, 
-  Check, RefreshCw, X, Loader2 
+  Check, RefreshCw, X, Loader2,
+  Plus, Minus, RotateCcw, Download, AlertCircle
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { generateRemittanceSerial } from '../../utils/formatters';
@@ -14,6 +15,8 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [isModalImageLoading, setIsModalImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [approvingReceipt, setApprovingReceipt] = useState(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -80,8 +83,46 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
     if (selectedReceipt?.receipt_image_url) {
       setIsModalImageLoading(true);
       setImageError(false);
+      setZoomLevel(1);
     }
   }, [selectedReceipt]);
+
+  const handleZoomIn = () => setZoomLevel((prev) => Math.min(3.5, +(prev + 0.25).toFixed(2)));
+  const handleZoomOut = () => setZoomLevel((prev) => Math.max(0.5, +(prev - 0.25).toFixed(2)));
+  const handleResetZoom = () => setZoomLevel(1);
+
+  const handleDownloadImage = async () => {
+    if (!selectedReceipt?.receipt_image_url) return;
+    setIsDownloading(true);
+    try {
+      const displayId = selectedReceipt.batch_serial_no || selectedReceipt.transactionId || selectedReceipt.reference_number || 'receipt';
+      const cleanFileName = `Receipt-Proof-${displayId}.jpg`.replace(/[/\\?%*:|"<>]/g, '-');
+      
+      const response = await fetch(selectedReceipt.receipt_image_url, { mode: 'cors' });
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = cleanFileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+      showToast('Receipt proof image downloaded successfully!');
+    } catch (err) {
+      console.warn('Direct blob download failed, falling back to window open:', err);
+      const link = document.createElement('a');
+      link.href = selectedReceipt.receipt_image_url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.download = `Receipt-Proof-${selectedReceipt.batch_serial_no || 'proof'}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const getOfficerName = (item) => {
     if (!item) return 'N/A';
@@ -475,9 +516,66 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-4">
+            <div className="p-4 overflow-y-auto space-y-3">
+              {/* Image Toolbar: Zoom Controls & Download Button */}
+              {selectedReceipt.receipt_image_url && !imageError && (
+                <div className="flex items-center justify-between gap-2 px-1">
+                  {/* Zoom Controls Pill */}
+                  <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={handleZoomOut}
+                      disabled={zoomLevel <= 0.5 || isModalImageLoading}
+                      title="Zoom Out (-)"
+                      className="p-1.5 rounded-lg hover:bg-white text-slate-700 disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer transition-colors"
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetZoom}
+                      title="Click to reset zoom to 100%"
+                      className="px-2 py-0.5 text-[11px] font-mono font-bold text-slate-700 hover:bg-white rounded-lg transition-colors cursor-pointer"
+                    >
+                      {Math.round(zoomLevel * 100)}%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleZoomIn}
+                      disabled={zoomLevel >= 3.5 || isModalImageLoading}
+                      title="Zoom In (+)"
+                      className="p-1.5 rounded-lg hover:bg-white text-slate-700 disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer transition-colors"
+                    >
+                      <Plus size={13} />
+                    </button>
+                    {zoomLevel !== 1 && (
+                      <button
+                        type="button"
+                        onClick={handleResetZoom}
+                        title="Reset Zoom"
+                        className="p-1.5 rounded-lg hover:bg-white text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
+                      >
+                        <RotateCcw size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Download Image Button */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadImage}
+                    disabled={isDownloading || isModalImageLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#002B66] hover:bg-blue-900 text-white rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                    title="Download receipt proof image"
+                  >
+                    {isDownloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    <span>{isDownloading ? 'Downloading...' : 'Download Image'}</span>
+                  </button>
+                </div>
+              )}
+
               {selectedReceipt.receipt_image_url ? (
-                <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center min-h-[300px] max-h-[55vh]">
+                <div className="relative rounded-xl overflow-auto custom-scrollbar border border-slate-200 bg-slate-900 flex items-center justify-center min-h-[300px] max-h-[55vh]">
                   {isModalImageLoading && !imageError && (
                     <div className="absolute inset-0 bg-slate-800/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-10 animate-pulse">
                       <Loader2 className="animate-spin text-blue-400" size={32} />
@@ -489,20 +587,25 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
                       Failed to load image preview.
                     </div>
                   ) : (
-                    <img 
-                      src={selectedReceipt.receipt_image_url} 
-                      alt="Proof" 
-                      loading="eager"
-                      decoding="async"
-                      onLoad={() => setIsModalImageLoading(false)}
-                      onError={() => {
-                        setIsModalImageLoading(false);
-                        setImageError(true);
-                      }}
-                      className={`max-h-[55vh] object-contain w-auto transition-opacity duration-200 ${
-                        isModalImageLoading ? 'opacity-0' : 'opacity-100'
-                      }`}
-                    />
+                    <div
+                      className="w-full flex items-center justify-center transition-transform duration-150 ease-out origin-center"
+                      style={{ transform: `scale(${zoomLevel})` }}
+                    >
+                      <img 
+                        src={selectedReceipt.receipt_image_url} 
+                        alt="Proof" 
+                        loading="eager"
+                        decoding="async"
+                        onLoad={() => setIsModalImageLoading(false)}
+                        onError={() => {
+                          setIsModalImageLoading(false);
+                          setImageError(true);
+                        }}
+                        className={`max-h-[55vh] object-contain w-auto max-w-full transition-opacity duration-200 select-none ${
+                          isModalImageLoading ? 'opacity-0' : 'opacity-100'
+                        }`}
+                      />
+                    </div>
                   )}
                 </div>
               ) : (
