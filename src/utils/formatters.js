@@ -144,3 +144,26 @@ export const isInactiveTellerRecord = (item) => {
   );
 };
 
+/**
+ * Helper to identify records with pending deletion requests or approved deletions
+ */
+export const isPendingDeletionRecord = (item) => {
+  if (!item) return false;
+  const ds = String(item.deletion_request_status || item.deletionRequestStatus || '').toUpperCase().trim();
+  return ds === 'PENDING_ADMIN_APPROVAL' || ds === 'PENDING' || ds === 'APPROVED';
+};
+
+/**
+ * Helper to determine if a returned winning ticket is eligible for attaching remittance proof
+ * (Excludes AWOL/Pull-out/Terminated/Inactive, Pending Approval for Deletion, Under Settlement, and Already Remitted)
+ */
+export const isEligibleForRemittanceProof = (item) => {
+  if (!item) return false;
+  if (item.receipt_status && item.receipt_status !== 'NO_RECEIPT') return false;
+  if (item.isUnderSettlement) return false;
+  if (isInactiveTellerRecord(item)) return false;
+  if (isPendingDeletionRecord(item)) return false;
+  return true;
+};
+
+

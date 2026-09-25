@@ -13,7 +13,7 @@ import RequestDeleteModal from '../../components/winnings/RequestDeleteModal';
 import ViewHardCopyTicketModal from '../../components/winnings/ViewHardCopyTicketModal';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import SettlementDetailsModal from '../../components/winnings/SettlementDetailsModal';
-import { superClean, getTicketTransId, generateRemittanceSerial } from '../../utils/formatters';
+import { superClean, getTicketTransId, generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord, isPendingDeletionRecord } from '../../utils/formatters';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole } from '../../utils/permissions';
 
 import { DEFAULT_SUPERVISOR_NAMES } from '../../services/supervisorService';
@@ -94,27 +94,24 @@ export default function ReturnedWinnings({
 
   // Pending Deletion Requests
   const pendingDeletionRequests = useMemo(() => {
-    return (filteredData || []).filter(item => item.deletion_request_status === 'PENDING_ADMIN_APPROVAL');
+    return (filteredData || []).filter(item => isPendingDeletionRecord(item));
   }, [filteredData]);
 
-  const isInactiveTeller = (item) => {
-    const ts = String(item.teller_status || '').toUpperCase();
-    return ts === 'PULL-OUT' || ts === 'AWOL' || ts === 'TERMINATED' || ts === 'PULLOUTS' || ts === 'APPROVE TELLER STATUS' || item.unclaimed_approval_status === 'PENDING';
-  };
+  const isInactiveTeller = (item) => isInactiveTellerRecord(item);
 
-  // Unremitted items available strictly for weekly remittance deposit (excluding under settlement and inactive)
+  // Unremitted items available strictly for weekly remittance deposit (excluding under settlement, inactive/AWOL/pullout, and pending deletion)
   const unremittedDepositItems = useMemo(() => {
-    return (filteredData || []).filter(item => (!item.receipt_status || item.receipt_status === 'NO_RECEIPT') && !item.isUnderSettlement && !isInactiveTeller(item));
+    return (filteredData || []).filter(item => isEligibleForRemittanceProof(item));
   }, [filteredData]);
 
   // Inactive Teller items (Pull-out, AWOL, Terminated)
   const inactiveTellerItems = useMemo(() => {
-    return (filteredData || []).filter(item => isInactiveTeller(item));
+    return (filteredData || []).filter(item => isInactiveTellerRecord(item));
   }, [filteredData]);
 
   // Filtered display items based on activeFilterTab & searchQuery
   const displayItems = useMemo(() => {
-    let list = (filteredData || []).filter(item => !isInactiveTeller(item));
+    let list = (filteredData || []).filter(item => !isInactiveTellerRecord(item));
 
     if (activeFilterTab === 'UNREMITTED') {
       list = unremittedDepositItems;

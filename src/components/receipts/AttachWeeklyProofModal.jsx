@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
-import { generateRemittanceSerial } from '../../utils/formatters';
+import { generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord } from '../../utils/formatters';
 
 // Fast Date Formatter (cached, avoids heavy toLocaleString overhead on every render)
 const fastFormatTimestamp = (timestampStr) => {
@@ -214,9 +214,9 @@ function AttachWeeklyProofModal({
 
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
 
-  // Target batch calculation: all active unremitted returned winning tickets (excluding under settlement)
+  // Target batch calculation: all active unremitted returned winning tickets (excluding under settlement, inactive/AWOL/pullout, and pending deletion)
   const targetBatch = useMemo(() => {
-    const unremitted = filteredData.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
+    const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
     const winTotal = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
     return {
       label: batchSerialNumber ? `Batch Serial #${batchSerialNumber}` : 'All Active Unremitted Returns',
@@ -227,7 +227,7 @@ function AttachWeeklyProofModal({
     };
   }, [batchSerialNumber, filteredData]);
 
-  // Sync initial state on modal open (select all unremitted tickets by default)
+  // Sync initial state on modal open (select all eligible unremitted tickets by default)
   useEffect(() => {
     if (isOpen) {
       setFormError('');
@@ -237,7 +237,7 @@ function AttachWeeklyProofModal({
       setModalTableSearch('');
       setSenderName(currentUser?.full_name || '');
 
-      const unremitted = filteredData.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
+      const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
       const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
       setSelectedKeys(initialKeys);
 
