@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, memo, useCallback } from 'react';
-import { 
-  X, UploadCloud, FileText, CheckCircle2, 
+import {
+  X, UploadCloud, FileText, CheckCircle2,
   Smartphone, Building2, Landmark, Image as ImageIcon, Loader2,
   AlertTriangle, ShieldCheck, Search, Sparkles, Eye
 } from 'lucide-react';
@@ -64,7 +64,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
             Included Returned Winnings ({selectedInViewCount} of {items.length} Selected)
           </span>
         </div>
-        
+
         {/* Live Search & Quick Toggle inside Modal */}
         <div className="flex items-center gap-2">
           <button
@@ -130,16 +130,15 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                 const isSelected = selectedKeys.has(key);
 
                 return (
-                  <tr 
-                    key={key} 
-                    className={`transition-colors cursor-pointer select-none ${
-                      isSelected 
-                        ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800' 
-                        : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
-                    }`}
+                  <tr
+                    key={key}
+                    className={`transition-colors cursor-pointer select-none ${isSelected
+                      ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800'
+                      : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
+                      }`}
                     onClick={() => onToggleSelect(key)}
                   >
-                    <td 
+                    <td
                       className="px-2.5 py-1.5 border-r border-slate-100 text-center"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -296,7 +295,7 @@ function AttachWeeklyProofModal({
     const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
       ? currentUser.sub_office
       : (selectedItems[0]?.sub_office || targetBatch?.items[0]?.sub_office || 'Mandaue Central');
-    
+
     // Parse receiptDate (or fallback to current date)
     const dateObj = receiptDate ? new Date(`${receiptDate}T12:00:00`) : new Date();
 
@@ -359,8 +358,8 @@ function AttachWeeklyProofModal({
       return;
     }
 
-    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
-      ? parseFloat(customRemittanceAmount) 
+    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0
+      ? parseFloat(customRemittanceAmount)
       : (parseFloat(selectedWinTotal || 0) || 0);
 
     if (!isAdmin && !referenceNumber.trim()) {
@@ -381,8 +380,8 @@ function AttachWeeklyProofModal({
     if (selectedCount === 0) return;
 
     const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn).toUpperCase();
-    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
-      ? parseFloat(customRemittanceAmount) 
+    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0
+      ? parseFloat(customRemittanceAmount)
       : (parseFloat(selectedWinTotal || 0) || 0);
 
     setIsSubmitting(true);
@@ -430,8 +429,8 @@ function AttachWeeklyProofModal({
       // 2. Extract transaction IDs in selected batch
       const itemsToRemit = selectedItems;
       const transIds = itemsToRemit.map(t => String(t.transactionId || t.transId).trim()).filter(Boolean);
-      const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All' 
-        ? currentUser.sub_office 
+      const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
+        ? currentUser.sub_office
         : (itemsToRemit[0]?.sub_office || 'Mandaue Central');
 
       // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by sub-office serial format)
@@ -464,8 +463,8 @@ function AttachWeeklyProofModal({
 
       // 4. Update status of all selected returned winning records in database
       if (transIds.length > 0) {
-        const effectiveRemittanceTimestamp = receiptDate 
-          ? new Date(`${receiptDate}T12:00:00`).toISOString() 
+        const effectiveRemittanceTimestamp = receiptDate
+          ? new Date(`${receiptDate}T12:00:00`).toISOString()
           : new Date().toISOString();
 
         const { error: updateError } = await supabase
@@ -518,14 +517,14 @@ function AttachWeeklyProofModal({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
       <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-        
+
         {/* 1. MODAL HEADER */}
         <div className="bg-[#002B66] text-white px-5 py-3.5 flex justify-between items-center border-b-2 border-[#FFD700] shrink-0">
           <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs sm:text-sm">
             <UploadCloud size={18} className="text-[#FFD700]" />
             <span>Attach Remittance Proof • {effectiveBatchSrn || 'Batch'}</span>
           </div>
-          <button 
+          <button
             type="button"
             onClick={onClose}
             className="text-slate-300 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
@@ -535,9 +534,9 @@ function AttachWeeklyProofModal({
         </div>
 
         {/* 2. SCROLLABLE FORM BODY */}
-        <form 
+        <form
           id="weekly-remit-form"
-          onSubmit={handleInitiateSubmit} 
+          onSubmit={handleInitiateSubmit}
           className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs"
         >
           {formError && (
@@ -601,11 +600,10 @@ function AttachWeeklyProofModal({
                       key={channel.id}
                       type="button"
                       onClick={() => setPaymentChannel(channel.id)}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border font-bold text-xs transition-all cursor-pointer ${
-                        isSelected 
-                          ? 'bg-[#002B66] text-white border-[#002B66] shadow-xs' 
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border font-bold text-xs transition-all cursor-pointer ${isSelected
+                        ? 'bg-[#002B66] text-white border-[#002B66] shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
                     >
                       <Icon size={16} className={isSelected ? 'text-[#FFD700]' : channel.color} />
                       <span className="truncate">{channel.name}</span>
@@ -748,13 +746,13 @@ function AttachWeeklyProofModal({
             <label className="text-[11px] font-extrabold text-slate-700 uppercase block mb-1">
               Attach Official Remittance Receipt / Deposit Slip
             </label>
-            
+
             {previewImage ? (
               <div className="relative border-2 border-emerald-500 rounded-xl p-3 bg-emerald-50/50 flex flex-col items-center">
-                <img 
-                  src={previewImage} 
-                  alt="Receipt Preview" 
-                  className="max-h-44 rounded-lg object-contain border border-emerald-200 shadow-xs cursor-pointer hover:opacity-95" 
+                <img
+                  src={previewImage}
+                  alt="Receipt Preview"
+                  className="max-h-44 rounded-lg object-contain border border-emerald-200 shadow-xs cursor-pointer hover:opacity-95"
                   onClick={() => setIsImageZoomed(true)}
                 />
                 <div className="flex items-center gap-2 mt-2">
@@ -781,11 +779,11 @@ function AttachWeeklyProofModal({
                   <span className="font-bold text-[#002B66] text-xs">Click to browse receipt screenshot / deposit slip</span>
                   <p className="text-[10px] text-slate-400 mt-0.5">PNG, JPG, JPEG up to 5MB</p>
                 </div>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleImageChange} 
-                  className="hidden" 
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
                 />
               </label>
             )}
@@ -848,7 +846,7 @@ function AttachWeeklyProofModal({
         {showConfirmModal && (
           <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
             <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-              
+
               {/* Header */}
               <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
                 <div className="flex items-center gap-2.5 font-black uppercase text-xs sm:text-sm tracking-wider">
@@ -867,7 +865,7 @@ function AttachWeeklyProofModal({
 
               {/* Body */}
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs">
-                
+
                 <div className="bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
                   <Sparkles size={16} className="text-[#002B66] shrink-0" />
                   <span>Please verify that the attached receipt and remittance details are 100% correct before finalizing.</span>
@@ -875,7 +873,7 @@ function AttachWeeklyProofModal({
 
                 {/* Proof Image Preview + Details Layout */}
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-start">
-                  
+
                   {/* Left: Receipt Proof Preview Card */}
                   <div className="sm:col-span-5 bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col items-center justify-center text-center">
                     <span className="text-[10px] font-extrabold uppercase text-slate-500 mb-2 block tracking-wider">
@@ -1031,14 +1029,14 @@ function AttachWeeklyProofModal({
 
         {/* 5. ENLARGED PROOF IMAGE MODAL */}
         {isImageZoomed && previewImage && (
-          <div 
+          <div
             className="fixed inset-0 z-70 bg-black/90 flex items-center justify-center p-4 animate-in fade-in cursor-zoom-out"
             onClick={() => setIsImageZoomed(false)}
           >
             <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-              <img 
-                src={previewImage} 
-                alt="Enlarged Proof" 
+              <img
+                src={previewImage}
+                alt="Enlarged Proof"
                 className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/20"
               />
               <button
