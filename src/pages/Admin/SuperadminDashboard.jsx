@@ -10,9 +10,12 @@ import { isInactiveTellerRecord } from '../../utils/formatters';
 export default function SuperadminDashboard({
   returnedData = [],
   unclaimedData = [],
+  data = [],
   receipts = [],
   onNavigateTab
 }) {
+  const activeUnclaimed = (unclaimedData && unclaimedData.length > 0) ? unclaimedData : (data || []);
+
   // Load official sub-offices directly from database table
   const [dbSubOffices, setDbSubOffices] = useState([]);
   const [dbReceipts, setDbReceipts] = useState(receipts || []);
@@ -26,12 +29,12 @@ export default function SuperadminDashboard({
   useEffect(() => {
     const fetchSubOffices = async () => {
       try {
-        const { data, error } = await supabase
+        const { data: soData, error } = await supabase
           .from('sub_offices')
           .select('*')
           .order('name', { ascending: true });
-        if (!error && data) {
-          setDbSubOffices(data);
+        if (!error && soData) {
+          setDbSubOffices(soData);
         }
       } catch (err) {
         console.warn('Failed to fetch sub_offices:', err);
@@ -40,12 +43,12 @@ export default function SuperadminDashboard({
 
     const fetchReceipts = async () => {
       try {
-        const { data, error } = await supabase
+        const { data: recData, error } = await supabase
           .from('remittance_receipts')
           .select('*')
           .order('created_at', { ascending: false });
-        if (!error && data) {
-          setDbReceipts(data);
+        if (!error && recData) {
+          setDbReceipts(recData);
         }
       } catch (err) {
         console.warn('Failed to fetch remittance_receipts:', err);
@@ -79,7 +82,7 @@ export default function SuperadminDashboard({
   const stats = useMemo(() => {
     let totalUnclaimedWin = 0;
     let totalUnclaimedBet = 0;
-    unclaimedData.forEach((i) => {
+    activeUnclaimed.forEach((i) => {
       totalUnclaimedWin += parseFloat(i.winAmount ?? 0);
       totalUnclaimedBet += parseFloat(i.betAmount ?? i.amount ?? i.gross ?? 0);
     });
@@ -164,7 +167,7 @@ export default function SuperadminDashboard({
     return {
       totalUnclaimedWin,
       totalUnclaimedBet,
-      unclaimedCount: unclaimedData.length,
+      unclaimedCount: activeUnclaimed.length,
       totalReturnedWin,
       totalReturnAmountOut,
       returnedCount: activeReturnedCount,
@@ -180,7 +183,7 @@ export default function SuperadminDashboard({
       subOffices: subOfficesStats,
       activeReceiptsCount: activeReceipts.length
     };
-  }, [returnedData, unclaimedData, receipts, dbReceipts, dbSubOffices]);
+  }, [returnedData, activeUnclaimed, receipts, dbReceipts, dbSubOffices]);
 
   return (
     <div className="w-full space-y-6">

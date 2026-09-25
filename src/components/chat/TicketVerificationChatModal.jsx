@@ -209,7 +209,7 @@ export default function TicketVerificationChatModal({
     });
     setActiveContact(newGroup);
     setChatCategory('groups');
-    setIsChannelDrawerOpen(false);
+    setIsCreateGroupOpen(false);
   };
 
   const isGroupChat = Boolean(activeContact?.isGroup || activeContact?.member_ids || String(activeContact?.id || '').startsWith('group-'));

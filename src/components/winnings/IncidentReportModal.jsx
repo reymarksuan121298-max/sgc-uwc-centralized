@@ -6,14 +6,12 @@ import { openIncidentReportPrint } from '../../utils/incidentReportPrint';
 import { systemService } from '../../services/systemService';
 
 export default function IncidentReportModal({ ticket, onClose }) {
-  if (!ticket) return null;
-
   const transId = getTicketTransId(ticket, 'N/A');
   const ticketDate = getTicketDate(ticket);
   const ageInDays = getTicketAgeInDays(ticket);
   const reportNumber = `IR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(transId).replace(/[^a-zA-Z0-9]/g, '').slice(-6) || '000000'}`;
   
-  const rawOffice = ticket.sub_office || ticket.subOffice || '';
+  const rawOffice = ticket?.sub_office || ticket?.subOffice || '';
   const [subOfficeName, setSubOfficeName] = React.useState('Mandaue City');
   const [subOfficeAddress, setSubOfficeAddress] = React.useState('Barlaps, A.S. Fortuna St., Bakilid, Mandaue City');
 
@@ -33,6 +31,8 @@ export default function IncidentReportModal({ ticket, onClose }) {
     loadOffice();
     return () => { isMounted = false; };
   }, [rawOffice]);
+
+  if (!ticket) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">

@@ -1609,6 +1609,38 @@ export default function App() {
     return () => { isMounted = false; };
   }, [currentUser?.username]);
 
+  const handleCopyTransId = (transId) => {
+    if (!userFeaturePermissions.canCopyTransaction) {
+      setToastMessage('⚠️ Copy Transaction is disabled for your user account by Administrator.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
+    if (!transId) return;
+    const strId = String(transId).trim();
+    if (strId && strId !== 'N/A') {
+      setCopiedTransIds(prev => new Set(prev).add(strId));
+    }
+  };
+
+  const handleOpenQrModal = (ticket) => {
+    if (!userFeaturePermissions.canOpenQrModal) {
+      setToastMessage('⚠️ QR Modal access is disabled for your user account by Administrator.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
+    if (!ticket) return;
+    const computedId = getTicketTransId(ticket, 'N/A');
+    if (computedId && computedId !== 'N/A') {
+      setOpenedQrTransIds(prev => new Set(prev).add(computedId));
+    }
+    setQrModalTicket({ ...ticket, computedTransId: computedId });
+    setIsQrModalOpen(true);
+  };
+
+  const activeReturnedCount = useMemo(() => {
+    return (returnedData || []).filter(item => !isInactiveTellerRecord(item)).length;
+  }, [returnedData]);
+
   // If not logged in, render Login page (along with ProfileSettingsModal and HrApprovalModal)
   if (!currentUser) {
     return (
@@ -1643,38 +1675,6 @@ export default function App() {
       </>
     );
   }
-
-  const handleCopyTransId = (transId) => {
-    if (!userFeaturePermissions.canCopyTransaction) {
-      setToastMessage('⚠️ Copy Transaction is disabled for your user account by Administrator.');
-      setTimeout(() => setToastMessage(null), 3500);
-      return;
-    }
-    if (!transId) return;
-    const strId = String(transId).trim();
-    if (strId && strId !== 'N/A') {
-      setCopiedTransIds(prev => new Set(prev).add(strId));
-    }
-  };
-
-  const handleOpenQrModal = (ticket) => {
-    if (!userFeaturePermissions.canOpenQrModal) {
-      setToastMessage('⚠️ QR Modal access is disabled for your user account by Administrator.');
-      setTimeout(() => setToastMessage(null), 3500);
-      return;
-    }
-    if (!ticket) return;
-    const computedId = getTicketTransId(ticket, 'N/A');
-    if (computedId && computedId !== 'N/A') {
-      setOpenedQrTransIds(prev => new Set(prev).add(computedId));
-    }
-    setQrModalTicket({ ...ticket, computedTransId: computedId });
-    setIsQrModalOpen(true);
-  };
-
-  const activeReturnedCount = useMemo(() => {
-    return (returnedData || []).filter(item => !isInactiveTellerRecord(item)).length;
-  }, [returnedData]);
 
   return (
     <>

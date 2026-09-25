@@ -620,7 +620,7 @@ export default function ProfileSettings({ currentUser, onUserUpdated, onBack }) 
             {(pwStage === 'email_sent' || pwStage === 'confirm') && pwSuccess && pwSuccess.includes('✅') && (
               <button
                 type="button"
-                onClick={() => { setPwStage('verify'); setPwSuccess(''); setPwError(''); setConfirmLink(''); }}
+                onClick={() => { setPwStage('verify'); setPwSuccess(''); setPwError(''); }}
                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-[#003B6D] cursor-pointer mt-2"
               >
                 <RefreshCw size={12} /> Start over

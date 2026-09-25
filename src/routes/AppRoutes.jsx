@@ -73,9 +73,11 @@ export default function AppRoutes({
         <SuperadminDashboard
           totals={totals}
           data={liveData}
+          unclaimedData={liveData}
           returnedData={returnedFilteredData}
           receipts={receipts}
           formatDrawTime={formatDrawTime}
+          onNavigateTab={setActiveTab}
         />
       );
 

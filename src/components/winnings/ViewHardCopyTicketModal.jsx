@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   X, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink,
   FileCheck, ShieldAlert, AlertTriangle, UserCheck, Check, Ban,
-  Building2, Calendar, Ticket, Loader2
+  Building2, Calendar, Ticket, Loader2, Clock
 } from 'lucide-react';
 import { getTicketTransId, formatDrawTime } from '../../utils/formatters';
 import { canApproveDeletionRequests, isAdminRole, isSuperAdminRole } from '../../utils/permissions';
