@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Printer, CheckCircle } from 'lucide-react';
+import { X, Printer, CheckCircle, CheckCircle2 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
 
@@ -98,6 +98,64 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
       case 'monthly': return 'Monthly';
       default: return 'Weekly';
     }
+  };
+
+  const getSemiMonthlyDueDate = (startDateStr, installmentIndex) => {
+    const date = new Date(`${startDateStr}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+
+    let year = date.getFullYear();
+    let month = date.getMonth();
+    let day = date.getDate();
+
+    let isTarget15 = day <= 15;
+
+    for (let i = 0; i < installmentIndex; i++) {
+      if (isTarget15) {
+        isTarget15 = false;
+      } else {
+        isTarget15 = true;
+        month++;
+        if (month > 11) {
+          month = 0;
+          year++;
+        }
+      }
+    }
+
+    const targetYear = year;
+    const targetMonth = String(month + 1).padStart(2, '0');
+    let targetDay = '15';
+    if (!isTarget15) {
+      const lastDayOfMonth = new Date(targetYear, month + 1, 0).getDate();
+      targetDay = String(Math.min(30, lastDayOfMonth)).padStart(2, '0');
+    }
+
+    return `${targetYear}-${targetMonth}-${targetDay}`;
+  };
+
+  const getCalculatedDueDate = (baseDate, freq, installmentIndex) => {
+    if (!baseDate) return '';
+    const dateOnly = baseDate.split('T')[0];
+    
+    if (freq === 'semi-monthly' || freq === '15_30') {
+      return getSemiMonthlyDueDate(dateOnly, installmentIndex);
+    }
+
+    const date = new Date(`${dateOnly}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+
+    if (freq === 'monthly') {
+      date.setMonth(date.getMonth() + (installmentIndex + 1));
+    } else {
+      const intervalDays = freq === 'daily' ? 1 : 7;
+      date.setDate(date.getDate() + intervalDays * (installmentIndex + 1));
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Robust resolution of Supervisor Full Name (guarantees no raw numbers/IDs)
@@ -292,7 +350,8 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
                     installments.map((inst, index) => {
                       // Determine status based on payment history if possible, else use saved status
                       let displayStatus = inst.status || '';
-                      if (!displayStatus) {
+                      // If status is empty or 'PENDING', calculate from actual payments
+                      if (!displayStatus || displayStatus.toUpperCase() === 'PENDING') {
                          const cumulativePayment = payments.reduce((sum, p) => sum + parseFloat(p.paymentAmount || 0), 0);
                          const instTotal = installments.slice(0, index + 1).reduce((sum, p) => sum + parseFloat(p.amountDue || 0), 0);
                          if (cumulativePayment >= instTotal) {
@@ -300,15 +359,17 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
                          }
                       }
                       
+                      const computedDueDate = inst.dueDate || getCalculatedDueDate(agreementDate, frequency, index);
+                      
                       return (
                         <tr key={inst.id || index} className="odd:bg-white even:bg-slate-50">
                           <td className="border border-slate-300 p-2 font-bold font-mono">{inst.id || index + 1}</td>
-                          <td className="border border-slate-300 p-2 font-mono text-xs">{formatTransactionDate(inst.dueDate)}</td>
+                          <td className="border border-slate-300 p-2 font-mono text-xs">{formatTransactionDate(computedDueDate)}</td>
                           <td className="border border-slate-300 p-2 font-mono font-bold text-emerald-800">
                             {parseFloat(inst.amountDue || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="border border-slate-300 p-2 font-bold text-[10px] uppercase text-slate-700">
-                            {displayStatus === 'PAID' ? <span className="text-emerald-600 flex items-center justify-center gap-1"><CheckCircle size={10} /> PAID</span> : displayStatus || '__________________'}
+                            {displayStatus === 'PAID' ? <div className="flex items-center justify-center gap-1 text-emerald-600 font-black text-[11px]"><CheckCircle2 size={14} className="stroke-[3]" /><span>PAID</span></div> : displayStatus || '__________________'}
                           </td>
                         </tr>
                       );

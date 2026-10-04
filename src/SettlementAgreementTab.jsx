@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, Save, Printer, ListOrdered, PlusCircle, Calendar, ChevronLeft, ChevronRight, CreditCard, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { FileText, Save, Printer, ListOrdered, PlusCircle, Calendar, ChevronLeft, ChevronRight, CreditCard, X, ChevronDown, ChevronUp, Search, CheckCircle2 } from 'lucide-react';
 import { openSettlementAgreementPrint } from './utils/settlementAgreementPrint';
 import { supabase } from './config/supabaseClient';
 import TransactionSelectSearch from './components/winnings/TransactionSelectSearch';
@@ -671,13 +671,25 @@ export default function SettlementAgreementTab({ filteredData = [], onSaveAgreem
                           className="w-full bg-transparent font-mono font-bold text-center outline-none text-emerald-800"
                         />
                       </td>
-                      <td className="border border-slate-300 p-1.5">
+                      <td className="border border-slate-300 p-1.5 relative">
+                        {String(inst.status || '').toUpperCase() === 'PAID' && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="flex items-center gap-1 text-emerald-600 font-black text-[11px]">
+                              <CheckCircle2 size={14} className="stroke-[3]" />
+                              <span className="opacity-0">PAID</span>
+                            </div>
+                          </div>
+                        )}
                         <input
                           type="text"
                           value={inst.status || ''}
                           onChange={(e) => handleRowChange(index, 'status', e.target.value)}
                           placeholder="Signature / Date"
-                          className="w-full bg-transparent text-center outline-none text-slate-700 text-[11px] placeholder:text-slate-300 print:placeholder:text-transparent"
+                          className={`w-full bg-transparent text-center outline-none text-[11px] placeholder:text-slate-300 print:placeholder:text-transparent relative z-10 ${
+                            String(inst.status || '').toUpperCase() === 'PAID'
+                              ? 'text-emerald-600 font-black pl-5'
+                              : 'text-slate-700'
+                          }`}
                         />
                       </td>
                     </tr>

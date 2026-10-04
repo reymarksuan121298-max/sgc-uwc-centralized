@@ -319,6 +319,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
         office.includes(savedSearchQuery.toLowerCase().trim())
       );
     });
+
   }, [savedAgreementsList, savedSearchQuery]);
 
   // States for Editable Form
