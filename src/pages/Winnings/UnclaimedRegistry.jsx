@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText, Landmark, CheckCircle2, Search, AlertCircle,
   Eye, EyeOff, UserCheck, RefreshCw, Check, Image as ImageIcon,
-  ChevronRight, QrCode, Building2, ShieldAlert, AlertTriangle
+  ChevronRight, QrCode, Building2, ShieldAlert, AlertTriangle,
+  MessageSquare, MessageSquarePlus, MessageSquareText
 } from 'lucide-react';
 import IncidentReportModal from '../../components/winnings/IncidentReportModal';
+import UnclaimedRemarksModal from '../../components/winnings/UnclaimedRemarksModal';
+import { unclaimedRemarksService } from '../../services/unclaimedRemarksService';
+import { supabase } from '../../config/supabaseClient';
 import { isIncidentReportEligible, getTicketAgeInDays } from '../../utils/ticketAge';
 import { getTicketTransId } from '../../utils/formatters';
 import CustomDatePicker from '../../components/common/CustomDatePicker';
@@ -49,6 +54,73 @@ export default function UnclaimedRegistry({
   const [incidentReportTicket, setIncidentReportTicket] = useState(null);
   const [localSearch, setLocalSearch] = useState(searchQuery || '');
   const [dynamicSupervisors, setDynamicSupervisors] = useState({});
+  const [remarks, setRemarks] = useState(() => unclaimedRemarksService.getCachedRemarks());
+  const [remarkModalData, setRemarkModalData] = useState(null);
+  const [hoveredRemark, setHoveredRemark] = useState(null);
+
+  // Sync remarks from Supabase and listen for real-time updates
+  useEffect(() => {
+    let isMounted = true;
+    unclaimedRemarksService.fetchRemarks().then((remoteRemarks) => {
+      if (isMounted && remoteRemarks) {
+        setRemarks(remoteRemarks);
+      }
+    });
+
+    const channel = supabase
+      .channel('realtime_unclaimed_remarks_channel')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'unclaimed_ticket_remarks'
+      }, () => {
+        unclaimedRemarksService.fetchRemarks().then((refreshed) => {
+          if (isMounted && refreshed) {
+            setRemarks({ ...refreshed });
+          }
+        });
+      })
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleRowMouseEnter = (e, meta) => {
+    const remarkObj = remarks[meta.transId];
+    if (remarkObj && remarkObj.remark) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setHoveredRemark({
+        transId: meta.transId,
+        remark: remarkObj.remark,
+        author: remarkObj.author,
+        updatedAt: remarkObj.updatedAt,
+        ageDays: meta.ageDays,
+        rect
+      });
+    } else {
+      setHoveredRemark(null);
+    }
+  };
+
+  const handleRowMouseLeave = () => {
+    setHoveredRemark(null);
+  };
+
+  const handleRemarkSaved = (transId, updatedRecord) => {
+    setRemarks(prev => {
+      const copy = { ...prev };
+      if (updatedRecord) {
+        copy[transId] = updatedRecord;
+      } else {
+        delete copy[transId];
+      }
+      return copy;
+    });
+  };
+
   const activeEndpoints = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
 
   // Expand each endpoint's comma-separated sub_office into individual selectable options
@@ -178,7 +250,7 @@ export default function UnclaimedRegistry({
           {[
             { label: 'UNCLAIMED RECORDS', val: totals.count, Icon: FileText },
             { label: 'TOTAL BET VOLUME', val: `₱${totals.betAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, Icon: AlertTriangle },
-            { label: 'TOTAL UNCLAIMED COLLECTION', val: `₱${totals.winAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, Icon: CheckCircle2 }
+            { label: 'TOTAL UNCLAIMED PENDING', val: `₱${totals.winAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, Icon: CheckCircle2 }
           ].map(({ label, val, Icon }, i) => (
             <div key={i} className="bg-white p-4 sm:p-5 rounded-2xl border border-blue-200/80 border-l-[6px] border-l-[#002B66] shadow-xs hover:shadow-md transition-all flex items-center justify-between">
               <div className="min-w-0 pr-2">
@@ -323,15 +395,51 @@ export default function UnclaimedRegistry({
                             return (
                               <tr
                                 key={index}
-                                className={`transition-colors group border-b ${
-                                  meta.showWarningBadge
+                                onMouseEnter={(e) => handleRowMouseEnter(e, meta)}
+                                onMouseLeave={handleRowMouseLeave}
+                                className={`transition-colors group border-b ${meta.showWarningBadge
                                   ? 'bg-rose-50 hover:bg-rose-100/90 border-rose-200 border-l-[5px] border-l-rose-500'
                                   : meta.isTwoDays
                                     ? 'bg-sky-100/80 hover:bg-sky-200/80 border-sky-200 border-l-[5px] border-l-sky-500 text-slate-900'
                                     : 'odd:bg-white even:bg-slate-50/60 hover:bg-amber-50/85 border-slate-100'
                                   }`}
                               >
-                                <td className="px-3 py-2 border-r border-slate-200 font-bold text-slate-800 uppercase text-xs whitespace-nowrap">{meta.displayAccountName}</td>
+                                <td className="px-3 py-2 border-r border-slate-200 font-bold text-slate-800 uppercase text-xs whitespace-nowrap">
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <span className="truncate">{meta.displayAccountName}</span>
+                                    {hideTransIdColumn && (meta.showWarningBadge || (meta.ageDays !== null && meta.ageDays >= 3) || remarks[meta.transId]) && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRemarkModalData({
+                                            ticket: item,
+                                            transId: meta.transId,
+                                            ageDays: meta.ageDays,
+                                            existingRemark: remarks[meta.transId]
+                                          });
+                                        }}
+                                        className={`inline-flex items-center justify-center p-1 rounded-md transition-all cursor-pointer shadow-2xs shrink-0 ${
+                                          remarks[meta.transId]?.remark
+                                            ? 'bg-amber-100 hover:bg-amber-500 text-amber-800 hover:text-white border border-amber-300'
+                                            : 'bg-slate-100 hover:bg-[#002B66] text-slate-500 hover:text-[#FFD700] border border-slate-200'
+                                        }`}
+                                        title={
+                                          remarks[meta.transId]?.remark
+                                            ? `Remarks: "${remarks[meta.transId].remark}" (Click to edit)`
+                                            : `Pending for ${meta.ageDays} days. Click to add remarks.`
+                                        }
+                                        aria-label={remarks[meta.transId]?.remark ? 'Edit ticket remarks' : 'Add ticket remarks'}
+                                      >
+                                        {remarks[meta.transId]?.remark ? (
+                                          <MessageSquareText size={12} className="shrink-0" />
+                                        ) : (
+                                          <MessageSquarePlus size={12} className="shrink-0" />
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
                                 {!hideTransIdColumn && (
                                   <td
                                     className="px-3 py-2 border-r border-slate-200 font-mono text-[#002B66] font-extrabold text-xs group-hover:underline whitespace-nowrap cursor-pointer hover:bg-blue-50/50"
@@ -356,6 +464,38 @@ export default function UnclaimedRegistry({
                                             aria-label="Issue incident report"
                                           >
                                             <AlertTriangle size={12} className="shrink-0" />
+                                          </button>
+                                        )}
+                                        {/* Remarks Action Icon for Overdue (> 3 days) */}
+                                        {(meta.showWarningBadge || (meta.ageDays !== null && meta.ageDays >= 3) || remarks[meta.transId]) && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setRemarkModalData({
+                                                ticket: item,
+                                                transId: meta.transId,
+                                                ageDays: meta.ageDays,
+                                                existingRemark: remarks[meta.transId]
+                                              });
+                                            }}
+                                            className={`inline-flex items-center justify-center p-1 rounded-md transition-all cursor-pointer shadow-2xs shrink-0 ${
+                                              remarks[meta.transId]?.remark
+                                                ? 'bg-amber-100 hover:bg-amber-500 text-amber-800 hover:text-white border border-amber-300'
+                                                : 'bg-slate-100 hover:bg-[#002B66] text-slate-500 hover:text-[#FFD700] border border-slate-200'
+                                            }`}
+                                            title={
+                                              remarks[meta.transId]?.remark
+                                                ? `Remarks: "${remarks[meta.transId].remark}" (Click to edit)`
+                                                : `Pending for ${meta.ageDays} days. Click to add remarks.`
+                                            }
+                                            aria-label={remarks[meta.transId]?.remark ? 'Edit ticket remarks' : 'Add ticket remarks'}
+                                          >
+                                            {remarks[meta.transId]?.remark ? (
+                                              <MessageSquareText size={12} className="shrink-0" />
+                                            ) : (
+                                              <MessageSquarePlus size={12} className="shrink-0" />
+                                            )}
                                           </button>
                                         )}
                                       </div>
@@ -387,8 +527,9 @@ export default function UnclaimedRegistry({
                         return (
                           <div
                             key={index}
-                            className={`border rounded-xl p-3 shadow-2xs transition-all space-y-2.5 relative overflow-hidden ${
-                              meta.showWarningBadge
+                            onMouseEnter={(e) => handleRowMouseEnter(e, meta)}
+                            onMouseLeave={handleRowMouseLeave}
+                            className={`border rounded-xl p-3 shadow-2xs transition-all space-y-2.5 relative overflow-hidden ${meta.showWarningBadge
                               ? 'bg-rose-50/90 border-rose-300/80 border-l-4 border-l-rose-500'
                               : meta.isTwoDays
                                 ? 'bg-sky-50/90 border-sky-300/80 border-l-4 border-l-sky-500'
@@ -428,6 +569,38 @@ export default function UnclaimedRegistry({
                                         <AlertTriangle size={12} className="shrink-0" />
                                       </button>
                                     )}
+                                    {/* Remarks Action Icon for Overdue (> 3 days) */}
+                                    {(meta.showWarningBadge || (meta.ageDays !== null && meta.ageDays >= 3) || remarks[meta.transId]) && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRemarkModalData({
+                                            ticket: item,
+                                            transId: meta.transId,
+                                            ageDays: meta.ageDays,
+                                            existingRemark: remarks[meta.transId]
+                                          });
+                                        }}
+                                        className={`inline-flex items-center justify-center p-1 rounded-md transition-all cursor-pointer shadow-2xs shrink-0 ${
+                                          remarks[meta.transId]?.remark
+                                            ? 'bg-amber-100 hover:bg-amber-500 text-amber-800 hover:text-white border border-amber-300'
+                                            : 'bg-slate-100 hover:bg-[#002B66] text-slate-500 hover:text-[#FFD700] border border-slate-200'
+                                        }`}
+                                        title={
+                                          remarks[meta.transId]?.remark
+                                            ? `Remarks: "${remarks[meta.transId].remark}" (Click to edit)`
+                                            : `Pending for ${meta.ageDays} days. Click to add remarks.`
+                                        }
+                                        aria-label={remarks[meta.transId]?.remark ? 'Edit ticket remarks' : 'Add ticket remarks'}
+                                      >
+                                        {remarks[meta.transId]?.remark ? (
+                                          <MessageSquareText size={12} className="shrink-0" />
+                                        ) : (
+                                          <MessageSquarePlus size={12} className="shrink-0" />
+                                        )}
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               )}
@@ -461,7 +634,7 @@ export default function UnclaimedRegistry({
                       })}
                     </div>
 
-                    <div 
+                    <div
                       className="bg-slate-100 px-4 py-2.5 font-black border-t border-slate-200 text-slate-900 text-xs font-mono flex items-center justify-between"
                     >
                       <span className="uppercase font-sans tracking-wider text-[11px] text-[#002B66]">Subtotal - {resolveSupervisorDisplayName(userKey, dynamicSupervisors)}</span>
@@ -484,6 +657,68 @@ export default function UnclaimedRegistry({
           ticket={incidentReportTicket}
           onClose={() => setIncidentReportTicket(null)}
         />
+      )}
+
+      {/* Ticket Remarks Modal */}
+      {remarkModalData && (
+        <UnclaimedRemarksModal
+          ticket={remarkModalData.ticket}
+          transId={remarkModalData.transId}
+          ageDays={remarkModalData.ageDays}
+          existingRemark={remarkModalData.existingRemark}
+          currentUser={currentUser}
+          onClose={() => setRemarkModalData(null)}
+          onSaved={handleRemarkSaved}
+        />
+      )}
+
+      {/* Portal Tooltip: Revealed only when cursor points at a row with remarks */}
+      {hoveredRemark && typeof document !== 'undefined' && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: hoveredRemark.rect.top > 140
+              ? `${hoveredRemark.rect.top - 12}px`
+              : `${hoveredRemark.rect.bottom + 12}px`,
+            transform: hoveredRemark.rect.top > 140 ? 'translateY(-100%)' : 'none',
+            left: `${Math.max(16, Math.min(hoveredRemark.rect.left + 30, window.innerWidth - 380))}px`,
+            zIndex: 99999
+          }}
+          className="pointer-events-none animate-in fade-in zoom-in-95 duration-150 max-w-sm sm:max-w-md w-full drop-shadow-2xl"
+        >
+          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3.5 border-2 border-amber-400 shadow-2xl space-y-2">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1 rounded-md bg-amber-400/20 text-amber-400">
+                  <MessageSquare size={13} />
+                </div>
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
+                  Ticket Remarks
+                </span>
+                <span className="text-[10px] font-mono text-slate-300 font-bold">
+                  ({hoveredRemark.transId})
+                </span>
+              </div>
+              {hoveredRemark.ageDays !== null && (
+                <span className="text-[10px] font-mono font-bold bg-rose-500/30 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-full">
+                  {hoveredRemark.ageDays}d overdue
+                </span>
+              )}
+            </div>
+
+            <div className="text-xs text-slate-100 font-medium leading-relaxed bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/60 whitespace-pre-wrap break-words">
+              "{hoveredRemark.remark}"
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5 font-mono">
+              <span>Added by <strong className="text-slate-200">{hoveredRemark.author || 'Staff'}</strong></span>
+              {hoveredRemark.updatedAt && (
+                <span>{new Date(hoveredRemark.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
