@@ -4,7 +4,7 @@ import {
   FileText, Landmark, CheckCircle2, Search, AlertCircle,
   Eye, EyeOff, UserCheck, RefreshCw, Check, Image as ImageIcon,
   ChevronRight, QrCode, Building2, ShieldAlert, AlertTriangle,
-  MessageSquare, MessageSquarePlus, MessageSquareText
+  MessageSquare, MessageSquarePlus, MessageSquareText, User, Clock
 } from 'lucide-react';
 import IncidentReportModal from '../../components/winnings/IncidentReportModal';
 import UnclaimedRemarksModal from '../../components/winnings/UnclaimedRemarksModal';
@@ -672,49 +672,77 @@ export default function UnclaimedRegistry({
         />
       )}
 
-      {/* Portal Tooltip: Revealed only when cursor points at a row with remarks */}
+      {/* Portal Tooltip: Pag-IBIG Navy & Gold Template */}
       {hoveredRemark && typeof document !== 'undefined' && createPortal(
         <div
           style={{
             position: 'fixed',
-            top: hoveredRemark.rect.top > 140
+            top: hoveredRemark.rect.top > 160
               ? `${hoveredRemark.rect.top - 12}px`
               : `${hoveredRemark.rect.bottom + 12}px`,
-            transform: hoveredRemark.rect.top > 140 ? 'translateY(-100%)' : 'none',
-            left: `${Math.max(16, Math.min(hoveredRemark.rect.left + 30, window.innerWidth - 380))}px`,
+            transform: hoveredRemark.rect.top > 160 ? 'translateY(-100%)' : 'none',
+            left: `${Math.max(20, Math.min(hoveredRemark.rect.left + 50, window.innerWidth - 440))}px`,
             zIndex: 99999
           }}
           className="pointer-events-none animate-in fade-in zoom-in-95 duration-150 max-w-sm sm:max-w-md w-full drop-shadow-2xl"
         >
-          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3.5 border-2 border-amber-400 shadow-2xl space-y-2">
-            <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded-md bg-amber-400/20 text-amber-400">
-                  <MessageSquare size={13} />
+          <div className="bg-white rounded-2xl border border-blue-200/90 shadow-2xl overflow-hidden text-slate-800">
+            {/* Pag-IBIG Navy Header with Gold Accent Border */}
+            <div className="bg-[#002B66] text-white px-4 py-2.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-1.5 bg-[#FFD700] text-[#002B66] rounded-xl font-black shadow-xs shrink-0">
+                  <MessageSquare size={14} className="stroke-[2.5]" />
                 </div>
-                <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
-                  Ticket Remarks
-                </span>
-                <span className="text-[10px] font-mono text-slate-300 font-bold">
-                  ({hoveredRemark.transId})
-                </span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-white truncate">
+                      Ticket Remarks
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-[#FFD700] bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-800/80 shrink-0">
+                      {hoveredRemark.transId}
+                    </span>
+                  </div>
+                  <p className="text-[9.5px] text-blue-200 font-semibold tracking-wide">
+                    Operational Ledger Justification
+                  </p>
+                </div>
               </div>
               {hoveredRemark.ageDays !== null && (
-                <span className="text-[10px] font-mono font-bold bg-rose-500/30 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-mono font-black bg-rose-600 text-white px-2 py-0.5 rounded-full shadow-2xs shrink-0">
                   {hoveredRemark.ageDays}d overdue
                 </span>
               )}
             </div>
 
-            <div className="text-xs text-slate-100 font-medium leading-relaxed bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/60 whitespace-pre-wrap break-words">
-              "{hoveredRemark.remark}"
-            </div>
+            {/* Pag-IBIG Card Body with Navy Left Accent Stripe */}
+            <div className="p-3.5 space-y-2.5 bg-slate-50/70">
+              <div className="bg-white p-3 rounded-xl border border-blue-200/80 border-l-[5px] border-l-[#002B66] shadow-xs">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Official Remarks / Reason:
+                  </span>
+                  <span className="text-[9px] font-bold text-[#002B66] bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                    Verified Note
+                  </span>
+                </div>
+                <p className="text-xs text-slate-800 font-semibold leading-relaxed italic whitespace-pre-wrap break-words">
+                  "{hoveredRemark.remark}"
+                </p>
+              </div>
 
-            <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5 font-mono">
-              <span>Added by <strong className="text-slate-200">{hoveredRemark.author || 'Staff'}</strong></span>
-              {hoveredRemark.updatedAt && (
-                <span>{new Date(hoveredRemark.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-              )}
+              {/* Pag-IBIG Details Footer */}
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 font-mono">
+                <span className="flex items-center gap-1.5">
+                  <User size={12} className="text-[#002B66] shrink-0" />
+                  <span>Encoded by <strong className="text-slate-900 font-sans">{hoveredRemark.author || 'Staff'}</strong></span>
+                </span>
+                {hoveredRemark.updatedAt && (
+                  <span className="flex items-center gap-1 text-slate-400">
+                    <Clock size={11} className="text-[#002B66] shrink-0" />
+                    <span>{new Date(hoveredRemark.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>,
