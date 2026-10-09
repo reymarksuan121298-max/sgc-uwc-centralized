@@ -578,7 +578,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
         let query = supabase
           .from('returned_winnings')
           .select('*')
-          .or('isUnderSettlement.eq.true,settlementStatus.neq.null')
+          .not('settlementTerms', 'is', null)
           .order('created_at', { ascending: false });
 
         if (selectedSubOfficeFilter !== 'ALL') {
@@ -590,7 +590,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
         if (error) {
           console.warn('Failed to load settlement tickets:', error.message);
         } else {
-          setSavedAgreementsList(data || []);
+          const actualAgreements = (data || []).filter((item) => Boolean(item.settlementTerms));
+          setSavedAgreementsList(actualAgreements);
         }
       } catch (err) {
         console.warn('Failed to load settlement tickets:', err);
