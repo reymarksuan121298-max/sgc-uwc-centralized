@@ -13,7 +13,8 @@ import {
   ChevronDown,
   ChevronUp,
   Building2,
-  Search
+  Search,
+  CheckCircle2
 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
@@ -271,8 +272,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   // Filtered available tickets based on sub-office scope and active status
   const availableTickets = filteredData.filter((item) => {
-    // Hide tickets that are already under settlement
-    if (item.isUnderSettlement) return false;
+    // Hide tickets that are already under settlement or already settled
+    if (item.isUnderSettlement || item.settlementStatus === 'FULLY PAID' || Boolean(item.settlementTerms)) return false;
 
     // Do not fetch / include AWOL, Pull-out, or Terminated records for settlement agreement
     if (isInactiveTeller(item)) return false;
@@ -577,7 +578,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
         let query = supabase
           .from('returned_winnings')
           .select('*')
-          .eq('isUnderSettlement', true)
+          .or('isUnderSettlement.eq.true,settlementStatus.neq.null')
           .order('created_at', { ascending: false });
 
         if (selectedSubOfficeFilter !== 'ALL') {
@@ -660,12 +661,13 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     const paidAmount = payments.reduce((sum, payment) => sum + parseFloat(payment.paymentAmount || 0), 0);
     // All amounts come from returned_winnings camelCase fields
     const totalAmount = parseFloat(item.totalInstallmentAmount || item.winAmount || 0);
-    const status = paidAmount >= totalAmount && totalAmount > 0
-      ? 'FULLY PAID'
+    const isFullyPaid = (paidAmount >= totalAmount && totalAmount > 0) || item.settlementStatus === 'FULLY PAID';
+    const status = isFullyPaid
+      ? 'UNREMITTED'
       : paidAmount > 0
         ? 'PARTIAL'
         : item.settlementStatus || 'PENDING';
-    return { payments, paidAmount, remainingAmount: Math.max(totalAmount - paidAmount, 0), totalAmount, status };
+    return { payments, paidAmount, remainingAmount: Math.max(totalAmount - paidAmount, 0), totalAmount, status, isFullyPaid };
   };
 
   const openPaymentForm = (item) => {
@@ -713,11 +715,23 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
     const { paidAmount, totalAmount } = getPaymentSummary(paymentModalItem);
     const updatedPaidAmount = paidAmount + amount;
-    const settlementStatus = updatedPaidAmount >= totalAmount && totalAmount > 0 ? 'FULLY PAID' : 'PARTIAL';
-    // Update settlementStatus on the returned_winnings row directly
+    const isFullyPaid = updatedPaidAmount >= totalAmount && totalAmount > 0;
+    const settlementStatus = isFullyPaid ? 'FULLY PAID' : 'PARTIAL';
+
+    const updatePayload = {
+      settlementStatus,
+      updated_at: new Date().toISOString()
+    };
+
+    if (isFullyPaid) {
+      updatePayload.isUnderSettlement = false;
+      updatePayload.receipt_status = 'NO_RECEIPT';
+    }
+
+    // Update settlementStatus and ticket unremitted status on the returned_winnings row directly
     const { error: statusError } = await supabase
       .from('returned_winnings')
-      .update({ settlementStatus })
+      .update(updatePayload)
       .eq('id', paymentModalItem.id);
 
     if (statusError) {
@@ -895,7 +909,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={`${status === 'FULLY PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'} border px-2.5 py-1 rounded-lg text-[10px] font-black uppercase`}>
+                        <span className={`${status === 'UNREMITTED' || status === 'FULLY PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : status === 'PARTIAL' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-700 border-slate-200'} border px-2.5 py-1 rounded-lg text-[10px] font-black uppercase flex items-center gap-1`}>
+                          {(status === 'UNREMITTED' || status === 'FULLY PAID') && <CheckCircle2 size={11} className="text-emerald-600" />}
                           {status}
                         </span>
                         <span className="text-xs font-mono font-bold text-slate-500 flex items-center gap-1">
@@ -936,13 +951,19 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                         <span className="font-mono font-bold text-[#002B66]">PHP {remainingAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       </div>
                       <div className="flex items-end justify-start sm:justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openPaymentForm(item)}
-                          className="flex items-center gap-1.5 rounded-lg bg-[#002B66] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#FFD700] shadow-sm transition-all hover:bg-blue-900 cursor-pointer"
-                        >
-                          <CreditCard size={14} /> Record Payment
-                        </button>
+                        {remainingAmount <= 0 ? (
+                          <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700">
+                            <CheckCircle2 size={13} className="text-emerald-600" /> Fully Paid • Unremitted
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openPaymentForm(item)}
+                            className="flex items-center gap-1.5 rounded-lg bg-[#002B66] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#FFD700] shadow-sm transition-all hover:bg-blue-900 cursor-pointer"
+                          >
+                            <CreditCard size={14} /> Record Payment
+                          </button>
+                        )}
                       </div>
                     </div>}
 

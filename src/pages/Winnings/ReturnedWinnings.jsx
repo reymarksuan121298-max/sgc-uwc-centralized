@@ -451,7 +451,7 @@ export default function ReturnedWinnings({
             <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-700">
               {Object.keys(activeGroupedData).length > 0 ? (
                 Object.entries(activeGroupedData).map(([username, items]) => {
-                  const unremittedInGroup = items.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
+                  const unremittedInGroup = items.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && (!i.isUnderSettlement || i.settlementStatus === 'FULLY PAID'));
                   const subtotalBet = unremittedInGroup.reduce((sum, i) => sum + parseFloat(i.betAmount ?? 0), 0);
                   const subtotalWin = unremittedInGroup.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
 
@@ -474,7 +474,7 @@ export default function ReturnedWinnings({
                       {items.map((item, i) => {
                         const transId = item.transactionId || `REC-${i + 1}`;
                         const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
-                        const isUnderSettlement = Boolean(item.isUnderSettlement);
+                        const isUnderSettlement = Boolean(item.isUnderSettlement && item.settlementStatus !== 'FULLY PAID');
                         const recordTimestamp = item.date_returned || item.created_at;
                         const isRemitted = Boolean(item.receipt_status && item.receipt_status !== 'NO_RECEIPT');
                         const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
@@ -626,7 +626,7 @@ export default function ReturnedWinnings({
           )}
           {Object.keys(activeGroupedData).length > 0 ? (
             Object.entries(activeGroupedData).map(([username, items]) => {
-              const unremittedInGroup = items.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && !i.isUnderSettlement);
+              const unremittedInGroup = items.filter(i => (!i.receipt_status || i.receipt_status === 'NO_RECEIPT') && (!i.isUnderSettlement || i.settlementStatus === 'FULLY PAID'));
 
               return (
                 <div key={username} className="space-y-2">
@@ -643,7 +643,7 @@ export default function ReturnedWinnings({
                   {items.map((item, i) => {
                     const transId = item.transactionId || `REC-${i + 1}`;
                     const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
-                    const isUnderSettlement = Boolean(item.isUnderSettlement);
+                    const isUnderSettlement = Boolean(item.isUnderSettlement && item.settlementStatus !== 'FULLY PAID');
                     const recordTimestamp = item.date_returned || item.created_at;
                     const isRemitted = Boolean(item.receipt_status && item.receipt_status !== 'NO_RECEIPT');
                     const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';

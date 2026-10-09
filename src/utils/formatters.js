@@ -160,7 +160,7 @@ export const isPendingDeletionRecord = (item) => {
 export const isEligibleForRemittanceProof = (item) => {
   if (!item) return false;
   if (item.receipt_status && item.receipt_status !== 'NO_RECEIPT') return false;
-  if (item.isUnderSettlement) return false;
+  if (item.isUnderSettlement && item.settlementStatus !== 'FULLY PAID') return false;
   if (isInactiveTellerRecord(item)) return false;
   if (isPendingDeletionRecord(item)) return false;
   return true;
