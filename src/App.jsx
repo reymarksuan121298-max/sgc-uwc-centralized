@@ -16,6 +16,7 @@ import HrApprovalModal from './components/winnings/HrApprovalModal';
 import AgentMascotAvatar from './components/chat/AgentMascotAvatar';
 import { notificationService } from './services/notificationService';
 import { systemService } from './services/systemService';
+import { startSettlementReminderCron } from './services/settlementReminderService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { isIliganAllowedSupervisor, isIliganSetAAllowedSupervisor, isLalaOfficeAllowedSupervisor, isBaloiOfficeAllowedSupervisor } from './services/supervisorService';
 
@@ -257,6 +258,22 @@ export default function App() {
       console.warn(e);
     }
   }, [currentUser]);
+
+  // Automated Cron Job: Periodically evaluates active settlement installment due dates and dispatches reminder notifications
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const stopCron = startSettlementReminderCron({
+      currentUser,
+      appendNotification,
+      triggerNotificationPopup,
+      intervalMs: 30 * 60 * 1000 // Run every 30 minutes
+    });
+
+    return () => {
+      stopCron();
+    };
+  }, [currentUser, appendNotification, triggerNotificationPopup]);
 
   const isSuperAdmin = isSuperAdminRole(currentUser?.role);
   const isSSR = isSSRRole(currentUser?.role);
