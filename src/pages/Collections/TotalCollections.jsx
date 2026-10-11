@@ -12,6 +12,13 @@ import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests } from '../../utils/permissions';
 import { generateRemittanceSerial, getTicketTransId } from '../../utils/formatters';
 
+// Parse a numeric field, preserving real zero values. Falls back only when the
+// value is missing/blank/NaN (avoids `parseFloat(x) || default` treating 0 as absent).
+const safeNum = (val, fallback) => {
+  const n = typeof val === 'string' && val.trim() === '' ? NaN : parseFloat(val);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 export default function TotalCollections({
   returnedData = [],
   currentUser,
@@ -181,27 +188,35 @@ export default function TotalCollections({
     let totalCollectorComm = 0;
 
     const branchSummary = {};
-    const seenSrns = new Set();
+    // Per-SRN batch metadata. The authoritative net figure comes from the attached
+    // remittance receipt (remittance_amount - deposited_charges); ticket sums are
+    // only a fallback when no receipt exists for the (generated) serial.
+    const srnMetas = {};
     let totalDepositedCharges = 0;
+    let totalReceiptAmount = 0;
 
     filteredList.forEach(item => {
       const ticketTransId = getTicketTransId(item, item.transactionId || '');
       const srn = item.batch_serial_no || generateRemittanceSerial(item.sub_office || 'Mandaue Central', ticketTransId, item.created_at || item.date_returned) || 'UNASSIGNED-SRN';
 
-      if (!seenSrns.has(srn)) {
-        seenSrns.add(srn);
+      if (!srnMetas[srn]) {
         const receipt = receiptsBySrn[srn] || (item.batch_serial_no ? receiptsBySrn[item.batch_serial_no] : null);
-        if (receipt?.deposited_charges) {
-          totalDepositedCharges += parseFloat(receipt.deposited_charges || 0);
-        }
+        srnMetas[srn] = {
+          hasReceipt: Boolean(receipt),
+          ticketOut: 0,
+          receiptAmount: receipt ? (parseFloat(receipt.remittance_amount) || 0) : 0,
+          charges: receipt ? (parseFloat(receipt.deposited_charges) || 0) : 0
+        };
+        totalReceiptAmount += srnMetas[srn].receiptAmount;
+        totalDepositedCharges += srnMetas[srn].charges;
       }
 
       const win = parseFloat(item.winAmount || 0);
-      const out = parseFloat(item.return_amount_out) || win;
-      const adm = parseFloat(item.admin_commission) || (win * 0.50);
-      const agt = parseFloat(item.agent_commission) || (win * 0.30);
-      const stf = parseFloat(item.staff_commission) || (win * 0.10);
-      const col = parseFloat(item.collector_commission) || (win * 0.10);
+      const out = safeNum(item.return_amount_out, win);
+      const adm = safeNum(item.admin_commission, win * 0.50);
+      const agt = safeNum(item.agent_commission, win * 0.30);
+      const stf = safeNum(item.staff_commission, win * 0.10);
+      const col = safeNum(item.collector_commission, win * 0.10);
 
       totalWin += win;
       totalReturnOut += out;
@@ -209,6 +224,7 @@ export default function TotalCollections({
       totalAgentComm += agt;
       totalStaffComm += stf;
       totalCollectorComm += col;
+      srnMetas[srn].ticketOut += out;
 
       const branch = item.sub_office || 'Mandaue Central';
       if (!branchSummary[branch]) {
@@ -223,12 +239,17 @@ export default function TotalCollections({
       branchSummary[branch].collector += col;
     });
 
-    const netReturnOut = Math.max(0, totalReturnOut - totalDepositedCharges);
+    // Net remittance = sum over SRN batches of (receipt remittance_amount - charges),
+    // falling back to the batch ticket return-out sum only when no receipt is linked.
+    const netReturnOut = Object.values(srnMetas).reduce((sum, m) => {
+      return sum + (m.hasReceipt ? Math.max(0, m.receiptAmount - m.charges) : Math.max(0, m.ticketOut));
+    }, 0);
 
     return {
       count: filteredList.length,
       totalWin,
       totalDepositedCharges,
+      totalReceiptAmount,
       totalReturnOut: netReturnOut,
       grossReturnOut: totalReturnOut,
       totalAdminComm,
@@ -261,11 +282,11 @@ export default function TotalCollections({
         };
       }
       const win = parseFloat(item.winAmount || 0);
-      const out = parseFloat(item.return_amount_out) || win;
-      const adm = parseFloat(item.admin_commission) || (win * 0.50);
-      const agt = parseFloat(item.agent_commission) || (win * 0.30);
-      const stf = parseFloat(item.staff_commission) || (win * 0.10);
-      const col = parseFloat(item.collector_commission) || (win * 0.10);
+      const out = safeNum(item.return_amount_out, win);
+      const adm = safeNum(item.admin_commission, win * 0.50);
+      const agt = safeNum(item.agent_commission, win * 0.30);
+      const stf = safeNum(item.staff_commission, win * 0.10);
+      const col = safeNum(item.collector_commission, win * 0.10);
 
       map[srn].totalWin += win;
       map[srn].totalReturnOut += out;
@@ -276,12 +297,16 @@ export default function TotalCollections({
       map[srn].items.push(item);
     });
 
-    // Deduct deposited charges from receipt for each SRN batch
+    // Net remittance per batch: use the authoritative receipt amount
+    // (remittance_amount - charges); fall back to the batch ticket
+    // return-out sum only when no receipt is linked to the SRN.
     Object.keys(map).forEach(srn => {
       const receipt = receiptsBySrn[srn] || (map[srn].items[0]?.batch_serial_no ? receiptsBySrn[map[srn].items[0].batch_serial_no] : null);
       const charges = parseFloat(receipt?.deposited_charges || 0);
       map[srn].depositedCharges = charges;
-      map[srn].netRemittance = Math.max(0, map[srn].totalWin - charges);
+      map[srn].netRemittance = receipt
+        ? Math.max(0, (parseFloat(receipt.remittance_amount) || 0) - charges)
+        : Math.max(0, map[srn].totalReturnOut - charges);
     });
 
     return map;
@@ -373,10 +398,10 @@ export default function TotalCollections({
       const transId = getTicketTransId(item, rawTransId);
 
       const win = parseFloat(item.winAmount || 0);
-      const adm = (parseFloat(item.admin_commission) || (win * 0.50)).toFixed(2);
-      const agt = (parseFloat(item.agent_commission) || (win * 0.30)).toFixed(2);
-      const stf = (parseFloat(item.staff_commission) || (win * 0.10)).toFixed(2);
-      const col = (parseFloat(item.collector_commission) || (win * 0.10)).toFixed(2);
+      const adm = (safeNum(item.admin_commission, win * 0.50)).toFixed(2);
+      const agt = (safeNum(item.agent_commission, win * 0.30)).toFixed(2);
+      const stf = (safeNum(item.staff_commission, win * 0.10)).toFixed(2);
+      const col = (safeNum(item.collector_commission, win * 0.10)).toFixed(2);
 
       return [
         `"${srn}"`,
@@ -903,10 +928,10 @@ export default function TotalCollections({
                         {group.items.map((item, idx) => {
                           const transId = getTicketTransId(item, item.transactionId || 'N/A');
                           const win = parseFloat(item.winAmount || 0);
-                          const adm = parseFloat(item.admin_commission) || (win * 0.50);
-                          const agt = parseFloat(item.agent_commission) || (win * 0.30);
-                          const stf = parseFloat(item.staff_commission) || (win * 0.10);
-                          const col = parseFloat(item.collector_commission) || (win * 0.10);
+                          const adm = safeNum(item.admin_commission, win * 0.50);
+                          const agt = safeNum(item.agent_commission, win * 0.30);
+                          const stf = safeNum(item.staff_commission, win * 0.10);
+                          const col = safeNum(item.collector_commission, win * 0.10);
 
                           return (
                             <tr key={item.id || `${srnKey}-${idx}`} className="hover:bg-slate-50 transition-colors">

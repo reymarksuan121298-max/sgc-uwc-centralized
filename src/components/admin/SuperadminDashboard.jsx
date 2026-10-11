@@ -77,8 +77,9 @@ export default function SuperadminDashboard({
       .filter(r => r.verification_status === 'VERIFIED')
       .reduce((sum, r) => sum + parseFloat(r.remittance_amount || 0), 0);
 
-    // 4-Tier Commission Matrix based on Total Collections / Remittances
-    const totalCollections = totalReceiptsAmount;
+    // 4-Tier Commission Matrix based on Verified Remittances only.
+    // PENDING / REJECTED receipts must not inflate commission pools.
+    const totalCollections = verifiedRemittanceTotal;
     const totalAdminComm = totalCollections * 0.50;
     const totalAgentComm = totalCollections * 0.30;
     const totalStaffComm = totalCollections * 0.10;
@@ -109,9 +110,10 @@ export default function SuperadminDashboard({
         }
       });
 
-      // Remittance collections for this sub-office
+      // Remittance collections for this sub-office (verified receipts only)
       let officeReceiptsAmount = 0;
       activeReceipts.forEach((r) => {
+        if (r.verification_status !== 'VERIFIED') return;
         const rOffice = (r.sub_office || '').toLowerCase().trim();
         const targetOffice = officeName.toLowerCase().trim();
         if (rOffice === targetOffice || (targetOffice.includes('mandaue') && (!rOffice || rOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === rOffice)))) {

@@ -162,7 +162,8 @@ export async function queryGatewayLive(searchKey, targetDate, gatewayEndpoints =
           if (match) {
             return normalizeTicketRecord(match, searchKey, isClaimVal === 1 ? 'CLAIMED' : 'UNCLAIMED');
           }
-        } catch {
+        } catch (err) {
+          console.warn(`Gateway lookup failed for ${cfg.name || cfg.baseUrl || 'endpoint'}:`, err?.message || err);
           // continue checking other endpoints
         }
       }
@@ -288,8 +289,13 @@ export async function generateBotResponseAsync(userInput, { unclaimedData = [], 
   const rawInput = (userInput || '').trim();
   const query = rawInput.toLowerCase();
 
-  // Potential Transaction ID check
-  const isLikelyTransId = /^[A-Za-z0-9\-_]{5,}$/.test(rawInput) || /\d{4,}/.test(rawInput);
+  // Potential Transaction ID check. Require a shape closer to real ticket IDs
+  // (6-digit prefix + suffix, or a longer alphanumeric/digit run) so casual chat
+  // messages like "status" or "2026" don't fire off external gateway lookups.
+  const isLikelyTransId =
+    /^[0-9]{6}[\-\_][A-Za-z0-9]{2,}$/.test(rawInput) ||
+    /^[A-Za-z0-9\-_]{8,}$/.test(rawInput) ||
+    /^[0-9]{6,}$/.test(rawInput);
 
   if (isLikelyTransId && !['hello', 'helow', 'hi', 'help', 'good'].includes(query)) {
     const result = await verifyTicketAsync(rawInput, { unclaimedData, returnedData, gatewayEndpoints });

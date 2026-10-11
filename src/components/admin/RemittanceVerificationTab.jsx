@@ -187,6 +187,9 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
       if (rErr) throw rErr;
 
       // 2. Update returned_winnings with aligned batch_serial_no and receipt_status: 'VERIFIED'
+      // (Match only on the real ticket namespaces — batch serial and transactionId.
+      // reference_number is a bank/payment reference, NOT a ticket serial, so it
+      // must never be used to re-serialize tickets.)
       if (receipt.batch_serial_no) {
         await supabase
           .from('returned_winnings')
@@ -204,15 +207,6 @@ export default function RemittanceVerificationTab({ currentUser, onDataUpdated }
             batch_serial_no: formattedSerial
           })
           .eq('transactionId', receipt.transactionId);
-      }
-      if (receipt.reference_number) {
-        await supabase
-          .from('returned_winnings')
-          .update({
-            receipt_status: 'VERIFIED',
-            batch_serial_no: formattedSerial
-          })
-          .eq('batch_serial_no', receipt.reference_number);
       }
 
       // 3. Log into audit trail

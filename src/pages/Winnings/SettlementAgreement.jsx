@@ -21,6 +21,7 @@ import { supabase } from '../../config/supabaseClient';
 import ModernDropdown from '../../components/common/ModernDropdown';
 import TransactionSelectSearch from '../../components/winnings/TransactionSelectSearch';
 import InstallmentDatePicker from '../../components/winnings/InstallmentDatePicker';
+import { getLocalDateString } from '../../utils/dateFormatting';
 
 const FREQUENCY_OPTIONS = [
   {
@@ -272,10 +273,12 @@ const createInstallmentRows = ({
   const customAmt = parseFloat(amountPerInstallment);
   let finalCount = parseInt(count, 10);
 
-  if (!isNaN(customAmt) && customAmt > 0) {
-    finalCount = Math.max(1, Math.ceil(winAmt / customAmt));
-  } else if (isNaN(finalCount) || finalCount <= 0) {
-    finalCount = 10;
+  // `count` (the total number of installments) is the source of truth. The count
+  // is only derived from amount-per-installment when no explicit count was given,
+  // so an exact count picked by the user (e.g. 3 or 7) is never silently rounded
+  // up by installments-vs-amount division.
+  if (isNaN(finalCount) || finalCount <= 0) {
+    finalCount = (!isNaN(customAmt) && customAmt > 0) ? Math.max(1, Math.ceil(winAmt / customAmt)) : 10;
   }
 
   finalCount = Math.min(100, Math.max(1, finalCount));
@@ -288,14 +291,22 @@ const createInstallmentRows = ({
     if (preserveExisting && existingRows[index]?.amountDue !== undefined && existingRows[index]?.amountDue !== '') {
       rowAmount = existingRows[index].amountDue;
     } else if (!isNaN(customAmt) && customAmt > 0) {
-      if (index === finalCount - 1 && remaining <= customAmt) {
+      // Fixed amount per installment: always absorb any leftover into the last row
+      // so the scheduled total always equals the win amount.
+      if (index === finalCount - 1) {
         rowAmount = Math.max(0, remaining).toFixed(2);
       } else {
         rowAmount = customAmt.toFixed(2);
         remaining -= customAmt;
       }
     } else {
-      rowAmount = defaultAmount;
+      // Equal split; round-off remainder is absorbed into the final installment
+      if (index === finalCount - 1) {
+        rowAmount = Math.max(0, remaining).toFixed(2);
+      } else {
+        rowAmount = defaultAmount;
+        remaining -= parseFloat(defaultAmount) || 0;
+      }
     }
 
     return {
@@ -305,6 +316,25 @@ const createInstallmentRows = ({
       status: existingRows[index]?.status || ''
     };
   });
+};
+
+// Applies a payment to the agreement's installments, marking the earliest unpaid
+// installment(s) covered by the amount as PAID. Partial payments leave the
+// installment flagged unpaid so due-date reminders keep working correctly.
+const applyPaymentToInstallments = (terms, paidAmount) => {
+  if (!terms || !Array.isArray(terms.installments) || terms.installments.length === 0) return terms;
+  let remaining = Number(paidAmount) || 0;
+  const updated = terms.installments.map((inst) => {
+    if (remaining <= 0) return inst;
+    const isAlreadyPaid = String(inst.status || '').toUpperCase().trim() === 'PAID';
+    if (isAlreadyPaid) return inst;
+    const due = parseFloat(inst.amountDue || 0);
+    if (!(due > 0)) return inst;
+    const isCovered = remaining >= due - 0.005;
+    remaining = Math.max(0, remaining - due);
+    return isCovered ? { ...inst, status: 'PAID' } : inst;
+  });
+  return { ...terms, installments: updated };
 };
 
 export default function SettlementAgreement({ filteredData = [], onSaveAgreement, initialTicketId = '', currentUser = null }) {
@@ -398,7 +428,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const [paymentModalItem, setPaymentModalItem] = useState(null);
   const [viewFormItem, setViewFormItem] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(getLocalDateString());
   const [receivedBy, setReceivedBy] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentError, setPaymentError] = useState('');
@@ -431,9 +461,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   // States for Editable Form
   const [selectedTicketId, setSelectedTicketId] = useState(initialTicketId || '');
-  const [agreementDate, setAgreementDate] = useState(new Date().toISOString().split('T')[0]);
+  const [agreementDate, setAgreementDate] = useState(getLocalDateString());
   const [reason, setReason] = useState(REASON_TEMPLATES[0].text);
-  const [installmentsCount, setInstallmentsCount] = useState(10);
+  const initialWinAmount = parseFloat(availableTickets[0]?.winAmount || filteredData[0]?.winAmount || 5000);
+  // Keep the default installment count consistent with the ₱500 / installment default
+  const initialInstallmentsCount = Math.max(1, Math.min(100, Math.ceil(initialWinAmount / 500)));
+  const [installmentsCount, setInstallmentsCount] = useState(initialInstallmentsCount);
   const [customAmount, setCustomAmount] = useState('500');
   const [frequency, setFrequency] = useState('weekly');
 
@@ -447,10 +480,10 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   const [installments, setInstallments] = useState(() =>
     createInstallmentRows({
-      count: 10,
+      count: initialInstallmentsCount,
       amountPerInstallment: '500',
-      winAmount: parseFloat(availableTickets[0]?.winAmount || filteredData[0]?.winAmount || 5000),
-      agreementDate: new Date().toISOString().split('T')[0],
+      winAmount: initialWinAmount,
+      agreementDate: getLocalDateString(),
       frequency: 'weekly'
     })
   );
@@ -795,7 +828,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const openPaymentForm = (item) => {
     setPaymentModalItem(item);
     setPaymentAmount('');
-    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentDate(getLocalDateString());
     setReceivedBy('');
     setPaymentNotes('');
     setPaymentError(item.id ? '' : 'This agreement has no database ID, so a payment cannot be recorded.');
@@ -835,6 +868,21 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       return;
     }
 
+    // Persist per-installment PAID flags inside settlementTerms so due-date
+    // reminders stop firing for installments that have been settled.
+    let refreshedTerms = null;
+    const { data: termsRow, error: termsErr } = await supabase
+      .from('returned_winnings')
+      .select('settlementTerms')
+      .eq('id', paymentModalItem.id)
+      .maybeSingle();
+    if (!termsErr && termsRow?.settlementTerms) {
+      const parsedTerms = parseSettlementTerms(termsRow.settlementTerms);
+      if (parsedTerms && Array.isArray(parsedTerms.installments)) {
+        refreshedTerms = JSON.stringify(applyPaymentToInstallments(parsedTerms, amount));
+      }
+    }
+
     const { paidAmount, totalAmount } = getPaymentSummary(paymentModalItem);
     const updatedPaidAmount = paidAmount + amount;
     const isFullyPaid = updatedPaidAmount >= totalAmount && totalAmount > 0;
@@ -844,6 +892,10 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       settlementStatus,
       updated_at: new Date().toISOString()
     };
+
+    if (refreshedTerms) {
+      updatePayload.settlementTerms = refreshedTerms;
+    }
 
     if (isFullyPaid) {
       updatePayload.isUnderSettlement = false;

@@ -352,6 +352,54 @@ export default function App() {
     setActiveTab('settlement');
   };
 
+  // Chat room scoping: whether the current user belongs to the room a message was
+  // posted in. Prevents unread counts / popups leaking across unrelated rooms.
+  const isUserInChatRoom = (msg, cu) => {
+    if (!cu) return false;
+    const myId = String(cu.id || '').toLowerCase().trim();
+    const myUsername = String(cu.username || '').toLowerCase().trim();
+    const myName = String(cu.full_name || cu.fullName || '').toLowerCase().trim();
+
+    const roomId = String(msg.room_id || msg.ocr_data?.roomId || '').toLowerCase().trim();
+    const isGroup = Boolean(msg.ocr_data?.isGroup) || roomId.startsWith('group-');
+
+    if (isGroup) {
+      // Default "All Branches SSR Desk" is open to all active accounts
+      if (roomId === 'group-all-branches-ssr') return true;
+
+      // Custom group membership mirrors localStorage state written by the messenger
+      let groups = [];
+      try {
+        groups = JSON.parse(localStorage.getItem('stl_custom_chat_groups') || '[]');
+      } catch { /* ignore */ }
+      const group = groups.find((g) => String(g.id || '').toLowerCase().trim() === roomId);
+      if (group) {
+        const officeMatch = group.sub_office === 'All' || (cu.sub_office && group.sub_office === cu.sub_office);
+        const memberMatch = (group.member_ids || []).some((mid) => {
+          const m = String(mid || '').toLowerCase().trim();
+          return m && (m === myId || m === myUsername || m === myName);
+        });
+        return officeMatch || memberMatch;
+      }
+
+      // Unknown/legacy group room: conservative sub-office scoping
+      const msgOffice = String(msg.sub_office || '').toLowerCase().trim();
+      const myOffice = String(cu.sub_office || '').toLowerCase().trim();
+      return !msgOffice || msgOffice === 'all' || (myOffice && msgOffice === myOffice);
+    }
+
+    // Direct 1-on-1: I belong when I am the addressed recipient
+    const rId = String(msg.recipient_id || msg.ocr_data?.recipient_id || '').toLowerCase().trim();
+    const rName = String(msg.recipient_name || msg.ocr_data?.recipient_name || '').toLowerCase().trim();
+    if (rId || rName) {
+      return (rId && (rId === myId || rId === myUsername || rId === myName)) ||
+        (rName && (rName === myId || rName === myUsername || rName === myName));
+    }
+
+    // Legacy rows without recipient indexing: attribute via the room id
+    return Boolean(roomId) && (roomId === myId || roomId === myUsername);
+  };
+
   const fetchPendingChatCount = useCallback(async () => {
     if (!currentUser) return;
     try {
@@ -363,11 +411,13 @@ export default function App() {
       // Query unread chats sent by others or pending verification
       const { data, error } = await supabase
         .from('ticket_verification_chats')
-        .select('id, sender_id, sender_name, verification_status, created_at')
+        .select('id, sender_id, sender_name, recipient_id, recipient_name, room_id, sub_office, ocr_data, verification_status, created_at')
         .gt('created_at', lastRead);
 
       if (!error && Array.isArray(data)) {
         const unreadCount = data.filter(msg => {
+          // Only count messages from rooms the current user actually belongs to
+          if (!isUserInChatRoom(msg, currentUser)) return false;
           const isSender = (currentUserId && msg.sender_id === currentUserId) ||
             (msg.sender_name && String(msg.sender_name).trim().toLowerCase() === currentUserName);
           return !isSender || msg.verification_status === 'PENDING';
@@ -751,8 +801,8 @@ export default function App() {
             chunkEnd.setMonth(chunkEnd.getMonth() + 6);
             if (chunkEnd > futD) chunkEnd = futD;
             dateChunks.push({
-              from: currentStart.toISOString().split('T')[0],
-              to: chunkEnd.toISOString().split('T')[0]
+              from: getLocalDateString(currentStart),
+              to: getLocalDateString(chunkEnd)
             });
             currentStart = new Date(chunkEnd);
             currentStart.setDate(currentStart.getDate() + 1);
@@ -952,6 +1002,12 @@ export default function App() {
             const isMe = (myId && (senderId === myId || senderUsername === myId)) ||
               (myUsername && (senderId === myUsername || senderUsername === myUsername || senderName === myUsername)) ||
               (myName && (senderName === myName || senderId === myName));
+
+            // Only alert participants of the room this message was posted in
+            if (!isUserInChatRoom(payload.new, currentUser)) {
+              fetchPendingChatCount();
+              return;
+            }
 
             if (!isMe) {
               const sender = payload.new?.sender_name || 'SSR Agent';
@@ -1426,6 +1482,9 @@ export default function App() {
             installments: payload.installments,
             signatories: payload.signatories || null
           },
+          // Keep the row column in sync so sub-office scoping (reminder cron,
+          // saved-agreements list) resolves correctly without parsing JSONB.
+          sub_office: payload.ticket?.sub_office || payload.sub_office || 'Mandaue Central',
           totalInstallmentAmount: payload.totalInstallmentAmount,
           settlementStatus: 'PENDING',
           updated_at: new Date().toISOString()

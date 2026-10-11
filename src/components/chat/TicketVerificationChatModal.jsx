@@ -38,6 +38,15 @@ const getAvatarColor = (name = '', subOffice = '') => {
 
 const getUserAvatarColor = getAvatarColor;
 
+// OCR results embed a full-resolution data URL (`originalImage`) which is
+// redundant with the compressed `image_url` column and massively bloats the
+// persisted row. Drop it before storing into ocr_data.
+const stripOcrOriginalImage = (ocr) => {
+  if (!ocr) return {};
+  const { originalImage, ...rest } = ocr;
+  return rest;
+};
+
 // Client-side image compressor for rapid, lightweight ticket transfers
 const compressImageForChat = (file, maxWidth = 1280, maxHeight = 1280, quality = 0.8) => {
   return new Promise((resolve) => {
@@ -322,6 +331,7 @@ export default function TicketVerificationChatModal({
   const [partnerSeenInfo, setPartnerSeenInfo] = useState(null); // { userId, name, at, lastMsgId }
   const realtimeChannelRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const ocrRequestRef = useRef(0);
 
   // Clear seen state when switching contacts
   useEffect(() => {
@@ -527,24 +537,30 @@ export default function TicketVerificationChatModal({
   const processImageFile = async (file) => {
     if (!file) return;
 
+    // Guard against OCR race conditions: if the user picks another photo while a
+    // scan is in flight, the stale result must not overwrite the newer one.
+    const requestId = ++ocrRequestRef.current;
+
     setSelectedFile(file);
     setIsOcrScanning(true);
 
     try {
       // Compress image client-side to ensure small footprint & rapid delivery
       const compressedDataUrl = await compressImageForChat(file, 1280, 1280, 0.82);
-      setFilePreview(compressedDataUrl || null);
-
       const scanRes = await scanTicketImage(file);
+      if (requestId !== ocrRequestRef.current) return; // superseded by a newer scan
+      setFilePreview(compressedDataUrl || null);
       setOcrResult(scanRes);
     } catch (err) {
       console.error('OCR / Image Processing Error:', err);
       // Fallback to basic file reader if compression fails
       const reader = new FileReader();
-      reader.onloadend = () => setFilePreview(reader.result);
+      reader.onloadend = () => {
+        if (requestId === ocrRequestRef.current) setFilePreview(reader.result);
+      };
       reader.readAsDataURL(file);
     } finally {
-      setIsOcrScanning(false);
+      if (requestId === ocrRequestRef.current) setIsOcrScanning(false);
     }
   };
 
@@ -793,7 +809,7 @@ export default function TicketVerificationChatModal({
       message_text: text.trim() || null,
       image_url: filePreview || null,
       ocr_data: {
-        ...(ocrResult || {}),
+        ...(stripOcrOriginalImage(ocrResult)),
         roomId: roomId,
         isGroup: isGroupChat,
         sender_username: currentUser?.username || currentUser?.id,
