@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck, ArrowLeftRight, CreditCard, Users, CheckCircle2,
   Clock, AlertTriangle, TrendingUp, Building2, Smartphone, Landmark,
@@ -20,6 +20,9 @@ export default function SuperadminDashboard({
   const [dbSubOffices, setDbSubOffices] = useState([]);
   const [dbReceipts, setDbReceipts] = useState(receipts || []);
 
+  const subOfficesDebounceRef = useRef(null);
+  const receiptsDebounceRef = useRef(null);
+
   useEffect(() => {
     if (receipts && receipts.length > 0) {
       setDbReceipts(receipts);
@@ -31,7 +34,7 @@ export default function SuperadminDashboard({
       try {
         const { data: soData, error } = await supabase
           .from('sub_offices')
-          .select('*')
+          .select('id, name, location, status')
           .order('name', { ascending: true });
         if (!error && soData) {
           setDbSubOffices(soData);
@@ -45,7 +48,7 @@ export default function SuperadminDashboard({
       try {
         const { data: recData, error } = await supabase
           .from('remittance_receipts')
-          .select('*')
+          .select('id, sub_office, remittance_amount, deposited_charges, verification_status, created_at')
           .order('created_at', { ascending: false });
         if (!error && recData) {
           setDbReceipts(recData);
@@ -61,18 +64,22 @@ export default function SuperadminDashboard({
     const subOfficesChannel = supabase
       .channel('superadmin_sub_offices_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
-        fetchSubOffices();
+        if (subOfficesDebounceRef.current) clearTimeout(subOfficesDebounceRef.current);
+        subOfficesDebounceRef.current = setTimeout(() => fetchSubOffices(), 400);
       })
       .subscribe();
 
     const receiptsChannel = supabase
       .channel('superadmin_receipts_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'remittance_receipts' }, () => {
-        fetchReceipts();
+        if (receiptsDebounceRef.current) clearTimeout(receiptsDebounceRef.current);
+        receiptsDebounceRef.current = setTimeout(() => fetchReceipts(), 400);
       })
       .subscribe();
 
     return () => {
+      if (subOfficesDebounceRef.current) clearTimeout(subOfficesDebounceRef.current);
+      if (receiptsDebounceRef.current) clearTimeout(receiptsDebounceRef.current);
       supabase.removeChannel(subOfficesChannel);
       supabase.removeChannel(receiptsChannel);
     };
@@ -106,9 +113,13 @@ export default function SuperadminDashboard({
     const pendingVerificationCount = activeReceipts.filter(r => r.verification_status === 'PENDING').length;
     const verifiedReceiptsCount = activeReceipts.filter(r => r.verification_status === 'VERIFIED').length;
     const totalReceiptsAmount = activeReceipts.reduce((sum, r) => sum + parseFloat(r.remittance_amount ?? 0), 0);
+    const verifiedRemittanceTotal = activeReceipts
+      .filter(r => r.verification_status === 'VERIFIED')
+      .reduce((sum, r) => sum + parseFloat(r.remittance_amount ?? 0), 0);
 
-    // 4-Tier Commission Matrix based on Total Collections / Remittances
-    const totalCollections = totalReceiptsAmount;
+    // 4-Tier Commission Matrix based on VERIFIED Remittances only.
+    // PENDING / REJECTED receipts must not inflate commission pools.
+    const totalCollections = verifiedRemittanceTotal;
     const totalAdminComm = totalCollections * 0.50;
     const totalAgentComm = totalCollections * 0.30;
     const totalStaffComm = totalCollections * 0.10;
@@ -139,9 +150,10 @@ export default function SuperadminDashboard({
         }
       });
 
-      // Remittance collections for this sub-office
+      // Remittance collections for this sub-office (verified receipts only)
       let officeReceiptsAmount = 0;
       activeReceipts.forEach((r) => {
+        if (r.verification_status !== 'VERIFIED') return;
         const rOffice = (r.sub_office || '').toLowerCase().trim();
         const targetOffice = officeName.toLowerCase().trim();
         if (rOffice === targetOffice || (targetOffice.includes('mandaue') && (!rOffice || rOffice === 'all' || !dbSubOffices.some(so => so.name.toLowerCase().trim() === rOffice)))) {

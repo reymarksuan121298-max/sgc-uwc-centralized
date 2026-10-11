@@ -36,7 +36,7 @@ export const userService = {
       try {
         const { data, error } = await supabase
           .from('app_users')
-          .select('*')
+          .select('id, username, full_name, role, sub_office, is_active, account_status, transcode_visibility, created_at')
           .order('created_at', { ascending: false });
 
         if (error) throw error;

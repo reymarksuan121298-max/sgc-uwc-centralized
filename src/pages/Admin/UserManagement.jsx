@@ -133,7 +133,7 @@ export default function UserManagement({ currentUser }) {
   const openEditModal = (user) => {
     setEditingUser(user);
     setUsername(user.username);
-    setPassword(user.password);
+    setPassword('');
     setFullName(user.full_name || '');
     setRole(formatRoleName(user.role));
     setSubOffice(user.sub_office || 'All');
@@ -142,6 +142,21 @@ export default function UserManagement({ currentUser }) {
     setTranscodeVisibility(user.transcode_visibility ?? false);
     setErrorMessage('');
     setIsModalOpen(true);
+
+    // Fetch this single user's password on demand — the users listing no longer
+    // ships password hashes for every account (security hardening).
+    supabase
+      .from('app_users')
+      .select('password')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data: pwRow, error: pwErr }) => {
+        if (!pwErr && pwRow?.password) {
+          setPassword(pwRow.password);
+        } else if (pwErr) {
+          console.warn('Failed to load password for edit:', pwErr);
+        }
+      });
   };
 
   const handleSubmit = async (e) => {

@@ -34,7 +34,9 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
     setLoading(true);
     try {
       const [receiptsRes, usersRes] = await Promise.all([
-        supabase.from('remittance_receipts').select('*').order('created_at', { ascending: false }),
+        supabase.from('remittance_receipts')
+          .select('id, batch_serial_no, reference_number, transactionId, sub_office, payment_channel, remittance_amount, deposited_charges, verification_status, sender_name, uploaded_by_user, receipt_image_url, rejection_reason, verified_by, verified_at, created_at')
+          .order('created_at', { ascending: false }),
         supabase.from('app_users').select('username, full_name')
       ]);
 
@@ -67,17 +69,20 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
     fetchReceipts();
   }, []);
 
-  // Pre-fetch images in the background to ensure instant pop-up
+  // Pre-fetch images in the background to ensure instant pop-up.
+  // Only preload receipts matching the active status filter (the cards already
+  // render their own thumbnails) and cap the burst to a screenful.
+  const preloadReceipts = useMemo(() => {
+    const base = statusFilter === 'ALL' ? receipts : receipts.filter(r => r.verification_status === statusFilter);
+    return (base || []).filter(r => r.receipt_image_url).slice(0, 40);
+  }, [receipts, statusFilter]);
+
   useEffect(() => {
-    if (receipts && receipts.length > 0) {
-      receipts.forEach((r) => {
-        if (r.receipt_image_url) {
-          const img = new Image();
-          img.src = r.receipt_image_url;
-        }
-      });
-    }
-  }, [receipts]);
+    preloadReceipts.forEach((r) => {
+      const img = new Image();
+      img.src = r.receipt_image_url;
+    });
+  }, [preloadReceipts]);
 
   useEffect(() => {
     if (selectedReceipt?.receipt_image_url) {
@@ -202,15 +207,6 @@ export default function RemittanceVerification({ currentUser, onDataUpdated }) {
             batch_serial_no: formattedSerial
           })
           .eq('transactionId', receipt.transactionId);
-      }
-      if (receipt.reference_number) {
-        await supabase
-          .from('returned_winnings')
-          .update({
-            receipt_status: 'VERIFIED',
-            batch_serial_no: formattedSerial
-          })
-          .eq('batch_serial_no', receipt.reference_number);
       }
 
       // 3. Log into audit trail

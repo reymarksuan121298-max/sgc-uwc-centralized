@@ -39,7 +39,7 @@ export default function SubOfficeReceipts({ currentUser }) {
     try {
       let query = supabase
         .from('remittance_receipts')
-        .select('*')
+        .select('id, batch_serial_no, reference_number, transactionId, sub_office, payment_channel, remittance_amount, deposited_charges, verification_status, sender_name, uploaded_by_user, receipt_image_url, rejection_reason, verified_by, verified_at, created_at')
         .order('created_at', { ascending: false });
 
       // If user belongs to a specific sub-office (not Super Admin or 'All')
@@ -81,17 +81,20 @@ export default function SubOfficeReceipts({ currentUser }) {
     fetchReceipts();
   }, [currentUser]);
 
-  // Background Preloader for Instant Image Rendering
+  // Background Preloader for Instant Image Rendering.
+  // Only preload receipts matching the active status/channel filters (the rendered
+  // cards already load their own thumbnails) and cap the burst to a screenful.
   useEffect(() => {
-    if (receipts && receipts.length > 0) {
-      receipts.forEach(r => {
-        if (r.receipt_image_url && typeof r.receipt_image_url === 'string') {
-          const img = new Image();
-          img.src = r.receipt_image_url;
-        }
-      });
-    }
-  }, [receipts]);
+    const preloadList = (receipts || [])
+      .filter(r => r.receipt_image_url && typeof r.receipt_image_url === 'string')
+      .filter(r => (statusFilter === 'ALL' || r.verification_status === statusFilter) &&
+                   (channelFilter === 'ALL' || r.payment_channel === channelFilter))
+      .slice(0, 40);
+    preloadList.forEach(r => {
+      const img = new Image();
+      img.src = r.receipt_image_url;
+    });
+  }, [receipts, statusFilter, channelFilter]);
 
   // Reset image loading and zoom state when selectedReceipt changes
   useEffect(() => {

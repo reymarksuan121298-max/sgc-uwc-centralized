@@ -74,7 +74,6 @@ export default function App() {
   const [toDate, setToDate] = useState(todayStr);
   const [data, setData] = useState([]);
   const [returnedData, setReturnedData] = useState([]);
-  const [receipts, setReceipts] = useState([]);
 
   const liveClaimedTransactionIds = useMemo(() => {
     const ids = new Set();
@@ -506,6 +505,7 @@ export default function App() {
   const isFetchingLiveRef = useRef(false);
   const memoryCacheRef = useRef({ key: '', timestamp: 0, data: [] });
   const realtimeDebounceTimerRef = useRef(null);
+  const chatEventDebounceRef = useRef(null);
 
   const fetchReturnedFromSupabase = useCallback(async () => {
     try {
@@ -524,25 +524,6 @@ export default function App() {
       if (sData) setReturnedData(sData);
     } catch (err) {
       console.warn("Returned winnings fetch:", err.message);
-    }
-  }, [currentUser, isSSR]);
-
-  const fetchReceiptsFromSupabase = useCallback(async () => {
-    try {
-      let query = supabase
-        .from('remittance_receipts')
-        .select('*');
-        
-      const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
-      if (isRestrictedBranchSSR) {
-        query = query.ilike('sub_office', currentUser.sub_office);
-      }
-
-      const { data: rData, error } = await query.order('created_at', { ascending: false });
-      if (error) return;
-      if (rData) setReceipts(rData);
-    } catch (err) {
-      // Gracefully silent if optional table is not present
     }
   }, [currentUser, isSSR]);
 
@@ -918,7 +899,6 @@ export default function App() {
         const settingsRes = await loadSystemSettings();
         await Promise.allSettled([
           fetchReturnedFromSupabase(),
-          fetchReceiptsFromSupabase(),
           fetchPendingChatCount(),
           fetchData(true, fromDate, toDate, settingsRes?.loadedEndpoints, settingsRes?.loadedConfig)
         ]);
@@ -1003,9 +983,10 @@ export default function App() {
               (myUsername && (senderId === myUsername || senderUsername === myUsername || senderName === myUsername)) ||
               (myName && (senderName === myName || senderId === myName));
 
-            // Only alert participants of the room this message was posted in
+            // Only alert participants of the room this message was posted in.
+            // Messages outside this user's rooms cannot change their pending count,
+            // so bail out WITHOUT re-querying (previously a full COUNT per message).
             if (!isUserInChatRoom(payload.new, currentUser)) {
-              fetchPendingChatCount();
               return;
             }
 
@@ -1067,7 +1048,10 @@ export default function App() {
               });
             }
           } else {
-            fetchPendingChatCount();
+            // UPDATE / DELETE (reactions, verifications, deletions) are user-driven
+            // and infrequent, but batch rapid-fire bursts into one count query.
+            if (chatEventDebounceRef.current) clearTimeout(chatEventDebounceRef.current);
+            chatEventDebounceRef.current = setTimeout(() => fetchPendingChatCount(), 500);
           }
         }
       )
@@ -1103,17 +1087,6 @@ export default function App() {
           } else {
             loadSystemSettings();
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'app_users'
-        },
-        () => {
-          loadSystemSettings();
         }
       )
       .on(
@@ -1213,6 +1186,9 @@ export default function App() {
     return () => {
       if (realtimeDebounceTimerRef.current) {
         clearTimeout(realtimeDebounceTimerRef.current);
+      }
+      if (chatEventDebounceRef.current) {
+        clearTimeout(chatEventDebounceRef.current);
       }
       supabase.removeChannel(channel);
     };
@@ -1827,7 +1803,6 @@ export default function App() {
           liveClaimedTransactionIds={liveClaimedTransactionIds}
           onUserUpdated={handleUserUpdated}
           onConfigUpdated={loadSystemSettings}
-          receipts={receipts}
         />
       </MainLayout>
 

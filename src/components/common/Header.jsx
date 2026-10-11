@@ -36,6 +36,86 @@ const getUserAvatarColor = (name = '', subOffice = '') => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// --- Latest-message preview helpers -------------------------------------------------
+// Determines which preview keys (room / partner username / partner name) a chat row
+// falls under for the current user. Mirrors the grouping logic of fetchLatestMessages.
+const getChatKeys = (msg, currentUser) => {
+  const myId = String(currentUser?.id || '').toLowerCase();
+  const myUsername = String(currentUser?.username || '').toLowerCase();
+  const myName = String(currentUser?.full_name || currentUser?.username || '').toLowerCase();
+
+  const sId = String(msg.sender_id || '').toLowerCase().trim();
+  const sUsername = String(msg.sender_username || '').toLowerCase().trim();
+  const sName = String(msg.sender_name || '').toLowerCase().trim();
+  const rId = String(msg.recipient_id || msg.ocr_data?.recipient_id || '').toLowerCase().trim();
+  const rName = String(msg.recipient_name || msg.ocr_data?.recipient_name || '').toLowerCase().trim();
+  const roomId = String(msg.room_id || msg.ocr_data?.roomId || '').toLowerCase().trim();
+  const isGroup = msg.ocr_data?.isGroup;
+
+  const keys = [];
+  if (isGroup || roomId.startsWith('group-')) {
+    const gKey = roomId || 'group-all-branches-ssr';
+    if (gKey) keys.push(gKey);
+  } else {
+    const isSenderMe = sId === myId || sUsername === myId || sId === myUsername || sUsername === myUsername || sName === myName;
+    const isRecipientMe = rId === myId || rId === myUsername || rName === myUsername || rName === myName;
+    if (isSenderMe || isRecipientMe) {
+      const partnerKeys = isSenderMe ? [rId, rName] : [sId, sUsername, sName];
+      partnerKeys.filter(Boolean).forEach((key) => keys.push(key));
+      if (roomId) keys.push(roomId);
+    }
+  }
+  return [...new Set(keys)];
+};
+
+// Builds the preview map from a list sorted newest-first (first occurrence wins).
+const buildChatKeyMap = (messages, currentUser) => {
+  const map = {};
+  (messages || []).forEach((msg) => {
+    getChatKeys(msg, currentUser).forEach((key) => {
+      if (!map[key]) map[key] = msg;
+    });
+  });
+  return map;
+};
+
+// Applies a realtime chat payload to the existing preview map without re-querying
+// the database. INSERTs are the high-frequency path during active chat; UPDATEs and
+// DELETEs only patch rows already shown as previews.
+const applyChatPayloadToMap = (prevMap, payload, currentUser) => {
+  const next = { ...prevMap };
+  const eventType = payload?.eventType;
+  if (eventType === 'INSERT') {
+    const row = payload?.new;
+    if (!row) return next;
+    getChatKeys(row, currentUser).forEach((key) => {
+      next[key] = row;
+    });
+  } else if (eventType === 'UPDATE') {
+    const updated = payload?.new;
+    if (!updated) return next;
+    const oldId = String(payload?.old?.id || '');
+    const newId = String(updated.id || '');
+    Object.keys(next).forEach((key) => {
+      const cur = next[key];
+      if (cur && (String(cur.id) === oldId || String(cur.id) === newId)) {
+        next[key] = { ...cur, ...updated };
+      }
+    });
+  } else if (eventType === 'DELETE') {
+    const deletedId = String(payload?.old?.id || '');
+    if (deletedId) {
+      Object.keys(next).forEach((key) => {
+        if (next[key] && String(next[key].id) === deletedId) {
+          delete next[key];
+        }
+      });
+    }
+  }
+  return next;
+};
+// ------------------------------------------------------------------------------------
+
 export default function Header({ 
   activeTab, 
   onSelectTab = null,
@@ -397,45 +477,12 @@ export default function Header({
     try {
       const { data, error } = await supabase
         .from('ticket_verification_chats')
-        .select('id, sender_id, sender_name, recipient_id, recipient_name, room_id, message_text, image_url, ocr_data, created_at')
+        .select('id, sender_id, sender_username, sender_name, recipient_id, recipient_name, room_id, message_text, image_url, ocr_data, created_at')
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (data) {
-        const myId = String(currentUser?.id || currentUser?.username || '').toLowerCase();
-        const myName = String(currentUser?.full_name || currentUser?.username || '').toLowerCase();
-
-        const map = {};
-        data.forEach((msg) => {
-          const sId = String(msg.sender_id || '').toLowerCase().trim();
-          const sUsername = String(msg.sender_username || '').toLowerCase().trim();
-          const sName = String(msg.sender_name || '').toLowerCase().trim();
-          const rId = String(msg.recipient_id || msg.ocr_data?.recipient_id || '').toLowerCase().trim();
-          const rName = String(msg.recipient_name || msg.ocr_data?.recipient_name || '').toLowerCase().trim();
-          const roomId = String(msg.room_id || msg.ocr_data?.roomId || '').toLowerCase().trim();
-          const isGroup = msg.ocr_data?.isGroup;
-
-          if (isGroup || roomId.startsWith('group-')) {
-            const gKey = roomId || 'group-all-branches-ssr';
-            if (!map[gKey]) {
-              map[gKey] = msg;
-            }
-          } else {
-            // Direct 1-on-1: determine conversation partner
-            const isSenderMe = sId === myId || sUsername === myId || sName === myName;
-            const isRecipientMe = rId === myId || rName === myName;
-
-            if (isSenderMe || isRecipientMe) {
-              const partnerKeys = isSenderMe ? [rId, rName] : [sId, sUsername, sName];
-
-              partnerKeys.filter(Boolean).forEach((key) => {
-                if (!map[key]) map[key] = msg;
-              });
-              if (roomId && !map[roomId]) map[roomId] = msg;
-            }
-          }
-        });
-        setLatestMessages(map);
+      if (!error && data) {
+        setLatestMessages(buildChatKeyMap(data, currentUser));
       }
     } catch (err) {
       console.warn('Failed to load latest messages for previews:', err);
@@ -462,7 +509,15 @@ export default function Header({
 
     const channelChats = supabase
       .channel('header_latest_chats_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_verification_chats' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_verification_chats' }, (payload) => {
+        // INSERTs are the high-frequency path during active chat. Patch the preview
+        // map from the realtime payload instead of re-querying the last 100 rows.
+        if (payload && payload.eventType === 'INSERT') {
+          setLatestMessages((prev) => applyChatPayloadToMap(prev, payload, currentUser));
+          return;
+        }
+        // UPDATE / DELETE (reactions, verification, deletions) are rare — fall back
+        // to a debounced full refetch so previews stay consistent.
         if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
         chatDebounceRef.current = setTimeout(() => {
           fetchLatestMessages();

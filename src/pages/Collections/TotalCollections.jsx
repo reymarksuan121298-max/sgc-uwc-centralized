@@ -41,7 +41,9 @@ export default function TotalCollections({
   useEffect(() => {
     const fetchReceipts = async () => {
       try {
-        const { data } = await supabase.from('remittance_receipts').select('*');
+        const { data } = await supabase
+          .from('remittance_receipts')
+          .select('id, batch_serial_no, reference_number, transactionId, remittance_amount, deposited_charges');
         setReceiptsList(data || []);
       } catch (err) {
         console.error('Failed to load receipts in TotalCollections:', err);
