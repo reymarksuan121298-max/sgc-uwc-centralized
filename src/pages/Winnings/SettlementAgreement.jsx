@@ -488,19 +488,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     })
   );
 
-  // Find selected ticket from availableTickets / filteredData
-  const selectedTicket = availableTickets.find(
-    (item) => (item.transactionId || item.transId || item.receipt_no) === selectedTicketId
-  ) || availableTickets[0] || filteredData[0] || {
-    transactionId: '081628-OIIIRA0CN',
-    drawDate: '2026-08-16',
-    drawTime: '5:00 PM',
-    betNo: '784',
-    winAmount: 5000.00,
-    username: 'sample_user',
-    fullName: 'Sample Claimant',
-    sub_office: 'Mandaue Central'
-  };
+  // Find selected ticket from availableTickets — null when nothing is explicitly chosen
+  const selectedTicket = selectedTicketId
+    ? availableTickets.find(
+        (item) => (item.transactionId || item.transId || item.receipt_no) === selectedTicketId
+      ) || null
+    : null;
 
   // Auto-update supervisorName based on selectedTicket's supervisor ID
   useEffect(() => {
@@ -514,7 +507,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     }
   }, [selectedTicket, currentUser]);
 
-  const ticketSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || selectedTicket.branch || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Central Office'));
+  const ticketSubOffice = selectedTicket?.sub_office || selectedTicket?.subOffice || selectedTicket?.branch || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Central Office'));
 
   // Helper: resolve physical address from dbSubOffices by name
   const getSubOfficeAddress = (name) => {
@@ -669,12 +662,16 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   };
 
   const handleSave = () => {
+    if (!selectedTicket) {
+      alert('Please select a ticket before saving.');
+      return;
+    }
     if (onSaveAgreement) {
       const totalAmountVal = installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0);
-      const chosenSubOffice = selectedTicket.sub_office || selectedTicket.subOffice || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
+      const chosenSubOffice = selectedTicket?.sub_office || selectedTicket?.subOffice || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
 
       onSaveAgreement({
-        transactionId: selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no,
+        transactionId: selectedTicket?.transactionId || selectedTicket?.transId || selectedTicket?.receipt_no,
         ticket: { ...selectedTicket, sub_office: chosenSubOffice },
         sub_office: chosenSubOffice,
         agreementDate,
@@ -684,7 +681,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
         installmentsCount: installments.length,
         installments,
         signatories: {
-          claimant: selectedTicket.fullName || selectedTicket.username || 'Accountable Payer',
+          claimant: selectedTicket?.fullName || selectedTicket?.username || 'Accountable Payer',
           hrManager: hrManagerName,
           supervisor: supervisorName
         },
@@ -696,7 +693,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           installmentsCount: installments.length,
           installments,
           signatories: {
-            claimant: selectedTicket.fullName || selectedTicket.username || 'Accountable Payer',
+            claimant: selectedTicket?.fullName || selectedTicket?.username || 'Accountable Payer',
             hrManager: hrManagerName,
             supervisor: supervisorName
           }
@@ -1245,8 +1242,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           </div>
 
           <div className={`${currentStep === 4 ? '' : 'hidden'} print:hidden bg-white border border-slate-200 rounded-xl shadow-sm p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs`}>
-            <div><span className="block text-[10px] font-black uppercase text-slate-400">Ticket Number</span><strong className="font-mono text-[#002B66]">{selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no}</strong></div>
-            <div><span className="block text-[10px] font-black uppercase text-slate-400">Accountable Payer</span><strong>{selectedTicket.fullName || selectedTicket.username || 'Accountable Payer'}</strong></div>
+            <div><span className="block text-[10px] font-black uppercase text-slate-400">Ticket Number</span><strong className="font-mono text-[#002B66]">{selectedTicket?.transactionId || selectedTicket?.transId || selectedTicket?.receipt_no || '—'}</strong></div>
+            <div><span className="block text-[10px] font-black uppercase text-slate-400">Accountable Payer</span><strong>{selectedTicket?.fullName || selectedTicket?.username || 'Accountable Payer'}</strong></div>
             <div><span className="block text-[10px] font-black uppercase text-slate-400">Frequency & Schedule</span><strong>{installments.length}x ({getFrequencyLabel(frequency)})</strong></div>
             <div><span className="block text-[10px] font-black uppercase text-slate-400">Total Settlement</span><strong className="text-emerald-700">PHP {installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></div>
           </div>
@@ -1298,34 +1295,42 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
                 1. DETAILS OF ACCOUNTABILITY
               </h3>
-              <table className="w-full text-xs border-collapse border border-slate-300">
-                <tbody>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50 w-1/3">Transaction ID</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
-                      {selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no || '081628-OIIIRA0CN'}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Transaction Date</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono text-slate-900">
-                      {formatTransactionDate(selectedTicket.drawDate || selectedTicket.transactionDate || selectedTicket.created_at)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Winning Combination / Bet No.</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
-                      {selectedTicket.betNo || selectedTicket.CombiNo || '784'}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Total Winning Amount</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono font-extrabold text-emerald-700">
-                      PHP {parseFloat(selectedTicket.winAmount || 5000).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              {selectedTicket ? (
+                <table className="w-full text-xs border-collapse border border-slate-300">
+                  <tbody>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50 w-1/3">Transaction ID</td>
+                      <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
+                        {selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Transaction Date</td>
+                      <td className="border border-slate-300 px-3 py-1.5 font-mono text-slate-900">
+                        {formatTransactionDate(selectedTicket.drawDate || selectedTicket.transactionDate || selectedTicket.created_at)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Winning Combination / Bet No.</td>
+                      <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
+                        {selectedTicket.betNo || selectedTicket.CombiNo || '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Total Winning Amount</td>
+                      <td className="border border-slate-300 px-3 py-1.5 font-mono font-extrabold text-emerald-700">
+                        PHP {parseFloat(selectedTicket.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-1.5 py-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3-3v6M4.5 12a7.5 7.5 0 1115 0 7.5 7.5 0 01-15 0z" /></svg>
+                  <p className="text-xs text-slate-400 font-semibold">No ticket selected</p>
+                  <p className="text-[11px] text-slate-400">Search and select a transaction above to populate this section.</p>
+                </div>
+              )}
             </div>
 
             {/* 2. SUMMARY / REASON OF SETTLEMENT */}
@@ -1503,7 +1508,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               </h3>
               <p>1. Payments shall be remitted strictly according to the schedule specified above.</p>
               <p>
-                2. Upon full receipt of the final payment, the entire liability amount of **PHP {parseFloat(selectedTicket.winAmount || 5000).toLocaleString('en-US', { minimumFractionDigits: 2 })}** shall be deemed fully satisfied and settled.
+                2. Upon full receipt of the final payment, the entire liability amount of **PHP {parseFloat(selectedTicket?.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}** shall be deemed fully satisfied and settled.
               </p>
             </div>
 
@@ -1516,7 +1521,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 {/* Accountable Payer Signature */}
                 <div className="pt-8 space-y-1 flex flex-col items-stretch">
                   <div className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center">
-                    {selectedTicket.fullName || selectedTicket.username || 'Accountable Payer Name'}
+                    {selectedTicket?.fullName || selectedTicket?.username || 'Accountable Payer Name'}
                   </div>
                   <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
                     <div>ACCOUNTABLE PAYER</div>
