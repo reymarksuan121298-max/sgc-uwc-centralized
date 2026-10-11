@@ -39,7 +39,7 @@ export default function SubOfficeReceipts({ currentUser }) {
     try {
       let query = supabase
         .from('remittance_receipts')
-        .select('id, batch_serial_no, reference_number, transactionId, sub_office, payment_channel, remittance_amount, deposited_charges, verification_status, sender_name, uploaded_by_user, receipt_image_url, rejection_reason, verified_by, verified_at, created_at')
+        .select('id, batch_serial_no, reference_number, sub_office, payment_channel, remittance_amount, deposited_charges, verification_status, sender_name, uploaded_by_user, receipt_image_url, rejection_reason, verified_by, verified_at, created_at')
         .order('created_at', { ascending: false });
 
       // If user belongs to a specific sub-office (not Super Admin or 'All')

@@ -477,7 +477,7 @@ export default function Header({
     try {
       const { data, error } = await supabase
         .from('ticket_verification_chats')
-        .select('id, sender_id, sender_username, sender_name, recipient_id, recipient_name, room_id, message_text, image_url, ocr_data, created_at')
+        .select('id, sender_id, sender_name, recipient_id, recipient_name, room_id, message_text, image_url, ocr_data, created_at')
         .order('created_at', { ascending: false })
         .limit(100);
 
