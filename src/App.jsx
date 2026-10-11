@@ -503,6 +503,12 @@ export default function App() {
 
   // Network Traffic Optimization: In-flight guard, debounced realtime & cache
   const isFetchingLiveRef = useRef(false);
+  // Short-TTL in-memory cache for the Stage-2 claimed-tickets chunk fetches.
+  // Collapses the duplicate "isClaim=1&from..to.." requests that fire when
+  // multiple fetchData triggers overlap (initial load, filter change, online,
+  // sync buttons, save/HR handlers) or when gateway configs share a base URL.
+  const claimedChunkCacheRef = useRef(new Map());
+  const CLAIMED_CHUNK_TTL_MS = 90 * 1000;
   const memoryCacheRef = useRef({ key: '', timestamp: 0, data: [] });
   const realtimeDebounceTimerRef = useRef(null);
   const chatEventDebounceRef = useRef(null);
@@ -793,33 +799,45 @@ export default function App() {
             if (!epMeta.authHeader) return []; // Skip unauthenticated endpoints to prevent Laravel 500 RouteNotFoundException
             return dateChunks.map(async (chunk) => {
               const url = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=1&from=${chunk.from}&to=${chunk.to}`;
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 12000);
-              try {
-                const res = await fetch(url, {
-                  method: 'GET',
-                  headers: {
-                    'Authorization': epMeta.authHeader,
-                    'Accept': 'application/json, text/plain, */*',
-                    'Content-Type': 'application/json'
-                  },
-                  signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-                if (!res.ok) return [];
-                const result = await res.json();
-                const deepData = result?.data?.data || result?.data || result;
-                let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-                arr = filterIligan(arr, epMeta);
-                return arr.map(item => ({
-                  ...item,
-                  isClaim: 1,
-                  sub_office: epMeta.isIliganEndpoint ? epMeta.fallbackSubOffice : (item.sub_office || item.location || epMeta.fallbackSubOffice)
-                }));
-              } catch {
-                clearTimeout(timeoutId);
-                return [];
+
+              // Reuse a recent raw response for this exact chunk URL instead of
+              // hitting the (slow) live endpoint again with an identical request.
+              const cacheHit = claimedChunkCacheRef.current.get(url);
+              const cacheIsFresh = cacheHit && (Date.now() - cacheHit.ts) < CLAIMED_CHUNK_TTL_MS;
+              let rawArr = cacheIsFresh ? cacheHit.arr : null;
+
+              if (rawArr === null) {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
+                try {
+                  const res = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                      'Authorization': epMeta.authHeader,
+                      'Accept': 'application/json, text/plain, */*',
+                      'Content-Type': 'application/json'
+                    },
+                    signal: controller.signal
+                  });
+                  clearTimeout(timeoutId);
+                  if (!res.ok) return [];
+                  const result = await res.json();
+                  const deepData = result?.data?.data || result?.data || result;
+                  rawArr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
+                  claimedChunkCacheRef.current.set(url, { ts: Date.now(), arr: rawArr });
+                } catch {
+                  clearTimeout(timeoutId);
+                  return [];
+                }
               }
+
+              // Raw array is shared via the cache; filter/map must not mutate it.
+              const filtered = filterIligan(rawArr, epMeta);
+              return filtered.map(item => ({
+                ...item,
+                isClaim: 1,
+                sub_office: epMeta.isIliganEndpoint ? epMeta.fallbackSubOffice : (item.sub_office || item.location || epMeta.fallbackSubOffice)
+              }));
             });
           });
 
