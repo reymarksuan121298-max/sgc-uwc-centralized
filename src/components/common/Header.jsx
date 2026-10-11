@@ -6,7 +6,7 @@ import {
   ChevronDown, LogOut, User, Shield, Plus, UserCircle,
   Volume2, VolumeX, ShieldAlert, CheckCheck, Trash2,
   Sliders, BellOff, Info, Check, FileText, AlertTriangle,
-  Download, Smartphone
+  Download, Smartphone, Calendar
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole, isOperationalNotification } from '../../utils/permissions';
@@ -297,6 +297,10 @@ export default function Header({
           });
         }
       }
+    } else if (notif.type === 'due_date_reminder' || notif.type === 'settlement') {
+      if (onSelectTab) {
+        onSelectTab('settlement');
+      }
     } else if (notif.type === 'audit') {
       if (onSelectTab) {
         onSelectTab('audit_logs');
@@ -324,6 +328,15 @@ export default function Header({
         title: notif.title || `New Message from ${notif.senderName || 'SSR'}`,
         icon: <MessageSquare size={19} className="stroke-[2.2]" />,
         badgeBg: 'bg-blue-100 text-blue-600'
+      };
+    }
+
+    if (notif.type === 'due_date_reminder' || String(notif.action || '').includes('DUE_')) {
+      const isOverdue = notif.isOverdue || notif.category === 'OVERDUE';
+      return {
+        title: notif.title || (isOverdue ? 'Overdue Installment Reminder' : 'Settlement Installment Due'),
+        icon: isOverdue ? <AlertTriangle size={19} className="stroke-[2.2]" /> : <Calendar size={19} className="stroke-[2.2]" />,
+        badgeBg: isOverdue ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'
       };
     }
 

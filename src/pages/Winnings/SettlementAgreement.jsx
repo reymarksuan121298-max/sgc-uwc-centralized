@@ -20,6 +20,26 @@ import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPri
 import { supabase } from '../../config/supabaseClient';
 import ModernDropdown from '../../components/common/ModernDropdown';
 import TransactionSelectSearch from '../../components/winnings/TransactionSelectSearch';
+import InstallmentDatePicker from '../../components/winnings/InstallmentDatePicker';
+
+const FREQUENCY_OPTIONS = [
+  {
+    value: 'weekly',
+    label: 'Weekly (Every 7 Days)'
+  },
+  {
+    value: 'semi-monthly',
+    label: 'Semi-Monthly (15th & 30th)'
+  },
+  {
+    value: 'daily',
+    label: 'Daily (Every Day)'
+  },
+  {
+    value: 'monthly',
+    label: 'Monthly (Every Month)'
+  }
+];
 
 const SUPERVISORS = {
   // Numeric IDs from backend database
@@ -120,6 +140,92 @@ const getCalculatedDueDate = (agreementDate, frequency, installmentIndex) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const calculateDueDateFromFirstDate = (firstDueDateStr, frequency, installmentIndex) => {
+  if (!firstDueDateStr) return '';
+  if (installmentIndex === 0) return firstDueDateStr;
+
+  const date = new Date(`${firstDueDateStr}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+
+  if (frequency === 'daily') {
+    date.setDate(date.getDate() + installmentIndex);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  if (frequency === 'weekly') {
+    date.setDate(date.getDate() + installmentIndex * 7);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  if (frequency === 'monthly') {
+    const startDay = date.getDate();
+    date.setMonth(date.getMonth() + installmentIndex);
+    if (date.getDate() !== startDay) {
+      date.setDate(0); // Clamps to last day of intended month
+    }
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  if (frequency === 'semi-monthly' || frequency === '15_30') {
+    let year = date.getFullYear();
+    let month = date.getMonth();
+    const day = date.getDate();
+
+    let isTarget15 = day > 15;
+
+    for (let step = 1; step <= installmentIndex; step++) {
+      if (step === 1) {
+        if (day > 15) {
+          month++;
+          if (month > 11) {
+            month = 0;
+            year++;
+          }
+          isTarget15 = true;
+        } else {
+          isTarget15 = false;
+        }
+      } else {
+        if (isTarget15) {
+          isTarget15 = false;
+        } else {
+          isTarget15 = true;
+          month++;
+          if (month > 11) {
+            month = 0;
+            year++;
+          }
+        }
+      }
+    }
+
+    const targetYear = year;
+    const targetMonth = String(month + 1).padStart(2, '0');
+    let targetDay = '15';
+    if (!isTarget15) {
+      const lastDayOfMonth = new Date(targetYear, month + 1, 0).getDate();
+      targetDay = String(Math.min(30, lastDayOfMonth)).padStart(2, '0');
+    }
+    return `${targetYear}-${targetMonth}-${targetDay}`;
+  }
+
+  // Fallback (weekly)
+  date.setDate(date.getDate() + installmentIndex * 7);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
 
 const REASON_TEMPLATES = [
@@ -510,7 +616,22 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   // Handler for updating a single installment row
   const handleRowChange = (index, field, value) => {
     const updated = [...installments];
-    updated[index][field] = value;
+    updated[index] = { ...updated[index], [field]: value };
+
+    // If the user changed the FIRST installment's due date to a valid date,
+    // automatically recalculate all subsequent installments' due dates across the payment frequency
+    if (index === 0 && field === 'dueDate' && value) {
+      const testDate = new Date(`${value}T00:00:00`);
+      if (!Number.isNaN(testDate.getTime())) {
+        for (let i = 1; i < updated.length; i++) {
+          updated[i] = {
+            ...updated[i],
+            dueDate: calculateDueDateFromFirstDate(value, frequency, i)
+          };
+        }
+      }
+    }
+
     setInstallments(updated);
   };
 
@@ -1229,16 +1350,15 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                     <label className="block text-[11px] font-black uppercase tracking-wider text-[#002B66] mb-1">
                       Payment Frequency
                     </label>
-                    <select
+                    <ModernDropdown
                       value={frequency}
-                      onChange={(e) => handleFrequencyChange(e.target.value)}
-                      className="w-full bg-white border border-blue-200 px-3 py-2 rounded-lg font-bold text-slate-800 outline-none focus:border-[#002B66] focus:ring-2 focus:ring-blue-200"
-                    >
-                      <option value="weekly">Weekly (Every 7 Days)</option>
-                      <option value="semi-monthly">2x a Month (15th & 30th)</option>
-                      <option value="daily">Daily (Every Day)</option>
-                      <option value="monthly">Monthly (Every Month)</option>
-                    </select>
+                      onChange={handleFrequencyChange}
+                      options={FREQUENCY_OPTIONS}
+                      icon={Calendar}
+                      className="w-full"
+                      buttonClassName="w-full justify-between bg-white border-blue-200 py-2 px-3 rounded-lg text-slate-800 font-bold"
+                      menuClassName="w-full min-w-[270px]"
+                    />
                   </div>
 
                   <div>
@@ -1292,12 +1412,13 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                   {installments.map((inst, index) => (
                     <tr key={inst.id} className="odd:bg-white even:bg-slate-50">
                       <td className="border border-slate-300 p-2 font-bold font-mono">{inst.id}</td>
-                      <td className="border border-slate-300 p-1.5">
-                        <input
-                          type="date"
+                      <td className="border border-slate-300 p-1.5 relative hover:z-30 focus-within:z-40">
+                        <InstallmentDatePicker
                           value={inst.dueDate}
-                          onChange={(e) => handleRowChange(index, 'dueDate', e.target.value)}
-                          className="w-full bg-transparent font-mono text-xs text-center outline-none cursor-pointer"
+                          onChange={(nextDate) => handleRowChange(index, 'dueDate', nextDate)}
+                          isFirst={index === 0}
+                          frequency={frequency}
+                          openUpward={index > Math.max(2, installments.length - 4)}
                         />
                       </td>
                       <td className="border border-slate-300 p-1.5">

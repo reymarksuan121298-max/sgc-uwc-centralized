@@ -66,6 +66,8 @@ export default function MainLayout({
               }
             } else if (activeNotificationPopup.type === 'audit') {
               handleSelectTab('audit_logs');
+            } else if (activeNotificationPopup.type === 'due_date_reminder' || activeNotificationPopup.type === 'settlement') {
+              handleSelectTab('settlement');
             }
             if (onDismissNotificationPopup) onDismissNotificationPopup();
           }}
@@ -75,6 +77,12 @@ export default function MainLayout({
             {activeNotificationPopup.type === 'chat' ? (
               <div className="w-9 h-9 rounded-full bg-[#FFD700] text-[#002B66] flex items-center justify-center font-black text-sm font-mono shadow-xs">
                 {(activeNotificationPopup.senderName || 'U')[0].toUpperCase()}
+              </div>
+            ) : activeNotificationPopup.type === 'due_date_reminder' ? (
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shadow-xs border ${
+                activeNotificationPopup.isOverdue ? 'bg-rose-500/30 text-rose-200 border-rose-300/40' : 'bg-amber-500/30 text-[#FFD700] border-amber-300/40'
+              }`}>
+                {activeNotificationPopup.isOverdue ? <ShieldAlert size={18} /> : <Bell size={18} />}
               </div>
             ) : (
               <div className="w-9 h-9 rounded-full bg-purple-500/30 text-purple-200 border border-purple-300/40 flex items-center justify-center shadow-xs">
@@ -87,7 +95,11 @@ export default function MainLayout({
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] uppercase tracking-wider font-extrabold text-[#FFD700] flex items-center gap-1">
                 <Bell size={10} />
-                {activeNotificationPopup.type === 'chat' ? 'New Message' : 'Audit Activity'}
+                {activeNotificationPopup.type === 'chat' 
+                  ? 'New Message' 
+                  : (activeNotificationPopup.type === 'due_date_reminder' 
+                      ? (activeNotificationPopup.isOverdue ? 'Overdue Reminder' : 'Installment Due') 
+                      : 'Audit Activity')}
               </span>
               <span className="text-[9px] text-blue-200 font-mono">Just now</span>
             </div>
