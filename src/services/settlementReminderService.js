@@ -42,6 +42,30 @@ export const evaluateSettlementDueDates = async ({ currentUser = null, todayOver
       return [];
     }
 
+    // Backstop for legacy agreements: installments written before per-installment
+    // PAID flags existed have no status field, so every paid installment kept
+    // generating reminders forever. Total up each agreement's recorded payments
+    // and treat fully-covered installments as paid (earliest-first math mirrors
+    // applyPaymentToInstallments in SettlementAgreement.jsx).
+    let paymentsByAgreement = {};
+    if (data && data.length > 0) {
+      try {
+        const { data: payData, error: payError } = await supabase
+          .from('settlement_payments')
+          .select('returnedWinningsId, paymentAmount')
+          .in('returnedWinningsId', data.map((r) => r.id));
+        if (!payError && payData) {
+          paymentsByAgreement = payData.reduce((acc, p) => {
+            const id = p.returnedWinningsId;
+            acc[id] = (acc[id] || 0) + (parseFloat(p.paymentAmount) || 0);
+            return acc;
+          }, {});
+        }
+      } catch {
+        // Payment lookup is a best-effort backstop; fall back to status flags only.
+      }
+    }
+
     const todayStr = todayOverride || getLocalDateString();
     const todayDate = new Date(`${todayStr}T00:00:00`);
     if (Number.isNaN(todayDate.getTime())) return [];
@@ -56,10 +80,22 @@ export const evaluateSettlementDueDates = async ({ currentUser = null, todayOver
       const transId = item.transactionId || 'Unknown Record';
       const subOffice = item.sub_office || terms.sub_office || '';
 
+      // Track how much of this agreement's recorded payments has been applied to
+      // earlier installments (earliest-first, mirrors applyPaymentToInstallments)
+      let remainingPaid = Number(paymentsByAgreement[item.id]) || 0;
+
       terms.installments.forEach((inst) => {
         // Skip installments already marked as paid
         const isPaid = String(inst.status || '').toUpperCase().trim() === 'PAID';
-        if (isPaid || !inst.dueDate) return;
+        // Backstop: treat fully-covered installments as paid even when the PAID
+        // flag is missing (legacy agreements created before it existed)
+        const due = parseFloat(inst.amountDue || 0);
+        let coveredByPayments = false;
+        if (!isPaid && remainingPaid > 0 && due > 0) {
+          coveredByPayments = remainingPaid >= due - 0.005;
+          remainingPaid = Math.max(0, remainingPaid - due);
+        }
+        if (isPaid || coveredByPayments || !inst.dueDate) return;
 
         const instDate = new Date(`${inst.dueDate}T00:00:00`);
         if (Number.isNaN(instDate.getTime())) return;
@@ -157,8 +193,11 @@ export const runSettlementReminderJob = async ({
     // Check if this specific installment reminder has already been notified today
     const alreadyNotified = notifiedSet.has(notif.id);
 
-    // 1. Always append to the in-app notification list so it's visible in the notification drawer
-    if (appendNotification) {
+    // 1. Append to the in-app notification list ONLY when this reminder is new
+    //    for today (or forced). Re-appending on every cron run / page load /
+    //    window focus re-populates the notification drawer with the same due
+    //    dates after every refresh and resurrects reminders the user cleared.
+    if (appendNotification && (!alreadyNotified || force)) {
       appendNotification(notif);
     }
 
