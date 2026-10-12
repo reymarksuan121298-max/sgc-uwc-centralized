@@ -72,9 +72,14 @@ export const winningsService = {
         target_id: transId || 'UNKNOWN',
         sub_office: record.sub_office || adminUser?.sub_office || 'All',
         details: {
+          teller_outlet: record.fullName || record.outlet || record.username || 'N/A',
           transId,
-          winAmount: record.winAmount,
-          betAmount: record.betAmount,
+          draw: record.drawTime || record.drawDate || record.draw || record.created_at || 'N/A',
+          betNo: record.betNo || record.bet_no || 'N/A',
+          betCode: record.betCode || record.bet_code || 'RS3',
+          betAmount: parseFloat(record.betAmount ?? record.bet_amount ?? 0),
+          winAmount: parseFloat(record.winAmount ?? record.win_amount ?? 0),
+          dateReturned: record.date_returned || record.dateReturned || record.created_at || 'N/A',
           reason: record.deletion_request_reason,
           requestedBy: record.deletion_request_by,
           approvedBy: adminUser?.username,
@@ -116,7 +121,14 @@ export const winningsService = {
         target_id: transId || 'UNKNOWN',
         sub_office: record.sub_office || adminUser?.sub_office || 'All',
         details: {
+          teller_outlet: record.fullName || record.outlet || record.username || 'N/A',
           transId,
+          draw: record.drawTime || record.drawDate || record.draw || record.created_at || 'N/A',
+          betNo: record.betNo || record.bet_no || 'N/A',
+          betCode: record.betCode || record.bet_code || 'RS3',
+          betAmount: parseFloat(record.betAmount ?? record.bet_amount ?? 0),
+          winAmount: parseFloat(record.winAmount ?? record.win_amount ?? 0),
+          dateReturned: record.date_returned || record.dateReturned || record.created_at || 'N/A',
           rejectReason,
           rejectedBy: adminUser?.username
         }

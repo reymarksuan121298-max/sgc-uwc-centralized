@@ -145,9 +145,16 @@ export default function RequestDeleteModal({
           target_id: transId,
           sub_office: ticket.sub_office || currentUser?.sub_office || 'All',
           details: {
+            teller_outlet: ticket.fullName || ticket.outlet || ticket.username || 'N/A',
             transId,
-            winAmount,
+            draw: ticket.drawTime || ticket.drawDate || ticket.draw || ticket.created_at || 'N/A',
+            betNo: ticket.betNo || ticket.bet_no || 'N/A',
+            betCode: ticket.betCode || ticket.bet_code || 'RS3',
+            betAmount: parseFloat(ticket.betAmount ?? ticket.bet_amount ?? 0),
+            winAmount: parseFloat(ticket.winAmount ?? ticket.win_amount ?? 0),
+            dateReturned: ticket.date_returned || ticket.dateReturned || ticket.created_at || 'N/A',
             requester: currentUser?.username,
+            requestedBy: currentUser?.full_name || currentUser?.username || 'SSR / Specialist',
             reason: payload.deletion_request_reason,
             hasHardCopyProof: true
           }

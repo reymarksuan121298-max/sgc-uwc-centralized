@@ -1,10 +1,10 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import {
   UserCheck, CheckCircle, Trash2, Clock, AlertTriangle, X, Download,
   UploadCloud, Calendar, CheckCircle2,
   ChevronRight, Building2, Smartphone, Landmark, Image as ImageIcon, Loader2,
   ArrowRight, ShieldCheck, Filter, Search, Sparkles, QrCode, FileText,
-  FileCheck, ShieldAlert, Check, Ban, Eye, Mail, Copy, ExternalLink
+  FileCheck, ShieldAlert, Check, Ban, Eye, Mail, Copy, ExternalLink, RefreshCw
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { winningsService } from '../../services/winningsService';
@@ -36,10 +36,15 @@ export default function ReturnedWinnings({
   const [selectedViewingTicket, setSelectedViewingTicket] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isWeeklyModalOpen, setIsWeeklyModalOpen] = useState(false);
-  const [activeFilterTab, setActiveFilterTab] = useState('ALL'); // 'ALL' | 'UNREMITTED' | 'REQUESTS'
+  const [activeFilterTab, setActiveFilterTab] = useState('ALL'); // 'ALL' | 'UNREMITTED' | 'REQUESTS' | 'AUDIT_DELETED' | 'INACTIVE'
   const [selectedSettlementItem, setSelectedSettlementItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+
+  // Audit Logs Deletion Lookup State
+  const [auditDeletionLogs, setAuditDeletionLogs] = useState([]);
+  const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState(false);
+  const [selectedAuditLog, setSelectedAuditLog] = useState(null);
 
   // Reject & Approve Popover State
   const [rejectingItem, setRejectingItem] = useState(null);
@@ -109,6 +114,85 @@ export default function ReturnedWinnings({
     return (filteredData || []).filter(item => isInactiveTellerRecord(item));
   }, [filteredData]);
 
+  // Fetch deletion requests logged in audit_logs
+  const fetchAuditDeletionLogs = async () => {
+    setIsLoadingAuditLogs(true);
+    try {
+      let query = supabase
+        .from('audit_logs')
+        .select('*')
+        .in('action', [
+          'CLAIMED_TICKET_DELETION_REQUESTED',
+          'HARDCOPY_CLAIM_DELETION_APPROVED',
+          'HARDCOPY_CLAIM_DELETION_REJECTED',
+          'RECORD_DELETED'
+        ])
+        .order('created_at', { ascending: false })
+        .limit(300);
+
+      if (currentUser?.sub_office && currentUser.sub_office !== 'All') {
+        query = query.or(`sub_office.eq.${currentUser.sub_office},sub_office.eq.All`);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        if (error.code !== 'PGRST205') {
+          console.warn('Error fetching audit deletion logs:', error.message);
+        }
+        setAuditDeletionLogs([]);
+      } else {
+        setAuditDeletionLogs(data || []);
+      }
+    } catch (err) {
+      console.error('Audit logs fetch failed:', err);
+      setAuditDeletionLogs([]);
+    } finally {
+      setIsLoadingAuditLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAuditDeletionLogs();
+  }, [currentUser]);
+
+  // Transformed Audit Log items extracted from details JSONB
+  const auditDisplayItems = useMemo(() => {
+    return (auditDeletionLogs || []).map((log) => {
+      const d = log.details || {};
+      const transId = d.transId || log.target_id || 'N/A';
+      return {
+        id: log.id,
+        isAuditLog: true,
+        auditLogId: log.id,
+        action: log.action,
+        actor_username: log.actor_username,
+        actor_role: log.actor_role,
+        sub_office: log.sub_office,
+        fullName: d.teller_outlet || d.fullName || d.outlet || 'N/A',
+        outlet: d.teller_outlet || d.outlet || 'N/A',
+        username: d.requester || d.requestedBy || log.actor_username || 'N/A',
+        transactionId: transId,
+        transId: transId,
+        computedTransId: transId,
+        drawTime: d.draw || d.drawTime || 'N/A',
+        drawDate: d.draw || d.drawTime || 'N/A',
+        betNo: d.betNo || d.bet_no || 'N/A',
+        betCode: d.betCode || d.bet_code || 'RS3',
+        betAmount: parseFloat(d.betAmount ?? d.bet_amount ?? 0),
+        winAmount: parseFloat(d.winAmount ?? d.win_amount ?? 0),
+        date_returned: d.dateReturned || d.date_returned || log.created_at,
+        created_at: log.created_at,
+        auditTimestamp: log.created_at,
+        reason: d.reason || d.rejectReason || 'N/A',
+        approvedBy: d.approvedBy,
+        rejectedBy: d.rejectedBy,
+        rejectReason: d.rejectReason,
+        hasHardCopyProof: d.hasHardCopyProof,
+        rawDetails: d
+      };
+    });
+  }, [auditDeletionLogs]);
+
   // Filtered display items based on activeFilterTab & searchQuery
   const displayItems = useMemo(() => {
     let list = (filteredData || []).filter(item => !isInactiveTellerRecord(item));
@@ -117,6 +201,8 @@ export default function ReturnedWinnings({
       list = unremittedDepositItems;
     } else if (activeFilterTab === 'REQUESTS') {
       list = pendingDeletionRequests;
+    } else if (activeFilterTab === 'AUDIT_DELETED') {
+      list = auditDisplayItems;
     } else if (activeFilterTab === 'INACTIVE') {
       list = inactiveTellerItems;
     }
@@ -128,12 +214,14 @@ export default function ReturnedWinnings({
         const username = String(item.username || '').toLowerCase();
         const claimant = String(item.fullName || item.outlet || '').toLowerCase();
         const betNo = String(item.betNo || '').toLowerCase();
-        return transId.includes(q) || username.includes(q) || claimant.includes(q) || betNo.includes(q);
+        const action = String(item.action || '').toLowerCase();
+        const reason = String(item.reason || '').toLowerCase();
+        return transId.includes(q) || username.includes(q) || claimant.includes(q) || betNo.includes(q) || action.includes(q) || reason.includes(q);
       });
     }
 
     return list;
-  }, [filteredData, activeFilterTab, unremittedDepositItems, pendingDeletionRequests, searchQuery]);
+  }, [filteredData, activeFilterTab, unremittedDepositItems, pendingDeletionRequests, auditDisplayItems, inactiveTellerItems, searchQuery]);
 
   // Grouped active items by Username for table rendering
   const activeGroupedData = useMemo(() => {
@@ -197,6 +285,7 @@ export default function ReturnedWinnings({
       showToast(`Transaction ${transId} approved! Deducted ₱${winAmt.toLocaleString()} from Collections.`);
       setApprovingItem(null);
       if (onDataUpdated) onDataUpdated();
+      fetchAuditDeletionLogs();
     } catch (err) {
       console.error('Approve deletion failed:', err);
       showToast(`Failed to approve deletion: ${err.message}`);
@@ -215,6 +304,7 @@ export default function ReturnedWinnings({
       setRejectingItem(null);
       setRejectReason('');
       if (onDataUpdated) onDataUpdated();
+      fetchAuditDeletionLogs();
     } catch (err) {
       console.error('Reject deletion failed:', err);
       alert(`Failed to reject request: ${err.message}`);
@@ -226,11 +316,11 @@ export default function ReturnedWinnings({
 
   const exportToCSV = () => {
     if (!displayItems.length) return alert("No records available to export.");
-    const headers = ["Username", "Teller / Outlet", "Transaction ID", "Draw Time", "Bet No", "Bet Code", "Bet Amount", "Win Amount", "Date Returned", "Remittance Status", "Deletion Request Status"];
+    const headers = ["Username / Actor", "Teller / Outlet", "Transaction ID", "Draw Time", "Bet No", "Bet Code", "Bet Amount", "Win Amount", "Date Returned", "Status", "Details / Reason"];
     const rows = displayItems.map(item => {
       const transId = item.transactionId || 'N/A';
       return [
-        `"${item.username || 'N/A'}"`,
+        `"${item.username || item.actor_username || 'N/A'}"`,
         `"${item.fullName || item.outlet || 'N/A'}"`,
         `"${transId}"`,
         `"${formatDrawTime ? formatDrawTime(item.drawTime || item.drawDate || item.created_at || 'N/A') : 'N/A'}"`,
@@ -239,8 +329,8 @@ export default function ReturnedWinnings({
         parseFloat(item.betAmount ?? 0).toFixed(2),
         parseFloat(item.winAmount ?? 0).toFixed(2),
         `"${formatTimestamp(item.date_returned || item.created_at)}"`,
-        `"${item.receipt_status || 'NO_RECEIPT'}"`,
-        `"${item.deletion_request_status || 'NONE'}"`
+        `"${item.action || item.receipt_status || 'NO_RECEIPT'}"`,
+        `"${item.reason || item.deletion_request_reason || item.deletion_request_status || 'NONE'}"`
       ];
     });
 
@@ -336,6 +426,21 @@ export default function ReturnedWinnings({
 
           <button
             type="button"
+            onClick={() => {
+              setActiveFilterTab('AUDIT_DELETED');
+              fetchAuditDeletionLogs();
+            }}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'AUDIT_DELETED'
+              ? 'bg-[#002B66] text-[#FFD700] shadow-sm'
+              : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
+              }`}
+          >
+            <FileText size={14} className={activeFilterTab === 'AUDIT_DELETED' ? 'text-[#FFD700]' : 'text-slate-500'} />
+            <span>Deletion Requests (Audit) ({auditDisplayItems.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveFilterTab('INACTIVE')}
             className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'INACTIVE'
               ? 'bg-rose-600 text-white shadow-sm'
@@ -415,6 +520,33 @@ export default function ReturnedWinnings({
         </div>
       )}
 
+      {/* AUDIT DELETION LOGS HEADER BANNER */}
+      {activeFilterTab === 'AUDIT_DELETED' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <FileText size={18} className="text-[#002B66] shrink-0" />
+            <div>
+              <span className="font-black text-[#002B66] uppercase tracking-wider block">
+                Deletion Requests Audit Trail ({auditDisplayItems.length} Records)
+              </span>
+              <p className="text-slate-600 font-medium text-[11px] mt-0.5">
+                Ticket specifications parsed directly from Supabase <code className="font-mono bg-blue-100 px-1 py-0.5 rounded text-blue-900 font-bold">audit_logs.details</code> JSONB column.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchAuditDeletionLogs}
+            disabled={isLoadingAuditLogs}
+            className="px-3 py-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] font-bold rounded-lg text-[10px] uppercase flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors shrink-0"
+            title="Refresh audit logs"
+          >
+            <RefreshCw size={12} className={isLoadingAuditLogs ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      )}
+
       {/* MAIN DATA TABLE CONTAINER */}
       <div className="bg-white border border-slate-300 shadow-xs overflow-hidden w-full rounded-xl">
         <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center bg-[#002B66]/5 flex-wrap gap-2">
@@ -461,11 +593,11 @@ export default function ReturnedWinnings({
                         <td colSpan="10" className="px-3 py-2 font-bold text-[#003366] text-xs uppercase tracking-wider">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                              <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                              <span>SUPERVISOR: {SUPERVISOR_NAMES[username?.toLowerCase()] ? SUPERVISOR_NAMES[username?.toLowerCase()] : `@${username}`}</span>
+                              <UserCheck size={14} className={activeFilterTab === 'AUDIT_DELETED' ? "text-blue-600 shrink-0" : "text-emerald-600 shrink-0"} />
+                              <span>{activeFilterTab === 'AUDIT_DELETED' ? `REQUESTER / ACTOR: @${username}` : (SUPERVISOR_NAMES[username?.toLowerCase()] ? `SUPERVISOR: ${SUPERVISOR_NAMES[username?.toLowerCase()]}` : `SUPERVISOR: @${username}`)}</span>
                             </div>
                             <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-slate-300">
-                              {items.length} records ({unremittedInGroup.length} unremitted) • Subtotal: ₱{subtotalWin.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              {items.length} records {activeFilterTab !== 'AUDIT_DELETED' && `(${unremittedInGroup.length} unremitted)`} • Subtotal: ₱{subtotalWin.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </span>
                           </div>
                         </td>
@@ -480,7 +612,7 @@ export default function ReturnedWinnings({
                         const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
 
                         return (
-                          <tr key={item.id || item.transactionId || transId || i} className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-slate-100/80 ${isDeletionPending ? 'bg-amber-50/60 border-l-4 border-l-amber-500' : ''}`}>
+                          <tr key={item.id || item.transactionId || transId || i} className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-slate-100/80 ${isDeletionPending ? 'bg-amber-50/60 border-l-4 border-l-amber-500' : item.isAuditLog ? 'border-l-4 border-l-[#002B66]' : ''}`}>
                             <td className="px-3 py-2 border-r border-slate-200 font-semibold text-slate-800 uppercase whitespace-nowrap">{item.fullName || item.outlet || 'N/A'}</td>
                             <td className="px-3 py-2 border-r border-slate-200 font-mono text-[#003366] font-semibold whitespace-nowrap">{transId}</td>
                             <td className="px-3 py-2 border-r border-slate-200 text-center font-mono text-[11px] whitespace-nowrap">{formatDrawTime ? formatDrawTime(item.drawTime || item.drawDate || item.created_at || 'N/A') : 'N/A'}</td>
@@ -494,7 +626,25 @@ export default function ReturnedWinnings({
                             </td>
 
                             <td className="px-3 py-2 border-r border-slate-200 text-center whitespace-nowrap">
-                              {isDeletionPending ? (
+                              {item.isAuditLog ? (
+                                item.action === 'CLAIMED_TICKET_DELETION_REQUESTED' ? (
+                                  <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full" title={`Requested by: ${item.username} • Reason: ${item.reason}`}>
+                                    <Clock size={10} className="text-amber-700 animate-spin" /> DELETION REQUESTED
+                                  </span>
+                                ) : item.action === 'HARDCOPY_CLAIM_DELETION_APPROVED' ? (
+                                  <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] px-2 py-0.5 rounded-full" title={`Approved by: ${item.approvedBy || 'Admin'}`}>
+                                    <CheckCircle2 size={10} className="text-emerald-700" /> DELETION APPROVED
+                                  </span>
+                                ) : item.action === 'HARDCOPY_CLAIM_DELETION_REJECTED' ? (
+                                  <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 font-black text-[10px] px-2 py-0.5 rounded-full" title={`Rejected by: ${item.rejectedBy || 'Admin'} • Reason: ${item.rejectReason}`}>
+                                    <Ban size={10} className="text-rose-700" /> DELETION REJECTED
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 border border-purple-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                    <Trash2 size={10} className="text-purple-700" /> {item.action?.replace(/_/g, ' ') || 'RECORD DELETED'}
+                                  </span>
+                                )
+                              ) : isDeletionPending ? (
                                 <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full" title={`Requested by: ${item.deletion_request_by || 'Staff'} • Reason: ${item.deletion_request_reason || 'Hard copy receipt claimed'}`}>
                                   <Clock size={10} className="text-amber-700 animate-spin" /> PENDING APPROVAL
                                 </span>
@@ -539,47 +689,61 @@ export default function ReturnedWinnings({
 
                             <td className="px-3 py-2 text-center whitespace-nowrap">
                               <div className="inline-flex items-center gap-1.5 justify-center">
-                                {/* VIEW HARD COPY TICKET PROOF ICON */}
-                                {(isDeletionPending || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image) && (
+                                {item.isAuditLog ? (
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedViewingTicket({ ...item, computedTransId: transId })}
+                                    onClick={() => setSelectedAuditLog(item)}
                                     className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-[#002B66] bg-blue-50 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 hover:border-blue-400 rounded-md transition-all cursor-pointer shadow-2xs"
-                                    title="View uploaded hard copy ticket proof"
+                                    title="View full audit log details from details JSONB"
                                   >
                                     <Eye size={11} className="stroke-[2.5] text-blue-600" />
-                                    <span>View Ticket</span>
+                                    <span>View Details</span>
                                   </button>
-                                )}
-
-                                {item.unclaimed_approval_status === 'PENDING' ? (
-                                  <span className="text-[10px] text-amber-700 font-bold italic" title={`Link already sent to ${item.hr_valid_email || 'HR Email'}`}>
-                                    Awaiting HR
-                                  </span>
-                                ) : isDeletionPending ? null : (
+                                ) : (
                                   <>
-                                    {item.unclaimed_approval_status === 'APPROVED' && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold" title={`Approved by: ${item.unclaimed_approved_by || 'HR Officer'}`}>
-                                        <CheckCircle2 size={11} className="text-emerald-600" /> Approved by HR
-                                      </span>
-                                    )}
-                                    {item.unclaimed_approval_status === 'REJECTED' && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] text-rose-700 font-bold" title={`Rejected by: ${item.unclaimed_approved_by || 'HR Officer'}`}>
-                                        <Ban size={11} className="text-rose-600" /> Rejected by HR
-                                      </span>
-                                    )}
-                                    {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
-                                      <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
-                                    )}
-                                    {isClaimedInSourceSystem && (
+                                    {/* VIEW HARD COPY TICKET PROOF ICON */}
+                                    {(isDeletionPending || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image) && (
                                       <button
                                         type="button"
-                                        onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer shadow-2xs"
-                                        title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                        onClick={() => setSelectedViewingTicket({ ...item, computedTransId: transId })}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-[#002B66] bg-blue-50 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 hover:border-blue-400 rounded-md transition-all cursor-pointer shadow-2xs"
+                                        title="View uploaded hard copy ticket proof"
                                       >
-                                        <Trash2 size={12} /> Request Delete
+                                        <Eye size={11} className="stroke-[2.5] text-blue-600" />
+                                        <span>View Ticket</span>
                                       </button>
+                                    )}
+
+                                    {item.unclaimed_approval_status === 'PENDING' ? (
+                                      <span className="text-[10px] text-amber-700 font-bold italic" title={`Link already sent to ${item.hr_valid_email || 'HR Email'}`}>
+                                        Awaiting HR
+                                      </span>
+                                    ) : isDeletionPending ? null : (
+                                      <>
+                                        {item.unclaimed_approval_status === 'APPROVED' && (
+                                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold" title={`Approved by: ${item.unclaimed_approved_by || 'HR Officer'}`}>
+                                            <CheckCircle2 size={11} className="text-emerald-600" /> Approved by HR
+                                          </span>
+                                        )}
+                                        {item.unclaimed_approval_status === 'REJECTED' && (
+                                          <span className="inline-flex items-center gap-1 text-[10px] text-rose-700 font-bold" title={`Rejected by: ${item.unclaimed_approved_by || 'HR Officer'}`}>
+                                            <Ban size={11} className="text-rose-600" /> Rejected by HR
+                                          </span>
+                                        )}
+                                        {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
+                                          <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
+                                        )}
+                                        {isClaimedInSourceSystem && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer shadow-2xs"
+                                            title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                          >
+                                            <Trash2 size={12} /> Request Delete
+                                          </button>
+                                        )}
+                                      </>
                                     )}
                                   </>
                                 )}
@@ -632,8 +796,8 @@ export default function ReturnedWinnings({
                 <div key={username} className="space-y-2">
                   <div className="bg-slate-200 border border-slate-300 px-3 py-2 rounded-lg flex items-center justify-between text-xs font-bold text-[#003366] uppercase">
                     <div className="flex items-center gap-1.5 truncate">
-                      <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                      <span className="truncate">@{username}</span>
+                      <UserCheck size={14} className={activeFilterTab === 'AUDIT_DELETED' ? "text-blue-600 shrink-0" : "text-emerald-600 shrink-0"} />
+                      <span className="truncate">{activeFilterTab === 'AUDIT_DELETED' ? `@${username} (Audit)` : `@${username}`}</span>
                     </div>
                     <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-slate-300 shrink-0">
                       {items.length} items
@@ -649,8 +813,8 @@ export default function ReturnedWinnings({
                     const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
 
                     return (
-                      <div key={item.id || item.transactionId || transId || i} className={`bg-white border rounded-xl p-3 space-y-2.5 shadow-2xs relative ${isDeletionPending ? 'border-amber-400 bg-amber-50/40' : 'border-slate-300'}`}>
-                        <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${isDeletionPending ? 'bg-amber-500' : isRemitted ? 'bg-emerald-600' : 'bg-[#003366]'}`}></div>
+                      <div key={item.id || item.transactionId || transId || i} className={`bg-white border rounded-xl p-3 space-y-2.5 shadow-2xs relative ${isDeletionPending ? 'border-amber-400 bg-amber-50/40' : item.isAuditLog ? 'border-blue-400 bg-blue-50/20' : 'border-slate-300'}`}>
+                        <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${isDeletionPending ? 'bg-amber-500' : item.isAuditLog ? 'bg-[#002B66]' : isRemitted ? 'bg-emerald-600' : 'bg-[#003366]'}`}></div>
 
                         <div className="flex justify-between items-start gap-2 pl-2 border-b border-slate-100 pb-2">
                           <div>
@@ -691,7 +855,25 @@ export default function ReturnedWinnings({
                             <span className="font-mono text-slate-600">{formatTimestamp(recordTimestamp)}</span>
                           </div>
                           <div>
-                            {isDeletionPending ? (
+                            {item.isAuditLog ? (
+                              item.action === 'CLAIMED_TICKET_DELETION_REQUESTED' ? (
+                                <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
+                                  <Clock size={9} className="text-amber-700" /> DELETION REQUESTED
+                                </span>
+                              ) : item.action === 'HARDCOPY_CLAIM_DELETION_APPROVED' ? (
+                                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-black text-[9px] px-2 py-0.5 rounded-full border border-emerald-300">
+                                  <CheckCircle2 size={9} className="text-emerald-700" /> DELETION APPROVED
+                                </span>
+                              ) : item.action === 'HARDCOPY_CLAIM_DELETION_REJECTED' ? (
+                                <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-black text-[9px] px-2 py-0.5 rounded-full border border-rose-300">
+                                  <Ban size={9} className="text-rose-700" /> DELETION REJECTED
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 font-black text-[9px] px-2 py-0.5 rounded-full border border-purple-300">
+                                  <Trash2 size={9} className="text-purple-700" /> {item.action?.replace(/_/g, ' ') || 'RECORD DELETED'}
+                                </span>
+                              )
+                            ) : isDeletionPending ? (
                               <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 font-black text-[9px] px-2 py-0.5 rounded-full border border-amber-300">
                                 <Clock size={9} className="text-amber-700" /> PENDING ADMIN
                               </span>
@@ -737,47 +919,61 @@ export default function ReturnedWinnings({
 
                         {/* Mobile Actions */}
                         <div className="pl-2 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
-                          {/* Mobile View Hard Copy Ticket Button */}
-                          {(isDeletionPending || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image) && (
+                          {item.isAuditLog ? (
                             <button
                               type="button"
-                              onClick={() => setSelectedViewingTicket({ ...item, computedTransId: transId })}
-                              className="px-2.5 py-1 text-[#002B66] bg-blue-50 border border-blue-200 rounded-lg font-black uppercase text-[10px] flex items-center gap-1"
-                              title="View uploaded hard copy ticket proof"
+                              onClick={() => setSelectedAuditLog(item)}
+                              className="px-2.5 py-1 text-[#002B66] bg-blue-50 border border-blue-200 rounded-lg font-black uppercase text-[10px] flex items-center gap-1 cursor-pointer"
+                              title="View full audit log details"
                             >
                               <Eye size={11} className="stroke-[2.5] text-blue-600" />
-                              <span>View Ticket</span>
+                              <span>View Details</span>
                             </button>
-                          )}
-
-                          {item.unclaimed_approval_status === 'PENDING' ? (
-                            <span className="text-[10px] text-amber-700 font-bold italic">
-                              Awaiting HR
-                            </span>
-                          ) : isDeletionPending ? null : (
+                          ) : (
                             <>
-                              {item.unclaimed_approval_status === 'APPROVED' && (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
-                                  <CheckCircle2 size={11} className="text-emerald-600" /> Approved by HR
-                                </span>
-                              )}
-                              {item.unclaimed_approval_status === 'REJECTED' && (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-rose-700 font-bold">
-                                  <Ban size={11} className="text-rose-600" /> Rejected by HR
-                                </span>
-                              )}
-                              {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
-                                <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
-                              )}
-                              {isClaimedInSourceSystem && (
+                              {/* Mobile View Hard Copy Ticket Button */}
+                              {(isDeletionPending || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image) && (
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                  className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase shadow-2xs"
-                                  title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                  onClick={() => setSelectedViewingTicket({ ...item, computedTransId: transId })}
+                                  className="px-2.5 py-1 text-[#002B66] bg-blue-50 border border-blue-200 rounded-lg font-black uppercase text-[10px] flex items-center gap-1"
+                                  title="View uploaded hard copy ticket proof"
                                 >
-                                  Request Delete
+                                  <Eye size={11} className="stroke-[2.5] text-blue-600" />
+                                  <span>View Ticket</span>
                                 </button>
+                              )}
+
+                              {item.unclaimed_approval_status === 'PENDING' ? (
+                                <span className="text-[10px] text-amber-700 font-bold italic">
+                                  Awaiting HR
+                                </span>
+                              ) : isDeletionPending ? null : (
+                                <>
+                                  {item.unclaimed_approval_status === 'APPROVED' && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
+                                      <CheckCircle2 size={11} className="text-emerald-600" /> Approved by HR
+                                    </span>
+                                  )}
+                                  {item.unclaimed_approval_status === 'REJECTED' && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-rose-700 font-bold">
+                                      <Ban size={11} className="text-rose-600" /> Rejected by HR
+                                    </span>
+                                  )}
+                                  {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
+                                    <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
+                                  )}
+                                  {isClaimedInSourceSystem && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
+                                      className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase shadow-2xs"
+                                      title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                    >
+                                      Request Delete
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </>
                           )}
@@ -960,6 +1156,142 @@ export default function ReturnedWinnings({
         item={selectedSettlementItem}
         onDataUpdated={onDataUpdated}
       />
+
+      {/* AUDIT LOG DETAILS MODAL */}
+      {selectedAuditLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden text-xs">
+            {/* Modal Header */}
+            <div className="bg-[#002B66] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs">
+                <FileText size={16} className="text-[#FFD700]" />
+                <span>Audit Deletion Record • {selectedAuditLog.action?.replace(/_/g, ' ')}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAuditLog(null)}
+                className="text-blue-200 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* Meta details */}
+              <div className="grid grid-cols-2 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px]">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Actor / Requester</span>
+                  <span className="font-bold text-slate-800">{selectedAuditLog.actor_username} ({selectedAuditLog.actor_role})</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Timestamp</span>
+                  <span className="font-mono text-slate-700">{formatTimestamp(selectedAuditLog.auditTimestamp || selectedAuditLog.created_at)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Target ID</span>
+                  <span className="font-mono font-bold text-[#002B66]">{selectedAuditLog.transId || selectedAuditLog.transactionId || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Sub-Office</span>
+                  <span className="font-bold text-slate-800">{selectedAuditLog.sub_office || 'All'}</span>
+                </div>
+              </div>
+
+              {/* Returned Ticket Specification (The 8 requested details) */}
+              <div className="space-y-2">
+                <h4 className="text-[11px] font-extrabold uppercase text-[#002B66] tracking-wider flex items-center gap-1.5">
+                  <FileText size={13} className="text-[#002B66]" />
+                  <span>Returned Winnings Ticket Specification</span>
+                </h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-200 text-xs font-mono">
+                  <div className="flex justify-between items-center px-3.5 py-2 bg-slate-50">
+                    <span className="font-sans font-bold text-slate-600">Teller / Outlet</span>
+                    <span className="font-bold text-slate-900 uppercase">{selectedAuditLog.fullName || selectedAuditLog.outlet || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2">
+                    <span className="font-sans font-bold text-slate-600">Trans. ID</span>
+                    <span className="font-bold text-[#002B66]">{selectedAuditLog.transId || selectedAuditLog.transactionId || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2 bg-slate-50">
+                    <span className="font-sans font-bold text-slate-600">Draw</span>
+                    <span className="text-slate-800">{formatDrawTime ? formatDrawTime(selectedAuditLog.drawTime || 'N/A') : selectedAuditLog.drawTime || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2">
+                    <span className="font-sans font-bold text-slate-600">Bet No.</span>
+                    <span className="font-bold text-slate-900">{selectedAuditLog.betNo || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2 bg-slate-50">
+                    <span className="font-sans font-bold text-slate-600">Bet Code</span>
+                    <span className="text-slate-700">{selectedAuditLog.betCode || 'RS3'}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2">
+                    <span className="font-sans font-bold text-slate-600">Bet Amount</span>
+                    <span className="font-bold text-slate-900">₱{parseFloat(selectedAuditLog.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2 bg-slate-50">
+                    <span className="font-sans font-bold text-slate-600">Win Amount</span>
+                    <span className="font-black text-emerald-700">₱{parseFloat(selectedAuditLog.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-3.5 py-2">
+                    <span className="font-sans font-bold text-slate-600">Date Returned</span>
+                    <span className="text-slate-700">{formatTimestamp(selectedAuditLog.date_returned)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Justification / Notes */}
+              {(selectedAuditLog.reason || selectedAuditLog.rejectReason || selectedAuditLog.approvedBy || selectedAuditLog.rejectedBy) && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-1.5 text-[11px]">
+                  {selectedAuditLog.approvedBy && (
+                    <div className="flex justify-between">
+                      <span className="font-bold text-slate-600">Approved By:</span>
+                      <span className="font-semibold text-emerald-800">{selectedAuditLog.approvedBy}</span>
+                    </div>
+                  )}
+                  {selectedAuditLog.rejectedBy && (
+                    <div className="flex justify-between">
+                      <span className="font-bold text-slate-600">Rejected By:</span>
+                      <span className="font-semibold text-rose-800">{selectedAuditLog.rejectedBy}</span>
+                    </div>
+                  )}
+                  {selectedAuditLog.reason && selectedAuditLog.reason !== 'N/A' && (
+                    <div className="pt-1 border-t border-amber-200/60">
+                      <span className="font-bold text-slate-600 block">Deletion Reason / Justification:</span>
+                      <p className="text-slate-800 font-medium mt-0.5">{selectedAuditLog.reason}</p>
+                    </div>
+                  )}
+                  {selectedAuditLog.rejectReason && (
+                    <div className="pt-1 border-t border-amber-200/60">
+                      <span className="font-bold text-rose-700 block">Rejection Reason:</span>
+                      <p className="text-rose-900 font-medium mt-0.5">{selectedAuditLog.rejectReason}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Raw JSON Payload */}
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Raw Audit Payload (JSONB)</span>
+                <pre className="bg-slate-900 text-emerald-400 p-3 rounded-xl text-[10px] font-mono overflow-x-auto max-h-36 leading-relaxed">
+                  {JSON.stringify(selectedAuditLog.rawDetails, null, 2)}
+                </pre>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedAuditLog(null)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold uppercase text-[11px] cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

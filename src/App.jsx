@@ -1446,7 +1446,17 @@ export default function App() {
           target_type: 'returned_winnings',
           target_id: transId,
           sub_office: item.sub_office || 'Mandaue Central',
-          details: { reason: 'Claimed and deleted from returned winnings ledger' }
+          details: {
+            teller_outlet: item.fullName || item.outlet || item.username || 'N/A',
+            transId,
+            draw: item.drawTime || item.drawDate || item.draw || item.created_at || 'N/A',
+            betNo: item.betNo || item.bet_no || 'N/A',
+            betCode: item.betCode || item.bet_code || 'RS3',
+            betAmount: parseFloat(item.betAmount ?? item.bet_amount ?? 0),
+            winAmount: parseFloat(item.winAmount ?? item.win_amount ?? 0),
+            dateReturned: item.date_returned || item.dateReturned || item.created_at || 'N/A',
+            reason: 'Claimed and deleted from returned winnings ledger'
+          }
         }]);
       } catch (auditErr) {
         console.warn('Audit write note:', auditErr);
