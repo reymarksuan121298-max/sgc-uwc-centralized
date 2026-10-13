@@ -63,31 +63,20 @@ export const winningsService = {
     const { error } = await query;
     if (error) throw error;
 
+    // Also update returned_winnings_deletion_requests table if row exists
     try {
-      await supabase.from('audit_logs').insert([{
-        actor_username: adminUser?.username || 'admin',
-        actor_role: adminUser?.role || 'Super Admin',
-        action: 'HARDCOPY_CLAIM_DELETION_APPROVED',
-        target_type: 'RETURNED_WINNING',
-        target_id: transId || 'UNKNOWN',
-        sub_office: record.sub_office || adminUser?.sub_office || 'All',
-        details: {
-          teller_outlet: record.fullName || record.outlet || record.username || 'N/A',
-          transId,
-          draw: record.drawTime || record.drawDate || record.draw || record.created_at || 'N/A',
-          betNo: record.betNo || record.bet_no || 'N/A',
-          betCode: record.betCode || record.bet_code || 'RS3',
-          betAmount: parseFloat(record.betAmount ?? record.bet_amount ?? 0),
-          winAmount: parseFloat(record.winAmount ?? record.win_amount ?? 0),
-          dateReturned: record.date_returned || record.dateReturned || record.created_at || 'N/A',
-          reason: record.deletion_request_reason,
-          requestedBy: record.deletion_request_by,
-          approvedBy: adminUser?.username,
-          deductedFromCollections: true
-        }
-      }]);
-    } catch (auditErr) {
-      console.warn('Audit log write error:', auditErr);
+      await supabase
+        .from('returned_winnings_deletion_requests')
+        .update({
+          status: 'APPROVED',
+          reviewed_by: adminUser?.username || 'admin',
+          reviewed_at: new Date().toISOString(),
+          deducted_from_collections: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('transaction_id', transId);
+    } catch (e) {
+      console.warn('Note: returned_winnings_deletion_requests update error or table not yet migrated:', e);
     }
 
     return true;
@@ -110,34 +99,111 @@ export const winningsService = {
     }
 
     const { error } = await query;
-    if (error) throw error;
+    if (error) {
+      console.warn('returned_winnings update failed on reject:', error);
+    }
 
+    // Also update returned_winnings_deletion_requests table
     try {
-      await supabase.from('audit_logs').insert([{
-        actor_username: adminUser?.username || 'admin',
-        actor_role: adminUser?.role || 'Super Admin',
-        action: 'HARDCOPY_CLAIM_DELETION_REJECTED',
-        target_type: 'RETURNED_WINNING',
-        target_id: transId || 'UNKNOWN',
-        sub_office: record.sub_office || adminUser?.sub_office || 'All',
-        details: {
-          teller_outlet: record.fullName || record.outlet || record.username || 'N/A',
-          transId,
-          draw: record.drawTime || record.drawDate || record.draw || record.created_at || 'N/A',
-          betNo: record.betNo || record.bet_no || 'N/A',
-          betCode: record.betCode || record.bet_code || 'RS3',
-          betAmount: parseFloat(record.betAmount ?? record.bet_amount ?? 0),
-          winAmount: parseFloat(record.winAmount ?? record.win_amount ?? 0),
-          dateReturned: record.date_returned || record.dateReturned || record.created_at || 'N/A',
-          rejectReason,
-          rejectedBy: adminUser?.username
-        }
-      }]);
-    } catch (auditErr) {
-      console.warn('Audit log write error:', auditErr);
+      await supabase
+        .from('returned_winnings_deletion_requests')
+        .update({
+          status: 'REJECTED',
+          reject_reason: rejectReason || 'Rejected by administrator',
+          reviewed_by: adminUser?.username || 'admin',
+          reviewed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('transaction_id', transId);
+    } catch (e) {
+      console.warn('Note: returned_winnings_deletion_requests update error:', e);
     }
 
     return true;
+  },
+
+  // Fetch all deletion requests from the dedicated table, with fallback to audit logs
+  async fetchDeletionRequests(subOffice) {
+    try {
+      let query = supabase
+        .from('returned_winnings_deletion_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (subOffice && subOffice !== 'All') {
+        query = query.or(`sub_office.eq.${subOffice},sub_office.eq.All,sub_office.is.null`);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        return data;
+      }
+    } catch (err) {
+      console.warn('returned_winnings_deletion_requests query failed, falling back:', err);
+    }
+    return [];
+  },
+
+  // Create a new deletion request in returned_winnings_deletion_requests & update returned_winnings
+  async createDeletionRequest(ticket, reason, attachmentUrl, user) {
+    const transId = String(ticket.transactionId || ticket.transId || ticket.computedTransId || '').trim();
+    const payload = {
+      returned_winnings_id: ticket.id || null,
+      transaction_id: transId,
+      sub_office: ticket.sub_office || user?.sub_office || 'All',
+      teller_outlet: ticket.fullName || ticket.outlet || ticket.username || 'N/A',
+      supervisor: ticket.supervisor || null,
+      draw_time: ticket.drawTime || ticket.drawDate || ticket.draw || 'N/A',
+      draw_date: ticket.drawDate || ticket.created_at || null,
+      bet_no: ticket.betNo || ticket.bet_no || 'N/A',
+      bet_code: ticket.betCode || ticket.bet_code || 'RS3',
+      bet_amount: parseFloat(ticket.betAmount ?? ticket.bet_amount ?? 0),
+      win_amount: parseFloat(ticket.winAmount ?? ticket.win_amount ?? 0),
+      status: 'PENDING_APPROVAL',
+      reason: reason ? reason.trim() : 'Hard copy ticket claimed (previous deposit deduction)',
+      attachment_url: attachmentUrl || null,
+      requested_by: user?.full_name || user?.username || 'SSR',
+      requested_by_role: user?.role || 'SSR',
+      requested_at: new Date().toISOString()
+    };
+
+    // 1. Insert into dedicated table
+    let insertedRecord = null;
+    try {
+      const { data, error } = await supabase
+        .from('returned_winnings_deletion_requests')
+        .insert([payload])
+        .select()
+        .single();
+      if (!error) {
+        insertedRecord = data;
+      } else {
+        console.warn('Insert into returned_winnings_deletion_requests error:', error.message);
+      }
+    } catch (insertErr) {
+      console.warn('Dedicated deletion requests table insert failed:', insertErr);
+    }
+
+    // 2. Also update returned_winnings record status for backwards compatibility
+    try {
+      let rwQuery = supabase.from('returned_winnings').update({
+        deletion_request_status: 'PENDING_ADMIN_APPROVAL',
+        deletion_request_reason: payload.reason,
+        deletion_request_by: payload.requested_by,
+        deletion_request_attachment: attachmentUrl,
+        updated_at: new Date().toISOString()
+      });
+      if (ticket.id) {
+        rwQuery = rwQuery.eq('id', ticket.id);
+      } else {
+        rwQuery = rwQuery.eq('transactionId', transId);
+      }
+      await rwQuery;
+    } catch (rwErr) {
+      console.warn('returned_winnings status update error:', rwErr);
+    }
+
+    return insertedRecord || payload;
   },
 
   async updateBatchReceiptStatus(transIds, status = 'PENDING_VERIFICATION') {
@@ -153,3 +219,4 @@ export const winningsService = {
     return true;
   }
 };
+

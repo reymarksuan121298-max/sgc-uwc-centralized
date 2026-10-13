@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect, memo, useCallback } from 'react';
-import {
-  X, UploadCloud, FileText, CheckCircle2,
+import { 
+  X, UploadCloud, FileText, CheckCircle2, 
   Smartphone, Building2, Landmark, Image as ImageIcon, Loader2,
   AlertTriangle, ShieldCheck, Search, Sparkles, Eye
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
 import { generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord } from '../../utils/formatters';
+import SelectClaimedDeductionsModal from './SelectClaimedDeductionsModal';
 
 // Fast Date Formatter (cached, avoids heavy toLocaleString overhead on every render)
 const fastFormatTimestamp = (timestampStr) => {
@@ -64,7 +65,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
             Included Returned Winnings ({selectedInViewCount} of {items.length} Selected)
           </span>
         </div>
-
+        
         {/* Live Search & Quick Toggle inside Modal */}
         <div className="flex items-center gap-2">
           <button
@@ -130,15 +131,16 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                 const isSelected = selectedKeys.has(key);
 
                 return (
-                  <tr
-                    key={key}
-                    className={`transition-colors cursor-pointer select-none ${isSelected
-                      ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800'
-                      : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
-                      }`}
+                  <tr 
+                    key={key} 
+                    className={`transition-colors cursor-pointer select-none ${
+                      isSelected 
+                        ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800' 
+                        : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
+                    }`}
                     onClick={() => onToggleSelect(key)}
                   >
-                    <td
+                    <td 
                       className="px-2.5 py-1.5 border-r border-slate-100 text-center"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -153,7 +155,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                     <td className={`px-3 py-1.5 border-r border-slate-100 font-mono font-bold ${isSelected ? 'text-[#002B66]' : 'text-slate-500'}`}>
                       {transId}
                     </td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 uppercase font-semibold truncate max-w-[140px]">{t.fullName || t.outlet || t.username || 'N/A'}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 uppercase font-semibold truncate max-w-[220px]" title={t.fullName || t.outlet || t.username || 'N/A'}>{t.fullName || t.outlet || t.username || 'N/A'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">{formatDrawTime ? formatDrawTime(t.drawTime || t.drawDate || t.created_at) : 'N/A'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-slate-800">
                       {t.betNo || 'N/A'} <span className="bg-slate-100 text-slate-600 text-[9px] px-1 py-0.5 rounded font-medium">({t.betCode || 'RS3'})</span>
@@ -192,6 +194,7 @@ function AttachWeeklyProofModal({
   onClose,
   batchSerialNumber,
   filteredData = [],
+  claimedAdjustmentItems = [],
   currentUser,
   formatDrawTime,
   onSuccess
@@ -211,9 +214,15 @@ function AttachWeeklyProofModal({
   const [modalTableSearch, setModalTableSearch] = useState('');
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
 
+  // Claimed Deletions Deduction State
+  const [selectedClaimedKeys, setSelectedClaimedKeys] = useState(() => new Set());
+  const [isClaimedModalOpen, setIsClaimedModalOpen] = useState(false);
+  const [showUnselectedClaimedWarning, setShowUnselectedClaimedWarning] = useState(false);
+  const [allowBypassClaimed, setAllowBypassClaimed] = useState(false);
+
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
 
-  // Target batch calculation: all active unremitted returned winning tickets (excluding under settlement, inactive/AWOL/pullout, and pending deletion)
+  // Target batch calculation: all active unremitted returned winning tickets
   const targetBatch = useMemo(() => {
     const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
     const winTotal = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
@@ -225,25 +234,6 @@ function AttachWeeklyProofModal({
       count: unremitted.length
     };
   }, [batchSerialNumber, filteredData]);
-
-  // Sync initial state on modal open (select all eligible unremitted tickets by default)
-  useEffect(() => {
-    if (isOpen) {
-      setFormError('');
-      setReferenceNumber('');
-      setPreviewImage(null);
-      setNotes('');
-      setModalTableSearch('');
-      setSenderName(currentUser?.full_name || '');
-
-      const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
-      const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
-      setSelectedKeys(initialKeys);
-
-      const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      setCustomRemittanceAmount(targetAmount.toFixed(2));
-    }
-  }, [isOpen, filteredData, currentUser]);
 
   // Selected tickets calculation
   const selectedItems = useMemo(() => {
@@ -257,6 +247,54 @@ function AttachWeeklyProofModal({
 
   const selectedCount = selectedItems.length;
 
+  // Claimed deductions calculation
+  const selectedDeductionTotal = useMemo(() => {
+    return (claimedAdjustmentItems || [])
+      .filter(i => {
+        const k = String(i.transactionId || i.transId || i.id).trim();
+        return selectedClaimedKeys.has(k);
+      })
+      .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  }, [claimedAdjustmentItems, selectedClaimedKeys]);
+
+  const selectedClaimedCount = useMemo(() => {
+    return (claimedAdjustmentItems || []).filter(i => {
+      const k = String(i.transactionId || i.transId || i.id).trim();
+      return selectedClaimedKeys.has(k);
+    }).length;
+  }, [claimedAdjustmentItems, selectedClaimedKeys]);
+
+  const totalClaimedWinAmount = useMemo(() => {
+    return (claimedAdjustmentItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  }, [claimedAdjustmentItems]);
+
+  const netPayableTotal = useMemo(() => {
+    return Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - selectedDeductionTotal);
+  }, [selectedWinTotal, selectedDeductionTotal]);
+
+  // Sync initial state on modal open
+  useEffect(() => {
+    if (isOpen) {
+      setFormError('');
+      setReferenceNumber('');
+      setPreviewImage(null);
+      setNotes('');
+      setModalTableSearch('');
+      setSenderName(currentUser?.full_name || '');
+      setSelectedClaimedKeys(new Set());
+      setAllowBypassClaimed(false);
+      setShowUnselectedClaimedWarning(false);
+      setIsClaimedModalOpen(false);
+
+      const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
+      const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
+      setSelectedKeys(initialKeys);
+
+      const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
+      setCustomRemittanceAmount(targetAmount.toFixed(2));
+    }
+  }, [isOpen, filteredData, currentUser]);
+
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
     setSelectedKeys(prev => {
@@ -267,11 +305,12 @@ function AttachWeeklyProofModal({
         next.add(key);
       }
       const newItems = (targetBatch?.items || []).filter(t => next.has(getItemKey(t)));
-      const newTotal = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      setCustomRemittanceAmount(newTotal.toFixed(2));
+      const newGross = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
+      const newNet = Math.max(0, newGross - selectedDeductionTotal);
+      setCustomRemittanceAmount(newNet.toFixed(2));
       return next;
     });
-  }, [targetBatch]);
+  }, [targetBatch, selectedDeductionTotal]);
 
   // Toggle select all visible / batch tickets
   const handleToggleSelectAll = useCallback(() => {
@@ -284,18 +323,54 @@ function AttachWeeklyProofModal({
         return new Set();
       } else {
         const fullTotal = targetBatch.items.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-        setCustomRemittanceAmount(fullTotal.toFixed(2));
+        const newNet = Math.max(0, fullTotal - selectedDeductionTotal);
+        setCustomRemittanceAmount(newNet.toFixed(2));
         return new Set(visibleKeys);
       }
     });
-  }, [targetBatch]);
+  }, [targetBatch, selectedDeductionTotal]);
+
+  // Toggle claimed deduction tickets
+  const handleToggleClaimedSelect = useCallback((key) => {
+    setSelectedClaimedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      const newDeductions = (claimedAdjustmentItems || [])
+        .filter(i => next.has(String(i.transactionId || i.transId || i.id).trim()))
+        .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+      const newNet = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - newDeductions);
+      setCustomRemittanceAmount(newNet.toFixed(2));
+      return next;
+    });
+  }, [claimedAdjustmentItems, selectedWinTotal]);
+
+  const handleToggleAllClaimed = useCallback(() => {
+    if (!claimedAdjustmentItems || !claimedAdjustmentItems.length) return;
+    setSelectedClaimedKeys(prev => {
+      const allKeys = claimedAdjustmentItems.map(i => String(i.transactionId || i.transId || i.id).trim());
+      const isAll = allKeys.length > 0 && allKeys.every(k => prev.has(k));
+      if (isAll) {
+        setCustomRemittanceAmount((parseFloat(selectedWinTotal || 0) || 0).toFixed(2));
+        return new Set();
+      } else {
+        const fullDeductions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+        const newNet = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - fullDeductions);
+        setCustomRemittanceAmount(newNet.toFixed(2));
+        return new Set(allKeys);
+      }
+    });
+  }, [claimedAdjustmentItems, selectedWinTotal]);
 
   // Dynamically compute Remittance Serial Number based on sub-office and remittance date
   const effectiveBatchSrn = useMemo(() => {
     const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
       ? currentUser.sub_office
       : (selectedItems[0]?.sub_office || targetBatch?.items[0]?.sub_office || 'Mandaue Central');
-
+    
     // Parse receiptDate (or fallback to current date)
     const dateObj = receiptDate ? new Date(`${receiptDate}T12:00:00`) : new Date();
 
@@ -358,16 +433,23 @@ function AttachWeeklyProofModal({
       return;
     }
 
-    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0
-      ? parseFloat(customRemittanceAmount)
-      : (parseFloat(selectedWinTotal || 0) || 0);
+    // SUBMISSION ALERT WARNING GATE:
+    // If there are claimed deletion requests and SSR has 0 selected to deduct, intercept with alert warning!
+    if (claimedAdjustmentItems.length > 0 && selectedClaimedKeys.size === 0 && !allowBypassClaimed) {
+      setShowUnselectedClaimedWarning(true);
+      return;
+    }
+
+    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
+      ? parseFloat(customRemittanceAmount) 
+      : (parseFloat(netPayableTotal || 0) || 0);
 
     if (!isAdmin && !referenceNumber.trim()) {
       setFormError('Please enter the official remittance reference / control number.');
       return;
     }
 
-    if (effectiveAmount <= 0) {
+    if (effectiveAmount < 0) {
       setFormError('Please enter a valid total remittance amount.');
       return;
     }
@@ -380,9 +462,9 @@ function AttachWeeklyProofModal({
     if (selectedCount === 0) return;
 
     const effectiveReferenceNumber = (referenceNumber.trim() || effectiveBatchSrn).toUpperCase();
-    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0
-      ? parseFloat(customRemittanceAmount)
-      : (parseFloat(selectedWinTotal || 0) || 0);
+    const effectiveAmount = !isNaN(parseFloat(customRemittanceAmount)) && parseFloat(customRemittanceAmount) > 0 
+      ? parseFloat(customRemittanceAmount) 
+      : (parseFloat(netPayableTotal || 0) || 0);
 
     setIsSubmitting(true);
     setFormError('');
@@ -429,8 +511,8 @@ function AttachWeeklyProofModal({
       // 2. Extract transaction IDs in selected batch
       const itemsToRemit = selectedItems;
       const transIds = itemsToRemit.map(t => String(t.transactionId || t.transId).trim()).filter(Boolean);
-      const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All'
-        ? currentUser.sub_office
+      const subOfficeName = currentUser?.sub_office && currentUser.sub_office !== 'All' 
+        ? currentUser.sub_office 
         : (itemsToRemit[0]?.sub_office || 'Mandaue Central');
 
       // 3. Create parent remittance receipt entry conforming exactly to Supabase schema (keyed by sub-office serial format)
@@ -463,8 +545,8 @@ function AttachWeeklyProofModal({
 
       // 4. Update status of all selected returned winning records in database
       if (transIds.length > 0) {
-        const effectiveRemittanceTimestamp = receiptDate
-          ? new Date(`${receiptDate}T12:00:00`).toISOString()
+        const effectiveRemittanceTimestamp = receiptDate 
+          ? new Date(`${receiptDate}T12:00:00`).toISOString() 
           : new Date().toISOString();
 
         const { error: updateError } = await supabase
@@ -479,6 +561,22 @@ function AttachWeeklyProofModal({
 
         if (updateError) {
           console.warn("returned_winnings batch update note:", updateError);
+        }
+      }
+
+      // 4b. Update status of deducted claimed deletion requests in dedicated table
+      if (selectedClaimedKeys.size > 0) {
+        const deductedTransIds = Array.from(selectedClaimedKeys);
+        const { error: deductError } = await supabase
+          .from('returned_winnings_deletion_requests')
+          .update({
+            deducted_from_collections: true,
+            updated_at: new Date().toISOString()
+          })
+          .in('transaction_id', deductedTransIds);
+
+        if (deductError) {
+          console.warn("Claimed deletion status update note:", deductError);
         }
       }
 
@@ -516,15 +614,15 @@ function AttachWeeklyProofModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-      <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-
+      <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+        
         {/* 1. MODAL HEADER */}
         <div className="bg-[#002B66] text-white px-5 py-3.5 flex justify-between items-center border-b-2 border-[#FFD700] shrink-0">
           <div className="flex items-center gap-2 font-black uppercase tracking-wider text-xs sm:text-sm">
             <UploadCloud size={18} className="text-[#FFD700]" />
             <span>Attach Remittance Proof • {effectiveBatchSrn || 'Batch'}</span>
           </div>
-          <button
+          <button 
             type="button"
             onClick={onClose}
             className="text-slate-300 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
@@ -534,9 +632,9 @@ function AttachWeeklyProofModal({
         </div>
 
         {/* 2. SCROLLABLE FORM BODY */}
-        <form
+        <form 
           id="weekly-remit-form"
-          onSubmit={handleInitiateSubmit}
+          onSubmit={handleInitiateSubmit} 
           className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs"
         >
           {formError && (
@@ -559,12 +657,81 @@ function AttachWeeklyProofModal({
                   <span className="text-[#002B66] font-black">{selectedCount}</span> / {targetBatch.count} Tickets
                 </span>
               </div>
-              <div className="bg-white p-2.5 rounded-lg border border-blue-100/80 shadow-2xs">
-                <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Win Amount</span>
-                <span className="font-extrabold text-emerald-700 text-xs mt-0.5 block">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <div 
+                onClick={() => claimedAdjustmentItems.length > 0 && setIsClaimedModalOpen(true)}
+                className={`p-2.5 rounded-lg border shadow-2xs transition-all ${
+                  claimedAdjustmentItems.length > 0 ? 'bg-amber-50/60 border-amber-200 cursor-pointer hover:bg-amber-100/70' : 'bg-white border-blue-100/80'
+                }`}
+                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to deduct" : undefined}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Deduction</span>
+                  {claimedAdjustmentItems.length > 0 && (
+                    <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                      {selectedClaimedCount}/{claimedAdjustmentItems.length}
+                    </span>
+                  )}
+                </div>
+                <span className="font-extrabold text-rose-700 text-xs mt-0.5 block">
+                  -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
               </div>
             </div>
           </div>
+
+          {/* CLAIMED DELETION ALERT WARNING BANNER */}
+          {claimedAdjustmentItems.length > 0 && (
+            <div
+              onClick={() => setIsClaimedModalOpen(true)}
+              className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                selectedClaimedCount > 0
+                  ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70'
+                  : 'bg-gradient-to-r from-amber-50 via-amber-100/50 to-orange-50 border-amber-400 text-amber-950 hover:shadow-md'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  selectedClaimedCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-200 text-amber-800'
+                }`}>
+                  <AlertTriangle size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
+                      {selectedClaimedCount > 0
+                        ? `Claimed Deletions Deduction Applied (${selectedClaimedCount} of ${claimedAdjustmentItems.length} Selected)`
+                        : `⚠️ Warning: ${claimedAdjustmentItems.length} Claimed Ticket(s) Available for Deduction`}
+                    </span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                      selectedClaimedCount > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
+                    }`}>
+                      {selectedClaimedCount > 0 ? 'Deduction Active' : 'Action Required'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-600 truncate mt-0.5">
+                    {selectedClaimedCount > 0
+                      ? `Total deduction of -₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} subtracted from net remittance. Click to modify.`
+                      : `Click here to open and select which Trans IDs to deduct before submitting remittance.`}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsClaimedModalOpen(true);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black shrink-0 transition-colors cursor-pointer shadow-2xs ${
+                  selectedClaimedCount > 0
+                    ? 'bg-[#002B66] text-[#FFD700] hover:bg-blue-900'
+                    : 'bg-amber-500 hover:bg-amber-600 text-white'
+                }`}
+              >
+                {selectedClaimedCount > 0 ? 'Edit Trans IDs' : 'Select Trans IDs →'}
+              </button>
+            </div>
+          )}
 
           {/* MEMOIZED TICKETS TABLE WITH CHECKBOX SELECTION */}
           <BatchTicketsTable
@@ -600,10 +767,11 @@ function AttachWeeklyProofModal({
                       key={channel.id}
                       type="button"
                       onClick={() => setPaymentChannel(channel.id)}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border font-bold text-xs transition-all cursor-pointer ${isSelected
-                        ? 'bg-[#002B66] text-white border-[#002B66] shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border font-bold text-xs transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-[#002B66] text-white border-[#002B66] shadow-xs' 
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
                     >
                       <Icon size={16} className={isSelected ? 'text-[#FFD700]' : channel.color} />
                       <span className="truncate">{channel.name}</span>
@@ -640,13 +808,6 @@ function AttachWeeklyProofModal({
                     <label className="text-[11px] font-extrabold text-slate-700 uppercase">
                       Total Remittance Amount (₱) *
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setCustomRemittanceAmount(Number(selectedWinTotal || 0).toFixed(2))}
-                      className="text-[10px] text-[#002B66] hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <Sparkles size={11} className="text-amber-500" /> Match Selected Total
-                    </button>
                   </div>
                   <input
                     type="number"
@@ -746,13 +907,13 @@ function AttachWeeklyProofModal({
             <label className="text-[11px] font-extrabold text-slate-700 uppercase block mb-1">
               Attach Official Remittance Receipt / Deposit Slip
             </label>
-
+            
             {previewImage ? (
               <div className="relative border-2 border-emerald-500 rounded-xl p-3 bg-emerald-50/50 flex flex-col items-center">
-                <img
-                  src={previewImage}
-                  alt="Receipt Preview"
-                  className="max-h-44 rounded-lg object-contain border border-emerald-200 shadow-xs cursor-pointer hover:opacity-95"
+                <img 
+                  src={previewImage} 
+                  alt="Receipt Preview" 
+                  className="max-h-44 rounded-lg object-contain border border-emerald-200 shadow-xs cursor-pointer hover:opacity-95" 
                   onClick={() => setIsImageZoomed(true)}
                 />
                 <div className="flex items-center gap-2 mt-2">
@@ -779,11 +940,11 @@ function AttachWeeklyProofModal({
                   <span className="font-bold text-[#002B66] text-xs">Click to browse receipt screenshot / deposit slip</span>
                   <p className="text-[10px] text-slate-400 mt-0.5">PNG, JPG, JPEG up to 5MB</p>
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleImageChange} 
+                  className="hidden" 
                 />
               </label>
             )}
@@ -815,10 +976,12 @@ function AttachWeeklyProofModal({
 
         {/* 3. FIXED MODAL FOOTER */}
         <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-slate-500">
-              Target Liability: <strong className="text-emerald-700 font-mono font-black">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
-            </span>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500">
+            <span>Gross: <strong className="text-slate-700">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+            {selectedDeductionTotal > 0 && (
+              <span>• Deductions: <strong className="text-rose-600 font-black">-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+            )}
+            <span>• Net Payable: <strong className="text-emerald-700 font-mono font-black text-xs">₱{netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -846,7 +1009,7 @@ function AttachWeeklyProofModal({
         {showConfirmModal && (
           <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
             <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-
+              
               {/* Header */}
               <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
                 <div className="flex items-center gap-2.5 font-black uppercase text-xs sm:text-sm tracking-wider">
@@ -865,7 +1028,7 @@ function AttachWeeklyProofModal({
 
               {/* Body */}
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs">
-
+                
                 <div className="bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
                   <Sparkles size={16} className="text-[#002B66] shrink-0" />
                   <span>Please verify that the attached receipt and remittance details are 100% correct before finalizing.</span>
@@ -873,7 +1036,7 @@ function AttachWeeklyProofModal({
 
                 {/* Proof Image Preview + Details Layout */}
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-start">
-
+                  
                   {/* Left: Receipt Proof Preview Card */}
                   <div className="sm:col-span-5 bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col items-center justify-center text-center">
                     <span className="text-[10px] font-extrabold uppercase text-slate-500 mb-2 block tracking-wider">
@@ -919,10 +1082,10 @@ function AttachWeeklyProofModal({
                       <div className="border-t border-slate-200 pt-2 grid grid-cols-2 gap-2">
                         <div>
                           <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
-                            Remittance Amount
+                            Net Remittance Amount
                           </span>
                           <span className="font-mono font-black text-emerald-700 text-sm block">
-                            ₱{parseFloat(customRemittanceAmount || selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ₱{parseFloat(customRemittanceAmount || netPayableTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                         <div>
@@ -934,6 +1097,13 @@ function AttachWeeklyProofModal({
                           </span>
                         </div>
                       </div>
+
+                      {selectedDeductionTotal > 0 && (
+                        <div className="border-t border-slate-200 pt-1.5 flex justify-between items-center text-[11px] font-mono">
+                          <span className="font-sans text-rose-600 font-bold">Claimed Deductions ({selectedClaimedCount} tickets):</span>
+                          <span className="font-bold text-rose-600">-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
 
                       {parseFloat(depositedCharges) > 0 && (
                         <div className="border-t border-slate-200 pt-1.5 flex justify-between items-center text-[11px]">
@@ -1029,14 +1199,14 @@ function AttachWeeklyProofModal({
 
         {/* 5. ENLARGED PROOF IMAGE MODAL */}
         {isImageZoomed && previewImage && (
-          <div
+          <div 
             className="fixed inset-0 z-70 bg-black/90 flex items-center justify-center p-4 animate-in fade-in cursor-zoom-out"
             onClick={() => setIsImageZoomed(false)}
           >
             <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-              <img
-                src={previewImage}
-                alt="Enlarged Proof"
+              <img 
+                src={previewImage} 
+                alt="Enlarged Proof" 
                 className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/20"
               />
               <button
@@ -1049,6 +1219,65 @@ function AttachWeeklyProofModal({
             </div>
           </div>
         )}
+
+        {/* 6. SUBMISSION ALERT WARNING PROMPT (When claimed deletions are unselected) */}
+        {showUnselectedClaimedWarning && (
+          <div className="fixed inset-0 z-70 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+            <div className="bg-white border-2 border-amber-500 rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 text-center animate-in zoom-in-95 duration-150">
+              <div className="w-14 h-14 rounded-full bg-amber-100 border-2 border-amber-300 flex items-center justify-center mx-auto text-amber-600">
+                <AlertTriangle size={30} />
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-sm sm:text-base font-black text-slate-800 uppercase tracking-wide">
+                  Claimed Tickets Pending Deduction!
+                </h3>
+                <p className="text-xs text-slate-600">
+                  There are <span className="font-black text-amber-800">{claimedAdjustmentItems.length}</span> claimed winning ticket(s) with deletion requests totaling <span className="font-bold text-rose-600 font-mono">₱{totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> available to offset your weekly deposit.
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 text-left font-medium">
+                  <strong>Action Required:</strong> If these tickets were already paid out to winners, you should select their Transaction IDs to deduct them from this remittance payment.
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUnselectedClaimedWarning(false);
+                    setIsClaimedModalOpen(true);
+                  }}
+                  className="w-full px-4 py-2.5 bg-[#002B66] text-[#FFD700] hover:bg-blue-900 rounded-xl font-black text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <CheckCircle2 size={15} />
+                  Select Trans IDs to Deduct
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUnselectedClaimedWarning(false);
+                    setAllowBypassClaimed(true);
+                    setShowConfirmModal(true);
+                  }}
+                  className="w-full px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Proceed Without Deduction
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 7. CLAIMED DELETIONS DEDUCTION SELECTION MODAL */}
+        <SelectClaimedDeductionsModal
+          isOpen={isClaimedModalOpen}
+          onClose={() => setIsClaimedModalOpen(false)}
+          items={claimedAdjustmentItems}
+          selectedKeys={selectedClaimedKeys}
+          onToggleSelect={handleToggleClaimedSelect}
+          onToggleSelectAll={handleToggleAllClaimed}
+          formatDrawTime={formatDrawTime}
+        />
 
       </div>
     </div>

@@ -583,3 +583,54 @@ BEGIN
   END;
 END $$;
 
+-- ==============================================================================
+-- 16. RETURNED WINNINGS DELETION REQUESTS TABLE
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.returned_winnings_deletion_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    returned_winnings_id UUID REFERENCES public.returned_winnings(id) ON DELETE SET NULL,
+    transaction_id TEXT NOT NULL,
+    sub_office TEXT NOT NULL DEFAULT 'All',
+    teller_outlet TEXT,
+    supervisor TEXT,
+    draw_time TEXT,
+    draw_date TEXT,
+    bet_no TEXT,
+    bet_code TEXT DEFAULT 'RS3',
+    bet_amount NUMERIC(12, 2) DEFAULT 0,
+    win_amount NUMERIC(12, 2) DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL', -- 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'
+    reason TEXT NOT NULL,
+    attachment_url TEXT,
+    requested_by TEXT NOT NULL,
+    requested_by_role TEXT,
+    requested_at TIMESTAMPTZ DEFAULT NOW(),
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    reject_reason TEXT,
+    deducted_from_collections BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_del_req_status ON public.returned_winnings_deletion_requests(status);
+CREATE INDEX IF NOT EXISTS idx_del_req_trans_id ON public.returned_winnings_deletion_requests(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_del_req_sub_office ON public.returned_winnings_deletion_requests(sub_office);
+CREATE INDEX IF NOT EXISTS idx_del_req_created_at ON public.returned_winnings_deletion_requests(created_at DESC);
+
+ALTER TABLE public.returned_winnings_deletion_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access to deletion requests for anon/authenticated" ON public.returned_winnings_deletion_requests;
+CREATE POLICY "Allow all access to deletion requests for anon/authenticated" 
+ON public.returned_winnings_deletion_requests FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.returned_winnings_deletion_requests REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.returned_winnings_deletion_requests;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
+
+

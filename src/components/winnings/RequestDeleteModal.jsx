@@ -9,6 +9,7 @@ import { getTicketTransId } from '../../utils/formatters';
 import { compressImageFile } from '../../utils/imageCompressor';
 import TimestampCaptureModal from './TimestampCaptureModal';
 import { isAdminRole, isSuperAdminRole, isSSRRole } from '../../utils/permissions';
+import { winningsService } from '../../services/winningsService';
 
 export default function RequestDeleteModal({
   isOpen,
@@ -102,74 +103,15 @@ export default function RequestDeleteModal({
     setErrorMessage('');
 
     try {
-      const payload = {
-        deletion_request_status: 'PENDING_ADMIN_APPROVAL',
-        deletion_request_reason: reason.trim(),
-        deletion_request_by: currentUser?.full_name || currentUser?.username || 'SSR / Specialist',
-        deletion_request_attachment: ticketImage,
-        hard_copy_ticket_url: ticketImage,
-        updated_at: new Date().toISOString()
-      };
-
-      // 1. Update returned_winnings record
-      let query = supabase.from('returned_winnings').update(payload);
-      if (ticket.id) {
-        query = query.eq('id', ticket.id);
-      } else {
-        query = query.eq('transactionId', transId);
-      }
-
-      const { error: updateError } = await query;
-      if (updateError) {
-        // Fallback: If custom deletion columns not yet added to SQL, update status in settlementStatus / remarks
-        const fallbackQuery = supabase
-          .from('returned_winnings')
-          .update({
-            deletion_request_status: 'PENDING_ADMIN_APPROVAL',
-            deletion_request_reason: reason.trim(),
-            deletion_request_attachment: ticketImage,
-            updated_at: new Date().toISOString()
-          });
-        const finalQuery = ticket.id ? fallbackQuery.eq('id', ticket.id) : fallbackQuery.eq('transactionId', transId);
-        const { error: fbErr } = await finalQuery;
-        if (fbErr) throw updateError;
-      }
-
-      // 2. Insert Audit Log
-      try {
-        await supabase.from('audit_logs').insert([{
-          actor_username: currentUser?.username || 'staff',
-          actor_role: currentUser?.role || 'SSR',
-          action: 'CLAIMED_TICKET_DELETION_REQUESTED',
-          target_type: 'RETURNED_WINNING',
-          target_id: transId,
-          sub_office: ticket.sub_office || currentUser?.sub_office || 'All',
-          details: {
-            teller_outlet: ticket.fullName || ticket.outlet || ticket.username || 'N/A',
-            transId,
-            draw: ticket.drawTime || ticket.drawDate || ticket.draw || ticket.created_at || 'N/A',
-            betNo: ticket.betNo || ticket.bet_no || 'N/A',
-            betCode: ticket.betCode || ticket.bet_code || 'RS3',
-            betAmount: parseFloat(ticket.betAmount ?? ticket.bet_amount ?? 0),
-            winAmount: parseFloat(ticket.winAmount ?? ticket.win_amount ?? 0),
-            dateReturned: ticket.date_returned || ticket.dateReturned || ticket.created_at || 'N/A',
-            requester: currentUser?.username,
-            requestedBy: currentUser?.full_name || currentUser?.username || 'SSR / Specialist',
-            reason: payload.deletion_request_reason,
-            hasHardCopyProof: true
-          }
-        }]);
-      } catch (auditErr) {
-        console.warn('Audit log write error:', auditErr);
-      }
+      await winningsService.createDeletionRequest(ticket, reason, ticketImage, currentUser);
 
       if (onSuccess) {
         onSuccess(transId);
       }
       onClose();
     } catch (err) {
-      console.error('Failed to submit deletion request:', err);
-      setErrorMessage(err.message || 'Failed to submit deletion request.');
+      console.error("Failed to submit deletion request:", err);
+      setErrorMessage(err.message || 'Failed to submit request. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
