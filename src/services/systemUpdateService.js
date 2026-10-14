@@ -1,6 +1,5 @@
 import { supabase } from '../config/supabaseClient';
 import { formatRoleName } from '../utils/permissions';
-import { getLatestFeatureForRole, getRegisteredFeatures } from '../config/featuresRegistry';
 
 const ACK_STORAGE_PREFIX = 'system_feature_ack_';
 
@@ -64,7 +63,8 @@ export const systemUpdateService = {
 
   /**
    * Automatically detects if there is an unacknowledged feature applicable to the current user
-   * Returns the feature object if it should be displayed, or null if already seen/acknowledged
+   * Directly uses GitHub branch / Git commit message / Vercel build deployment metadata.
+   * Returns the feature object if it should be displayed, or null if already seen/acknowledged.
    */
   async detectActiveFeature(currentUser) {
     if (!currentUser) return null;
@@ -95,45 +95,56 @@ export const systemUpdateService = {
         }
       }
     } catch (err) {
-      // Non-blocking: continue to code-level feature registry
       console.warn('Dynamic feature settings check note:', err);
     }
 
-    // 2. Check code-level feature registry or Git/Vercel build info
-    const registeredFeature = getLatestFeatureForRole(userRole);
-    let activeFeature = null;
+    // 2. Automatic detection purely from Git / Vercel deployment metadata
+    if (!buildInfo) return null;
 
-    if (registeredFeature) {
-      activeFeature = {
-        ...registeredFeature,
-        buildInfo,
-        deploymentId: `deploy_${buildInfo.commitSha}`
-      };
-    } else if (buildInfo && buildInfo.commitSha && buildInfo.commitSha !== 'latest') {
-      const rawMsg = buildInfo.commitMessage || 'System enhancements';
-      const cleanMessage = rawMsg
-        .replace(/^(feat|fix|perf|refactor|chore)(\([^\)]+\))?:\s*/i, '')
-        .trim();
-      const formattedTitle = cleanMessage.charAt(0).toUpperCase() + cleanMessage.slice(1);
-
-      activeFeature = {
-        id: `deploy_${buildInfo.commitSha}`,
-        version: buildInfo.commitSha,
-        title: formattedTitle,
-        marqueeText: `🚀 Release [${buildInfo.branch}]: ${formattedTitle}`,
-        allowedRoles: ['all'],
-        highlights: [
-          `Deployed on branch ${buildInfo.branch}`,
-          `Commit message: ${buildInfo.commitMessage}`,
-          `Build reference: ${buildInfo.commitSha}`
-        ],
-        releaseDate: (buildInfo.buildTimestamp || '').slice(0, 10),
-        buildInfo
-      };
+    const rawMsg = buildInfo.commitMessage || 'System enhancements';
+    let tag = '🚀 SYSTEM UPDATE';
+    if (/^feat(\([^\)]+\))?:/i.test(rawMsg)) {
+      tag = '✨ NEW FEATURE';
+    } else if (/^fix(\([^\)]+\))?:/i.test(rawMsg)) {
+      tag = '🛠️ SYSTEM FIX';
+    } else if (/^perf(\([^\)]+\))?:/i.test(rawMsg)) {
+      tag = '⚡ PERFORMANCE';
+    } else if (/^refactor(\([^\)]+\))?:/i.test(rawMsg)) {
+      tag = '🔄 REFACTOR';
     }
 
-    if (!activeFeature) return null;
+    const cleanMessage = rawMsg
+      .replace(/^(feat|fix|perf|refactor|chore|build|ci|docs)(\([^\)]+\))?:\s*/i, '')
+      .trim();
+    const formattedTitle = cleanMessage.charAt(0).toUpperCase() + cleanMessage.slice(1);
 
+    const activeFeature = {
+      id: `deploy_${buildInfo.commitSha}`,
+      version: buildInfo.commitSha,
+      tag,
+      title: formattedTitle,
+      marqueeText: `${tag}: ${formattedTitle} (Branch: ${buildInfo.branch} • ${buildInfo.commitSha})`,
+      summary: `Automated release deployed on branch ${buildInfo.branch}.`,
+      allowedRoles: ['all'],
+      highlights: [
+        {
+          title: 'Latest Deployed Update',
+          description: buildInfo.commitMessage
+        },
+        {
+          title: 'Active Git Branch',
+          description: `Running deployment on branch '${buildInfo.branch}'`
+        },
+        {
+          title: 'Commit Identifier',
+          description: `Reference SHA ${buildInfo.commitSha}`
+        }
+      ],
+      releaseDate: (buildInfo.buildTimestamp || '').slice(0, 10),
+      buildInfo
+    };
+
+    // Check if current user role has acknowledged this specific deployment in localStorage
     const alreadyAcknowledged = this.hasRoleAcknowledged(activeFeature.id, userRole);
     if (alreadyAcknowledged) {
       return null;
