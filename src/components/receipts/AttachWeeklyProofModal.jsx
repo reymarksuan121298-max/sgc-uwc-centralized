@@ -97,12 +97,12 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
             />
           </div>
           <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
-            <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title="Gross Returned Winnings">
+            <span className="font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full" title="Gross Returned Winnings">
               Gross: ₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
             {selectedDeductionTotal > 0 && (
-              <span className="font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full" title="Claimed Deduction">
-                -₱{Number(selectedDeductionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title="Claimed Additions">
+                +₱{Number(selectedDeductionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             )}
           </div>
@@ -349,7 +349,7 @@ function AttachWeeklyProofModal({
   const hasUnselectedClaimed = (claimedAdjustmentItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
 
   const netPayableTotal = useMemo(() => {
-    return Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - selectedDeductionTotal);
+    return (parseFloat(selectedWinTotal || 0) || 0) + selectedDeductionTotal;
   }, [selectedWinTotal, selectedDeductionTotal]);
 
   // Sync initial state on modal open
@@ -373,9 +373,7 @@ function AttachWeeklyProofModal({
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const totalApprovedDeletions = (claimedAdjustmentItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-      const initialNetRemittance = Math.max(0, targetAmount - totalApprovedDeletions);
-      setCustomRemittanceAmount(initialNetRemittance.toFixed(2));
+      setCustomRemittanceAmount(targetAmount.toFixed(2));
     }
   }, [isOpen, filteredData, currentUser, claimedAdjustmentItems]);
 
@@ -390,12 +388,11 @@ function AttachWeeklyProofModal({
       }
       const newItems = (targetBatch?.items || []).filter(t => next.has(getItemKey(t)));
       const newGross = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const effectiveDeduction = selectedDeductionTotal > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
-      const newNet = Math.max(0, newGross - effectiveDeduction);
-      setCustomRemittanceAmount(newNet.toFixed(2));
+      const newTotal = newGross + selectedDeductionTotal;
+      setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, [targetBatch, selectedDeductionTotal, totalClaimedWinAmount]);
+  }, [targetBatch, selectedDeductionTotal]);
 
   // Toggle select all visible / batch tickets
   const handleToggleSelectAll = useCallback(() => {
@@ -404,19 +401,18 @@ function AttachWeeklyProofModal({
       const visibleKeys = targetBatch.items.map(t => getItemKey(t));
       const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => prev.has(k));
       if (allSelected) {
-        setCustomRemittanceAmount('0.00');
+        setCustomRemittanceAmount(selectedDeductionTotal.toFixed(2));
         return new Set();
       } else {
         const fullTotal = targetBatch.items.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-        const effectiveDeduction = selectedDeductionTotal > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
-        const newNet = Math.max(0, fullTotal - effectiveDeduction);
-        setCustomRemittanceAmount(newNet.toFixed(2));
+        const newTotal = fullTotal + selectedDeductionTotal;
+        setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set(visibleKeys);
       }
     });
-  }, [targetBatch, selectedDeductionTotal, totalClaimedWinAmount]);
+  }, [targetBatch, selectedDeductionTotal]);
 
-  // Toggle claimed deduction tickets
+  // Toggle claimed addition tickets
   const handleToggleClaimedSelect = useCallback((key) => {
     setSelectedClaimedKeys(prev => {
       const next = new Set(prev);
@@ -425,11 +421,11 @@ function AttachWeeklyProofModal({
       } else {
         next.add(key);
       }
-      const newDeductions = (claimedAdjustmentItems || [])
+      const newAdditions = (claimedAdjustmentItems || [])
         .filter(i => next.has(String(i.transactionId || i.transId || i.id).trim()))
         .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-      const newNet = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - newDeductions);
-      setCustomRemittanceAmount(newNet.toFixed(2));
+      const newTotal = (parseFloat(selectedWinTotal || 0) || 0) + newAdditions;
+      setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
   }, [claimedAdjustmentItems, selectedWinTotal]);
@@ -443,9 +439,9 @@ function AttachWeeklyProofModal({
         setCustomRemittanceAmount((parseFloat(selectedWinTotal || 0) || 0).toFixed(2));
         return new Set();
       } else {
-        const fullDeductions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-        const newNet = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - fullDeductions);
-        setCustomRemittanceAmount(newNet.toFixed(2));
+        const fullAdditions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+        const newTotal = (parseFloat(selectedWinTotal || 0) || 0) + fullAdditions;
+        setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set(allKeys);
       }
     });
@@ -749,7 +745,7 @@ function AttachWeeklyProofModal({
                 className={`p-2.5 rounded-lg border shadow-2xs transition-all ${
                   claimedAdjustmentItems.length > 0 ? (hasUnselectedClaimed ? 'bg-rose-50/70 border-rose-300 cursor-pointer hover:bg-rose-100/70' : 'bg-amber-50/60 border-amber-200 cursor-pointer hover:bg-amber-100/70') : 'bg-white border-blue-100/80'
                 }`}
-                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to include & deduct" : undefined}
+                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to include & add" : undefined}
               >
                 <div className="flex items-center justify-between">
                   <span className={`text-[9px] font-sans font-extrabold uppercase block ${hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-400'}`}>
@@ -763,16 +759,16 @@ function AttachWeeklyProofModal({
                     </span>
                   )}
                 </div>
-                <span className={`font-extrabold text-xs mt-0.5 block ${hasUnselectedClaimed ? 'text-rose-700' : 'text-slate-800'}`}>
+                <span className={`font-extrabold text-xs mt-0.5 block ${hasUnselectedClaimed ? 'text-rose-700' : (selectedClaimedCount > 0 ? 'text-emerald-700' : 'text-slate-800')}`}>
                   {selectedClaimedCount > 0 
-                    ? `-₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    ? `+₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
                     : (hasUnselectedClaimed ? '⚠️ Required' : '₱0.00')}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* CLAIMED DELETION ALERT WARNING BANNER */}
+          {/* CLAIMED ADDITION ALERT WARNING BANNER */}
           {claimedAdjustmentItems.length > 0 && (
             <div
               onClick={() => setIsClaimedModalOpen(true)}
@@ -786,13 +782,13 @@ function AttachWeeklyProofModal({
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                   selectedClaimedCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-200 text-rose-800 animate-pulse'
                 }`}>
-                  <AlertTriangle size={18} />
+                  {selectedClaimedCount > 0 ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
                       {selectedClaimedCount > 0
-                        ? `Claimed Tickets Included & Deducted (${selectedClaimedCount} of ${claimedAdjustmentItems.length} Selected)`
+                        ? `Claimed Tickets Included & Added (${selectedClaimedCount} of ${claimedAdjustmentItems.length} Selected)`
                         : `⚠️ Insufficient Balance to Continue: Action Required`}
                     </span>
                     <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
@@ -803,8 +799,8 @@ function AttachWeeklyProofModal({
                   </div>
                   <p className="text-[10px] text-slate-600 truncate mt-0.5">
                     {selectedClaimedCount > 0
-                      ? `Total deduction of -₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} applied to remittance liability. Click to modify.`
-                      : `You have ${claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and deduct their win amount.`}
+                      ? `Total addition of +₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added to remittance batch. Click to modify.`
+                      : `You have ${claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and add their win amount.`}
                   </p>
                 </div>
               </div>
@@ -909,7 +905,7 @@ function AttachWeeklyProofModal({
                       </label>
                       {selectedClaimedCount > 0 && (
                         <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
-                          ✓ -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} deducted
+                          ✓ +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added
                         </span>
                       )}
                     </div>
@@ -1105,9 +1101,9 @@ function AttachWeeklyProofModal({
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500">
             <span>Gross: <strong className="text-slate-700">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
             {selectedDeductionTotal > 0 && (
-              <span>• Deductions: <strong className="text-rose-600 font-black">-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+              <span>• Additions: <strong className="text-emerald-700 font-black">+₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
             )}
-            <span>• Net Payable: <strong className="text-emerald-700 font-mono font-black text-xs">₱{netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+            <span>• Total Remittance: <strong className="text-emerald-700 font-mono font-black text-xs">₱{netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1208,7 +1204,7 @@ function AttachWeeklyProofModal({
                       <div className="border-t border-slate-200 pt-2 grid grid-cols-2 gap-2">
                         <div>
                           <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">
-                            Net Remittance Amount
+                            Total Remittance Amount
                           </span>
                           <span className="font-mono font-black text-emerald-700 text-sm block">
                             ₱{parseFloat(customRemittanceAmount || netPayableTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1226,8 +1222,8 @@ function AttachWeeklyProofModal({
 
                       {selectedDeductionTotal > 0 && (
                         <div className="border-t border-slate-200 pt-1.5 flex justify-between items-center text-[11px] font-mono">
-                          <span className="font-sans text-rose-600 font-bold">Claimed Deductions ({selectedClaimedCount} tickets):</span>
-                          <span className="font-bold text-rose-600">-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-sans text-emerald-700 font-bold">Claimed Additions ({selectedClaimedCount} tickets):</span>
+                          <span className="font-bold text-emerald-700">+₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )}
 
@@ -1359,10 +1355,10 @@ function AttachWeeklyProofModal({
                   Insufficient Balance to Continue!
                 </h3>
                 <p className="text-xs text-slate-600">
-                  There are <span className="font-black text-slate-900">{claimedAdjustmentItems.length}</span> claimed winning ticket(s) totaling <span className="font-bold text-rose-600 font-mono">₱{totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> available. To continue, you must select the Trans ID(s) to include that ticket(s) and deduct their win amount from your remittance liability.
+                  There are <span className="font-black text-slate-900">{claimedAdjustmentItems.length}</span> claimed winning ticket(s) totaling <span className="font-bold text-rose-600 font-mono">₱{totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> available. To continue, you must select the Trans ID(s) to include that ticket(s) and add their win amount to your remittance total.
                 </p>
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-[11px] text-rose-900 text-left font-medium">
-                  <strong>Action Required:</strong> Please select the Trans ID to include that ticket(s) into this batch and deduct its amount from your total remittance.
+                  <strong>Action Required:</strong> Please select the Trans ID to include that ticket(s) into this batch and add its amount to your total remittance.
                 </div>
               </div>
 

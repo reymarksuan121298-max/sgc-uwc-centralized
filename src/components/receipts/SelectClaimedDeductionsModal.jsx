@@ -72,7 +72,7 @@ export default function SelectClaimedDeductionsModal({
                 Include Claimed Tickets in Remittance Batch
               </h3>
               <p className="text-[10px] text-blue-200">
-                Select claimed Trans IDs to include in this batch. Their amounts will be deducted from your remittance total.
+                Select claimed Trans IDs to include in this batch. Their amounts will be added to your remittance total.
               </p>
             </div>
           </div>
@@ -93,7 +93,7 @@ export default function SelectClaimedDeductionsModal({
               Batch Addition
             </span>
             <span className="text-[11px] text-slate-700">
-              Claimed tickets requested for deletion will be included as additions in the batch report, and will be deducted only at your Total Remittance Amount.
+              Claimed tickets requested for deletion will be included as additions in the batch report and added to your Total Remittance Amount.
             </span>
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function SelectClaimedDeductionsModal({
               className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
             >
               <Check size={14} className="text-[#FFD700]" />
-              Include & addition Trans IDs ({selectedCount} Selected • ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              Include & Add Trans IDs ({selectedCount} Selected • ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
             </button>
           </div>
         </div>
