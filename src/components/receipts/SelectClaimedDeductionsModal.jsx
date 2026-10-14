@@ -242,7 +242,7 @@ export default function SelectClaimedDeductionsModal({
               className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
             >
               <Check size={14} className="text-[#FFD700]" />
-              Include & Deduct Trans IDs ({selectedCount} Selected • -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              Include & addition Trans IDs ({selectedCount} Selected • -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
             </button>
           </div>
         </div>
