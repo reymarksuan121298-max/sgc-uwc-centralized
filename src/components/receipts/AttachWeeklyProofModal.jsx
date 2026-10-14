@@ -36,6 +36,9 @@ const getItemKey = (t) => String(t.id || t.transactionId || t.transId || '');
 const BatchTicketsTable = memo(function BatchTicketsTable({
   items,
   selectedClaimedItems = [],
+  allClaimedItems = [],
+  selectedClaimedKeys,
+  onToggleClaimedSelect,
   selectedKeys,
   onToggleSelect,
   onToggleSelectAll,
@@ -58,6 +61,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
 
   const selectedInViewCount = items.filter(i => selectedKeys.has(getItemKey(i))).length;
   const totalIncludedRecords = selectedInViewCount + (selectedClaimedItems?.length || 0);
+  const totalPossibleRecords = items.length + (allClaimedItems?.length || selectedClaimedItems?.length || 0);
   const netRemittanceTotal = Math.max(0, Number(selectedWinTotal || 0) - Number(selectedDeductionTotal || 0));
 
   return (
@@ -187,64 +191,86 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                 })}
 
                 {/* Claimed Tickets Added to Batch as Inclusions with Deduction */}
-                {selectedClaimedItems.map((c, cIdx) => (
-                  <tr 
-                    key={`claimed-${c.transactionId || c.transId || c.id}`} 
-                    className="bg-amber-50/70 hover:bg-amber-100/60 text-slate-800 border-l-4 border-l-amber-500 font-medium transition-colors"
-                  >
-                    <td className="px-2.5 py-1.5 border-r border-slate-200 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={true} 
-                        readOnly 
-                        className="w-3.5 h-3.5 rounded text-amber-600 accent-amber-600 cursor-default" 
-                        title="Claimed ticket included in remittance"
-                      />
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 text-amber-800 font-mono text-[10px]">+{cIdx + 1}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 font-mono font-black text-amber-900 whitespace-nowrap">
-                      {c.transactionId || c.transId}
-                      <span className="ml-1.5 bg-amber-200 text-amber-900 border border-amber-300 font-black text-[8.5px] px-1.5 py-0.2 rounded uppercase">
-                        CLAIMED ADDITION
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 uppercase font-semibold truncate max-w-[220px] text-amber-950" title={c.fullName || c.outlet || c.username || 'Claimed Ticket'}>
-                      {c.fullName || c.outlet || c.username || 'Claimed Ticket'}
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">
-                      {formatDrawTime ? formatDrawTime(c.drawTime || c.drawDate || c.created_at) : 'N/A'}
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 text-center font-mono font-bold text-slate-800">
-                      {c.betNo || 'N/A'} <span className="bg-amber-100 text-amber-800 text-[9px] px-1 py-0.5 rounded font-medium">({c.betCode || 'RS3'})</span>
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono text-slate-800">
-                      ₱{parseFloat(c.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-black text-rose-700 whitespace-nowrap">
-                      -₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      <span className="text-[8.5px] text-rose-600 block font-normal">(Deduction)</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">
-                      {fastFormatTimestamp(c.date_returned || c.created_at)}
-                    </td>
-                  </tr>
-                ))}
+                {(allClaimedItems.length > 0 ? allClaimedItems : selectedClaimedItems).map((c, cIdx) => {
+                  const key = String(c.transactionId || c.transId || c.id).trim();
+                  const isChecked = selectedClaimedKeys ? selectedClaimedKeys.has(key) : true;
+                  const isApproved = String(c.deletion_request_status || c.status || '').toUpperCase() === 'APPROVED';
+
+                  return (
+                    <tr 
+                      key={`claimed-${key}`} 
+                      onClick={() => onToggleClaimedSelect && onToggleClaimedSelect(key)}
+                      className={`transition-colors cursor-pointer select-none border-l-4 ${
+                        isChecked 
+                          ? 'bg-amber-50/70 hover:bg-amber-100/60 text-slate-800 border-l-amber-500 font-medium' 
+                          : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500 border-l-slate-300'
+                      }`}
+                    >
+                      <td className="px-2.5 py-1.5 border-r border-slate-200 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          checked={isChecked} 
+                          onChange={() => onToggleClaimedSelect && onToggleClaimedSelect(key)}
+                          className="w-3.5 h-3.5 rounded text-amber-600 accent-amber-600 cursor-pointer" 
+                          title="Claimed ticket included in remittance (Click to toggle)"
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-amber-800 font-mono text-[10px]">+{cIdx + 1}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-200 font-mono font-black text-amber-900 whitespace-nowrap">
+                        {c.transactionId || c.transId}
+                        <span className={`ml-1.5 border font-black text-[8.5px] px-1.5 py-0.2 rounded uppercase ${
+                          isChecked 
+                            ? 'bg-amber-200 text-amber-900 border-amber-300' 
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {isApproved ? 'APPROVED DELETION' : 'CLAIMED ADDITION'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-200 uppercase font-semibold truncate max-w-[220px] text-amber-950" title={c.fullName || c.outlet || c.username || 'Claimed Ticket'}>
+                        {c.fullName || c.outlet || c.username || 'Claimed Ticket'}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">
+                        {formatDrawTime ? formatDrawTime(c.drawTime || c.drawDate || c.created_at) : 'N/A'}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-center font-mono font-bold text-slate-800">
+                        {c.betNo || 'N/A'} <span className="bg-amber-100 text-amber-800 text-[9px] px-1 py-0.5 rounded font-medium">({c.betCode || 'RS3'})</span>
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono text-slate-800">
+                        ₱{parseFloat(c.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className={`px-3 py-1.5 border-r border-slate-200 text-right font-mono font-black whitespace-nowrap ${
+                        isChecked ? 'text-rose-700' : 'text-slate-400'
+                      }`}>
+                        -₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {isChecked && <span className="text-[8.5px] text-rose-600 block font-normal">(Deduction)</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                        {fastFormatTimestamp(c.date_returned || c.created_at)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </>
             )}
           </tbody>
           <tfoot className="bg-slate-100 font-bold border-t border-slate-200 text-[10px] sticky bottom-0">
             <tr>
-              <td colSpan={6} className="px-3 py-1.5 text-right uppercase text-slate-600">
-                {selectedDeductionTotal > 0 ? 'Net Remittance Payable:' : 'Selected Subtotal:'}
+              <td colSpan={6} className="px-3 py-1.5 text-right uppercase text-slate-600 font-extrabold">
+                Selected Subtotal:
+                {selectedDeductionTotal > 0 && (
+                  <span className="ml-1.5 font-normal text-[9px] text-rose-600 lowercase">
+                    (-₱{selectedDeductionTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} deducted)
+                  </span>
+                )}
               </td>
               <td className="px-3 py-1.5 text-right font-mono text-slate-900 border-r border-slate-200">
-                ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0) + selectedClaimedItems.reduce((s, c) => s + parseFloat(c.betAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0) + (selectedClaimedItems || []).reduce((s, c) => s + parseFloat(c.betAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-right font-mono font-extrabold text-emerald-800 border-r border-slate-200">
                 ₱{netRemittanceTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-center font-mono text-slate-500">
-                {totalIncludedRecords} of {items.length + selectedClaimedItems.length} Total Records
+                {totalIncludedRecords} of {totalPossibleRecords} Total Records
               </td>
             </tr>
           </tfoot>
@@ -356,19 +382,33 @@ function AttachWeeklyProofModal({
       setNotes('');
       setModalTableSearch('');
       setSenderName(currentUser?.full_name || '');
-      setSelectedClaimedKeys(new Set());
       setAllowBypassClaimed(false);
       setShowUnselectedClaimedWarning(false);
       setIsClaimedModalOpen(false);
+
+      // Pre-select all approved claimed deletion tickets so they are already deducted before ticket selection
+      const approvedClaimedItems = (claimedAdjustmentItems || []).filter(i => {
+        const st = String(i.deletion_request_status || i.status || '').toUpperCase().trim();
+        return st === 'APPROVED' || !st;
+      });
+      const initialClaimedKeys = new Set(
+        approvedClaimedItems.map(i => String(i.transactionId || i.transId || i.id).trim())
+      );
+      setSelectedClaimedKeys(initialClaimedKeys);
+
+      const initialDeductionTotal = approvedClaimedItems.reduce(
+        (sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0
+      );
 
       const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
       const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      setCustomRemittanceAmount(targetAmount.toFixed(2));
+      const initialNetRemittance = Math.max(0, targetAmount - initialDeductionTotal);
+      setCustomRemittanceAmount(initialNetRemittance.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser]);
+  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
@@ -819,6 +859,9 @@ function AttachWeeklyProofModal({
           <BatchTicketsTable
             items={filteredTickets}
             selectedClaimedItems={selectedClaimedItems}
+            allClaimedItems={claimedAdjustmentItems}
+            selectedClaimedKeys={selectedClaimedKeys}
+            onToggleClaimedSelect={handleToggleClaimedSelect}
             selectedKeys={selectedKeys}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
