@@ -778,13 +778,13 @@ function AttachWeeklyProofModal({
                   : 'bg-gradient-to-r from-rose-50 via-rose-100/60 to-red-50 border-2 border-rose-400 text-rose-950 shadow-sm hover:shadow-md'
               }`}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                   selectedClaimedCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-200 text-rose-800 animate-pulse'
                 }`}>
                   {selectedClaimedCount > 0 ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
                       {selectedClaimedCount > 0
@@ -797,28 +797,30 @@ function AttachWeeklyProofModal({
                       {selectedClaimedCount > 0 ? 'Inclusion Active' : 'Action Required'}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-600 truncate mt-0.5">
-                    {selectedClaimedCount > 0
-                      ? `Total addition of +₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added to remittance batch. Click to modify.`
-                      : `You have ${claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and add their win amount.`}
-                  </p>
+                  {selectedClaimedCount > 0 ? (
+                    <p className="text-[10px] text-slate-600 truncate mt-0.5">
+                      Total addition of +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added to remittance batch. Click to modify.
+                    </p>
+                  ) : (
+                    <marquee className="text-[10px] text-rose-800 font-bold block mt-0.5" scrollamount="5">
+                      You have {claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and add their win amount.
+                    </marquee>
+                  )}
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsClaimedModalOpen(true);
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black shrink-0 transition-colors cursor-pointer shadow-2xs ${
-                  selectedClaimedCount > 0
-                    ? 'bg-[#002B66] text-[#FFD700] hover:bg-blue-900'
-                    : 'bg-rose-600 hover:bg-rose-700 text-white'
-                }`}
-              >
-                {selectedClaimedCount > 0 ? 'Edit Trans IDs' : 'Select Trans IDs →'}
-              </button>
+              {selectedClaimedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsClaimedModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-black shrink-0 transition-colors cursor-pointer shadow-2xs bg-[#002B66] text-[#FFD700] hover:bg-blue-900"
+                >
+                  Edit Trans IDs
+                </button>
+              )}
             </div>
           )}
 
@@ -895,36 +897,26 @@ function AttachWeeklyProofModal({
                 </div>
 
                 <div>
-                  <div className="flex flex-col gap-1 mb-1">
-                    <div className="flex items-center justify-between">
-                      <label className={`text-[11px] font-black uppercase flex items-center gap-1.5 ${
-                        hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-700'
-                      }`}>
-                        {hasUnselectedClaimed && <AlertTriangle size={13} className="text-rose-600 animate-bounce" />}
-                        <span>Total Remittance Amount (₱) *</span>
-                      </label>
-                      {selectedClaimedCount > 0 && (
-                        <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
-                          ✓ +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added
-                        </span>
-                      )}
-                    </div>
-
-                    {hasUnselectedClaimed && (
-                      <div 
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={`text-[11px] font-black uppercase flex items-center gap-1.5 ${
+                      hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-700'
+                    }`}>
+                      <span>Total Remittance Amount (₱) *</span>
+                    </label>
+                    {selectedClaimedCount > 0 ? (
+                      <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
+                        ✓ +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added
+                      </span>
+                    ) : hasUnselectedClaimed ? (
+                      <button
+                        type="button"
                         onClick={() => setIsClaimedModalOpen(true)}
-                        className="text-[10px] sm:text-[10.5px] font-bold text-rose-700 bg-rose-50 border border-rose-300 px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-1.5 cursor-pointer hover:bg-rose-100 transition-colors shadow-2xs"
-                        title="Click to select Trans IDs to include tickets"
+                        className="p-0.5 rounded text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+                        title="Action Required: Click to select claimed Trans IDs"
                       >
-                        <span className="flex items-center gap-1.5">
-                          <AlertTriangle size={12} className="shrink-0 text-rose-600" />
-                          <span>Insufficient balance to continue: please select the Trans ID to include that ticket(s)</span>
-                        </span>
-                        <span className="text-[9.5px] uppercase font-black underline shrink-0 text-rose-800">
-                          Select Trans ID →
-                        </span>
-                      </div>
-                    )}
+                        <AlertTriangle size={15} className="text-rose-600 animate-bounce" />
+                      </button>
+                    ) : null}
                   </div>
 
                   <input
