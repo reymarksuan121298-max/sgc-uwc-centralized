@@ -36,9 +36,6 @@ const getItemKey = (t) => String(t.id || t.transactionId || t.transId || '');
 const BatchTicketsTable = memo(function BatchTicketsTable({
   items,
   selectedClaimedItems = [],
-  allClaimedItems = [],
-  selectedClaimedKeys,
-  onToggleClaimedSelect,
   selectedKeys,
   onToggleSelect,
   onToggleSelectAll,
@@ -61,7 +58,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
 
   const selectedInViewCount = items.filter(i => selectedKeys.has(getItemKey(i))).length;
   const totalIncludedRecords = selectedInViewCount + (selectedClaimedItems?.length || 0);
-  const totalPossibleRecords = items.length + (allClaimedItems?.length || selectedClaimedItems?.length || 0);
+  const totalPossibleRecords = items.length + (selectedClaimedItems?.length || 0);
   const netRemittanceTotal = Math.max(0, Number(selectedWinTotal || 0) - Number(selectedDeductionTotal || 0));
 
   return (
@@ -190,39 +187,29 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                   );
                 })}
 
-                {/* Claimed Tickets Added to Batch as Inclusions with Deduction */}
-                {(allClaimedItems.length > 0 ? allClaimedItems : selectedClaimedItems).map((c, cIdx) => {
+                {/* Claimed Tickets Added to Batch as Inclusions with Deduction (Appears ONLY when selected in modal) */}
+                {selectedClaimedItems.map((c, cIdx) => {
                   const key = String(c.transactionId || c.transId || c.id).trim();
-                  const isChecked = selectedClaimedKeys ? selectedClaimedKeys.has(key) : true;
                   const isApproved = String(c.deletion_request_status || c.status || '').toUpperCase() === 'APPROVED';
 
                   return (
                     <tr 
                       key={`claimed-${key}`} 
-                      onClick={() => onToggleClaimedSelect && onToggleClaimedSelect(key)}
-                      className={`transition-colors cursor-pointer select-none border-l-4 ${
-                        isChecked 
-                          ? 'bg-amber-50/70 hover:bg-amber-100/60 text-slate-800 border-l-amber-500 font-medium' 
-                          : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500 border-l-slate-300'
-                      }`}
+                      className="bg-amber-50/70 hover:bg-amber-100/60 text-slate-800 border-l-4 border-l-amber-500 font-medium transition-colors"
                     >
-                      <td className="px-2.5 py-1.5 border-r border-slate-200 text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2.5 py-1.5 border-r border-slate-200 text-center">
                         <input 
                           type="checkbox" 
-                          checked={isChecked} 
-                          onChange={() => onToggleClaimedSelect && onToggleClaimedSelect(key)}
-                          className="w-3.5 h-3.5 rounded text-amber-600 accent-amber-600 cursor-pointer" 
-                          title="Claimed ticket included in remittance (Click to toggle)"
+                          checked={true} 
+                          readOnly
+                          className="w-3.5 h-3.5 rounded text-amber-600 accent-amber-600 cursor-default" 
+                          title="Claimed ticket included in remittance"
                         />
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-200 text-amber-800 font-mono text-[10px]">+{cIdx + 1}</td>
                       <td className="px-3 py-1.5 border-r border-slate-200 font-mono font-black text-amber-900 whitespace-nowrap">
                         {c.transactionId || c.transId}
-                        <span className={`ml-1.5 border font-black text-[8.5px] px-1.5 py-0.2 rounded uppercase ${
-                          isChecked 
-                            ? 'bg-amber-200 text-amber-900 border-amber-300' 
-                            : 'bg-slate-100 text-slate-500 border-slate-200'
-                        }`}>
+                        <span className="ml-1.5 border font-black text-[8.5px] px-1.5 py-0.2 rounded uppercase bg-amber-200 text-amber-900 border-amber-300">
                           {isApproved ? 'APPROVED DELETION' : 'CLAIMED ADDITION'}
                         </span>
                       </td>
@@ -238,11 +225,9 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                       <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono text-slate-800">
                         ₱{parseFloat(c.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
-                      <td className={`px-3 py-1.5 border-r border-slate-200 text-right font-mono font-black whitespace-nowrap ${
-                        isChecked ? 'text-rose-700' : 'text-slate-400'
-                      }`}>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-black whitespace-nowrap text-rose-700">
                         -₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        {isChecked && <span className="text-[8.5px] text-rose-600 block font-normal">(Deduction)</span>}
+                        <span className="text-[8.5px] text-rose-600 block font-normal">(Deduction)</span>
                       </td>
                       <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">
                         {fastFormatTimestamp(c.date_returned || c.created_at)}
@@ -847,9 +832,6 @@ function AttachWeeklyProofModal({
           <BatchTicketsTable
             items={filteredTickets}
             selectedClaimedItems={selectedClaimedItems}
-            allClaimedItems={claimedAdjustmentItems}
-            selectedClaimedKeys={selectedClaimedKeys}
-            onToggleClaimedSelect={handleToggleClaimedSelect}
             selectedKeys={selectedKeys}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
