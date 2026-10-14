@@ -626,7 +626,7 @@ export default function Header({
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 px-3 sm:px-5 md:px-6 py-2.5 sm:py-3 flex items-center justify-between shadow-xs z-20 shrink-0 w-full min-w-0">
+    <header className="relative bg-white border-b border-slate-200 px-3 sm:px-5 md:px-6 py-2.5 sm:py-3 flex items-center justify-between shadow-xs z-50 shrink-0 w-full min-w-0">
       
       {/* LEFT SECTION: BRAND TAB TITLE */}
       <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">

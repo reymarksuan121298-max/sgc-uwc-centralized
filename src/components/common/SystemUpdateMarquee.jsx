@@ -80,7 +80,7 @@ export default function SystemUpdateMarquee({
       <div 
         role="region"
         aria-label="System Update Notification"
-        className="w-full bg-[#002B66] text-white border-b-2 border-[#FFD700] shadow-md z-30 transition-all duration-300 animate-in slide-in-from-top-2"
+        className="relative w-full bg-[#002B66] text-white border-b-2 border-[#FFD700] shadow-md z-10 transition-all duration-300 animate-in slide-in-from-top-2"
       >
         <div className="w-full px-3 sm:px-4 py-2 flex items-center justify-between gap-3 min-w-0">
           
