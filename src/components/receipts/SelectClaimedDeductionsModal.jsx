@@ -86,14 +86,14 @@ export default function SelectClaimedDeductionsModal({
         </div>
 
         {/* NOTICE BANNER */}
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-start gap-2.5 text-xs text-amber-900 shrink-0">
-          <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+        <div className="bg-blue-50/80 border-b border-blue-200 px-4 py-2.5 flex items-start gap-2.5 text-xs text-blue-900 shrink-0">
+          <AlertTriangle size={16} className="text-[#002B66] shrink-0 mt-0.5" />
           <div className="leading-tight">
-            <span className="font-extrabold uppercase text-[10px] tracking-wide text-amber-800 block">
-              Batch Addition & Remittance Deduction
+            <span className="font-extrabold uppercase text-[10px] tracking-wide text-[#002B66] block">
+              Batch Addition
             </span>
-            <span className="text-[11px] text-amber-900">
-              Claimed tickets requested for deletion will be included as additions in the batch report, and their winning liabilities will automatically be deducted from your Total Remittance Amount.
+            <span className="text-[11px] text-slate-700">
+              Claimed tickets requested for deletion will be included as additions in the batch report, and will be deducted only at your Total Remittance Amount.
             </span>
           </div>
         </div>
@@ -118,10 +118,10 @@ export default function SelectClaimedDeductionsModal({
             >
               {isAllSelected ? 'Deselect All' : 'Select All'}
             </button>
-            <div className="bg-rose-50 border border-rose-200 px-3 py-1 rounded-lg text-right">
-              <span className="text-[9px] font-extrabold text-rose-500 uppercase block leading-none">Deduction Total</span>
-              <span className="font-mono text-xs font-black text-rose-700">
-                -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            <div className="bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg text-right">
+              <span className="text-[9px] font-extrabold text-emerald-600 uppercase block leading-none">Addition Total</span>
+              <span className="font-mono text-xs font-black text-emerald-800">
+                ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -149,7 +149,7 @@ export default function SelectClaimedDeductionsModal({
                     <th className="p-2.5 border-l border-slate-200">Trans ID</th>
                     <th className="p-2.5 border-l border-slate-200">Outlet / Teller</th>
                     <th className="p-2.5 border-l border-slate-200 text-center">Draw / Combination</th>
-                    <th className="p-2.5 border-l border-slate-200 text-right">Win / Deduct</th>
+                    <th className="p-2.5 border-l border-slate-200 text-right">Win Amount</th>
                     <th className="p-2.5 border-l border-slate-200">Reason / Requester</th>
                   </tr>
                 </thead>
@@ -202,8 +202,8 @@ export default function SelectClaimedDeductionsModal({
                           </span>
                         </td>
                         <td className="p-2.5 border-l border-slate-200 text-right whitespace-nowrap">
-                          <span className="font-mono font-black text-rose-700 text-xs">
-                            -₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          <span className="font-mono font-black text-emerald-700 text-xs">
+                            ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td className="p-2.5 border-l border-slate-200 text-[10px] text-slate-500 max-w-[260px] truncate" title={reason}>
@@ -242,7 +242,7 @@ export default function SelectClaimedDeductionsModal({
               className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
             >
               <Check size={14} className="text-[#FFD700]" />
-              Include & addition Trans IDs ({selectedCount} Selected • -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              Include & addition Trans IDs ({selectedCount} Selected • ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
             </button>
           </div>
         </div>

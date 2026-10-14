@@ -225,9 +225,8 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                       <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono text-slate-800">
                         ₱{parseFloat(c.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-black whitespace-nowrap text-rose-700">
-                        -₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        <span className="text-[8.5px] text-rose-600 block font-normal">(Deduction)</span>
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-extrabold whitespace-nowrap text-emerald-700">
+                        ₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">
                         {fastFormatTimestamp(c.date_returned || c.created_at)}
@@ -242,17 +241,12 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
             <tr>
               <td colSpan={6} className="px-3 py-1.5 text-right uppercase text-slate-600 font-extrabold">
                 Selected Subtotal:
-                {selectedDeductionTotal > 0 && (
-                  <span className="ml-1.5 font-normal text-[9px] text-rose-600 lowercase">
-                    (-₱{selectedDeductionTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} deducted)
-                  </span>
-                )}
               </td>
               <td className="px-3 py-1.5 text-right font-mono text-slate-900 border-r border-slate-200">
                 ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0) + (selectedClaimedItems || []).reduce((s, c) => s + parseFloat(c.betAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-right font-mono font-extrabold text-emerald-800 border-r border-slate-200">
-                ₱{netRemittanceTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.winAmount ?? 0), 0) + (selectedClaimedItems || []).reduce((s, c) => s + parseFloat(c.winAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-center font-mono text-slate-500">
                 {totalIncludedRecords} of {totalPossibleRecords} Total Records
@@ -379,9 +373,11 @@ function AttachWeeklyProofModal({
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      setCustomRemittanceAmount(targetAmount.toFixed(2));
+      const totalApprovedDeletions = (claimedAdjustmentItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+      const initialNetRemittance = Math.max(0, targetAmount - totalApprovedDeletions);
+      setCustomRemittanceAmount(initialNetRemittance.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser]);
+  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
@@ -394,11 +390,12 @@ function AttachWeeklyProofModal({
       }
       const newItems = (targetBatch?.items || []).filter(t => next.has(getItemKey(t)));
       const newGross = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const newNet = Math.max(0, newGross - selectedDeductionTotal);
+      const effectiveDeduction = selectedDeductionTotal > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
+      const newNet = Math.max(0, newGross - effectiveDeduction);
       setCustomRemittanceAmount(newNet.toFixed(2));
       return next;
     });
-  }, [targetBatch, selectedDeductionTotal]);
+  }, [targetBatch, selectedDeductionTotal, totalClaimedWinAmount]);
 
   // Toggle select all visible / batch tickets
   const handleToggleSelectAll = useCallback(() => {
@@ -411,12 +408,13 @@ function AttachWeeklyProofModal({
         return new Set();
       } else {
         const fullTotal = targetBatch.items.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-        const newNet = Math.max(0, fullTotal - selectedDeductionTotal);
+        const effectiveDeduction = selectedDeductionTotal > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
+        const newNet = Math.max(0, fullTotal - effectiveDeduction);
         setCustomRemittanceAmount(newNet.toFixed(2));
         return new Set(visibleKeys);
       }
     });
-  }, [targetBatch, selectedDeductionTotal]);
+  }, [targetBatch, selectedDeductionTotal, totalClaimedWinAmount]);
 
   // Toggle claimed deduction tickets
   const handleToggleClaimedSelect = useCallback((key) => {
