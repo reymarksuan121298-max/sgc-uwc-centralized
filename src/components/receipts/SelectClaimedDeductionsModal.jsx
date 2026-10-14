@@ -69,10 +69,10 @@ export default function SelectClaimedDeductionsModal({
             </div>
             <div>
               <h3 className="font-black uppercase tracking-wider text-xs sm:text-sm text-white flex items-center gap-2">
-                Claimed Deletions Deduction Selector
+                Include Claimed Tickets in Remittance Batch
               </h3>
               <p className="text-[10px] text-blue-200">
-                Select claimed winning tickets to deduct from this weekly remittance
+                Select claimed Trans IDs to include in this batch. Their amounts will be deducted from your remittance total.
               </p>
             </div>
           </div>
@@ -90,10 +90,10 @@ export default function SelectClaimedDeductionsModal({
           <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
           <div className="leading-tight">
             <span className="font-extrabold uppercase text-[10px] tracking-wide text-amber-800 block">
-              Remittance Deduction Offset
+              Batch Addition & Remittance Deduction
             </span>
             <span className="text-[11px] text-amber-900">
-              Claimed tickets requested for deletion have already been paid out to customers. Checking their Trans IDs below will subtract their winning liability from your weekly remittance deposit.
+              Claimed tickets requested for deletion will be included as additions in the batch report, and their winning liabilities will automatically be deducted from your Total Remittance Amount.
             </span>
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function SelectClaimedDeductionsModal({
               className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
             >
               <Check size={14} className="text-[#FFD700]" />
-              Apply Deduction (-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              Include & Deduct Trans IDs ({selectedCount} Selected • -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
             </button>
           </div>
         </div>

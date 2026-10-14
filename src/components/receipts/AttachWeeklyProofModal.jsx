@@ -35,10 +35,12 @@ const getItemKey = (t) => String(t.id || t.transactionId || t.transId || '');
 // 1. ISOLATED MEMOIZED TICKETS TABLE (Will NEVER re-render when user types in reference number / amount / sender info)
 const BatchTicketsTable = memo(function BatchTicketsTable({
   items,
+  selectedClaimedItems = [],
   selectedKeys,
   onToggleSelect,
   onToggleSelectAll,
   selectedWinTotal,
+  selectedDeductionTotal = 0,
   totalWin,
   modalTableSearch,
   onSearchChange,
@@ -55,6 +57,8 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
   }, [isSomeSelected]);
 
   const selectedInViewCount = items.filter(i => selectedKeys.has(getItemKey(i))).length;
+  const totalIncludedRecords = selectedInViewCount + (selectedClaimedItems?.length || 0);
+  const netRemittanceTotal = Math.max(0, Number(selectedWinTotal || 0) - Number(selectedDeductionTotal || 0));
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
@@ -62,8 +66,13 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={15} className="text-[#002B66] shrink-0" />
           <span className="font-extrabold text-[11px] text-[#002B66] uppercase tracking-wider truncate">
-            Included Returned Winnings ({selectedInViewCount} of {items.length} Selected)
+            Included Returned Winnings & Additions ({totalIncludedRecords} of {items.length + (selectedClaimedItems?.length || 0)} Total)
           </span>
+          {selectedClaimedItems.length > 0 && (
+            <span className="bg-amber-100 text-amber-800 border border-amber-300 font-black px-1.5 py-0.2 rounded text-[9.5px]">
+              +{selectedClaimedItems.length} Claimed Included
+            </span>
+          )}
         </div>
         
         {/* Live Search & Quick Toggle inside Modal */}
@@ -86,13 +95,20 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
               className="w-full bg-white border border-slate-300 pl-7 pr-2 py-1 rounded-md text-[10px] font-medium text-slate-800 outline-none focus:border-[#002B66]"
             />
           </div>
-          <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0" title="Selected tickets total liability">
-            ₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </span>
+          <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+            <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title="Gross Returned Winnings">
+              Gross: ₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </span>
+            {selectedDeductionTotal > 0 && (
+              <span className="font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full" title="Claimed Deduction">
+                -₱{Number(selectedDeductionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="max-h-48 overflow-y-auto overflow-x-auto">
+      <div className="max-h-52 overflow-y-auto overflow-x-auto">
         <table className="w-full text-left border-collapse text-[11px]">
           <thead className="bg-slate-50 text-slate-600 font-extrabold uppercase text-[10px] sticky top-0 border-b border-slate-200 shadow-2xs z-10">
             <tr>
@@ -117,69 +133,119 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-            {!items.length ? (
+            {!items.length && !selectedClaimedItems.length ? (
               <tr>
                 <td colSpan={9} className="p-5 text-center text-slate-400 font-bold uppercase text-xs">
                   {modalTableSearch ? 'No tickets matched your search query.' : 'No returned winning tickets found in this batch.'}
                 </td>
               </tr>
             ) : (
-              items.map((t, idx) => {
-                const key = getItemKey(t) || `REC-${idx + 1}`;
-                const transId = t.transactionId || t.transId || `REC-${idx + 1}`;
-                const recordTimestamp = t.date_returned || t.created_at;
-                const isSelected = selectedKeys.has(key);
+              <>
+                {items.map((t, idx) => {
+                  const key = getItemKey(t) || `REC-${idx + 1}`;
+                  const transId = t.transactionId || t.transId || `REC-${idx + 1}`;
+                  const recordTimestamp = t.date_returned || t.created_at;
+                  const isSelected = selectedKeys.has(key);
 
-                return (
-                  <tr 
-                    key={key} 
-                    className={`transition-colors cursor-pointer select-none ${
-                      isSelected 
-                        ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800' 
-                        : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
-                    }`}
-                    onClick={() => onToggleSelect(key)}
-                  >
-                    <td 
-                      className="px-2.5 py-1.5 border-r border-slate-100 text-center"
-                      onClick={(e) => e.stopPropagation()}
+                  return (
+                    <tr 
+                      key={key} 
+                      className={`transition-colors cursor-pointer select-none ${
+                        isSelected 
+                          ? 'bg-blue-50/60 hover:bg-blue-50/90 text-slate-800' 
+                          : 'bg-white opacity-60 hover:opacity-100 hover:bg-slate-50 text-slate-500'
+                      }`}
+                      onClick={() => onToggleSelect(key)}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => onToggleSelect(key)}
-                        className="w-3.5 h-3.5 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+                      <td 
+                        className="px-2.5 py-1.5 border-r border-slate-100 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => onToggleSelect(key)}
+                          className="w-3.5 h-3.5 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
+                      <td className={`px-3 py-1.5 border-r border-slate-100 font-mono font-bold ${isSelected ? 'text-[#002B66]' : 'text-slate-500'}`}>
+                        {transId}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 uppercase font-semibold truncate max-w-[220px]" title={t.fullName || t.outlet || t.username || 'N/A'}>{t.fullName || t.outlet || t.username || 'N/A'}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">{formatDrawTime ? formatDrawTime(t.drawTime || t.drawDate || t.created_at) : 'N/A'}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-slate-800">
+                        {t.betNo || 'N/A'} <span className="bg-slate-100 text-slate-600 text-[9px] px-1 py-0.5 rounded font-medium">({t.betCode || 'RS3'})</span>
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono text-slate-800">₱{parseFloat(t.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono font-extrabold ${isSelected ? 'text-emerald-700' : 'text-slate-400'}`}>
+                        ₱{parseFloat(t.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">{fastFormatTimestamp(recordTimestamp)}</td>
+                    </tr>
+                  );
+                })}
+
+                {/* Claimed Tickets Added to Batch as Inclusions with Deduction */}
+                {selectedClaimedItems.map((c, cIdx) => (
+                  <tr 
+                    key={`claimed-${c.transactionId || c.transId || c.id}`} 
+                    className="bg-amber-50/70 hover:bg-amber-100/60 text-slate-800 border-l-4 border-l-amber-500 font-medium transition-colors"
+                  >
+                    <td className="px-2.5 py-1.5 border-r border-slate-200 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={true} 
+                        readOnly 
+                        className="w-3.5 h-3.5 rounded text-amber-600 accent-amber-600 cursor-default" 
+                        title="Claimed ticket included in remittance"
                       />
                     </td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
-                    <td className={`px-3 py-1.5 border-r border-slate-100 font-mono font-bold ${isSelected ? 'text-[#002B66]' : 'text-slate-500'}`}>
-                      {transId}
+                    <td className="px-3 py-1.5 border-r border-slate-200 text-amber-800 font-mono text-[10px]">+{cIdx + 1}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-200 font-mono font-black text-amber-900 whitespace-nowrap">
+                      {c.transactionId || c.transId}
+                      <span className="ml-1.5 bg-amber-200 text-amber-900 border border-amber-300 font-black text-[8.5px] px-1.5 py-0.2 rounded uppercase">
+                        CLAIMED ADDITION
+                      </span>
                     </td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 uppercase font-semibold truncate max-w-[220px]" title={t.fullName || t.outlet || t.username || 'N/A'}>{t.fullName || t.outlet || t.username || 'N/A'}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">{formatDrawTime ? formatDrawTime(t.drawTime || t.drawDate || t.created_at) : 'N/A'}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-center font-mono font-bold text-slate-800">
-                      {t.betNo || 'N/A'} <span className="bg-slate-100 text-slate-600 text-[9px] px-1 py-0.5 rounded font-medium">({t.betCode || 'RS3'})</span>
+                    <td className="px-3 py-1.5 border-r border-slate-200 uppercase font-semibold truncate max-w-[220px] text-amber-950" title={c.fullName || c.outlet || c.username || 'Claimed Ticket'}>
+                      {c.fullName || c.outlet || c.username || 'Claimed Ticket'}
                     </td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono text-slate-800">₱{parseFloat(t.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono font-extrabold ${isSelected ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      ₱{parseFloat(t.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    <td className="px-3 py-1.5 border-r border-slate-200 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">
+                      {formatDrawTime ? formatDrawTime(c.drawTime || c.drawDate || c.created_at) : 'N/A'}
                     </td>
-                    <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">{fastFormatTimestamp(recordTimestamp)}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-200 text-center font-mono font-bold text-slate-800">
+                      {c.betNo || 'N/A'} <span className="bg-amber-100 text-amber-800 text-[9px] px-1 py-0.5 rounded font-medium">({c.betCode || 'RS3'})</span>
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono text-slate-800">
+                      ₱{parseFloat(c.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-black text-rose-700 whitespace-nowrap">
+                      -₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      <span className="text-[8.5px] text-rose-600 block font-normal">(Deduction)</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                      {fastFormatTimestamp(c.date_returned || c.created_at)}
+                    </td>
                   </tr>
-                );
-              })
+                ))}
+              </>
             )}
           </tbody>
           <tfoot className="bg-slate-100 font-bold border-t border-slate-200 text-[10px] sticky bottom-0">
             <tr>
-              <td colSpan={6} className="px-3 py-1.5 text-right uppercase text-slate-600">Selected Subtotal:</td>
+              <td colSpan={6} className="px-3 py-1.5 text-right uppercase text-slate-600">
+                {selectedDeductionTotal > 0 ? 'Net Remittance Payable:' : 'Selected Subtotal:'}
+              </td>
               <td className="px-3 py-1.5 text-right font-mono text-slate-900 border-r border-slate-200">
-                ₱{items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0) + selectedClaimedItems.reduce((s, c) => s + parseFloat(c.betAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-right font-mono font-extrabold text-emerald-800 border-r border-slate-200">
-                ₱{Number(selectedWinTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{netRemittanceTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
-              <td className="px-3 py-1.5 text-center font-mono text-slate-500">{selectedInViewCount} of {items.length} Selected</td>
+              <td className="px-3 py-1.5 text-center font-mono text-slate-500">
+                {totalIncludedRecords} of {items.length + selectedClaimedItems.length} Total Records
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -267,6 +333,15 @@ function AttachWeeklyProofModal({
   const totalClaimedWinAmount = useMemo(() => {
     return (claimedAdjustmentItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
   }, [claimedAdjustmentItems]);
+
+  const selectedClaimedItems = useMemo(() => {
+    return (claimedAdjustmentItems || []).filter(i => {
+      const k = String(i.transactionId || i.transId || i.id).trim();
+      return selectedClaimedKeys.has(k);
+    });
+  }, [claimedAdjustmentItems, selectedClaimedKeys]);
+
+  const hasUnselectedClaimed = (claimedAdjustmentItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
 
   const netPayableTotal = useMemo(() => {
     return Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - selectedDeductionTotal);
@@ -434,8 +509,9 @@ function AttachWeeklyProofModal({
     }
 
     // SUBMISSION ALERT WARNING GATE:
-    // If there are claimed deletion requests and SSR has 0 selected to deduct, intercept with alert warning!
-    if (claimedAdjustmentItems.length > 0 && selectedClaimedKeys.size === 0 && !allowBypassClaimed) {
+    // If there are claimed deletion requests and SSR has 0 selected, intercept with Insufficient Balance alert!
+    if (hasUnselectedClaimed) {
+      setFormError('Insufficient balance to continue: please select the Trans ID to include that ticket(s).');
       setShowUnselectedClaimedWarning(true);
       return;
     }
@@ -660,20 +736,26 @@ function AttachWeeklyProofModal({
               <div 
                 onClick={() => claimedAdjustmentItems.length > 0 && setIsClaimedModalOpen(true)}
                 className={`p-2.5 rounded-lg border shadow-2xs transition-all ${
-                  claimedAdjustmentItems.length > 0 ? 'bg-amber-50/60 border-amber-200 cursor-pointer hover:bg-amber-100/70' : 'bg-white border-blue-100/80'
+                  claimedAdjustmentItems.length > 0 ? (hasUnselectedClaimed ? 'bg-rose-50/70 border-rose-300 cursor-pointer hover:bg-rose-100/70' : 'bg-amber-50/60 border-amber-200 cursor-pointer hover:bg-amber-100/70') : 'bg-white border-blue-100/80'
                 }`}
-                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to deduct" : undefined}
+                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to include & deduct" : undefined}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase block">Selected Deduction</span>
+                  <span className={`text-[9px] font-sans font-extrabold uppercase block ${hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-400'}`}>
+                    Claimed Additions
+                  </span>
                   {claimedAdjustmentItems.length > 0 && (
-                    <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                      hasUnselectedClaimed ? 'bg-rose-200 text-rose-900' : 'text-amber-700 bg-amber-100'
+                    }`}>
                       {selectedClaimedCount}/{claimedAdjustmentItems.length}
                     </span>
                   )}
                 </div>
-                <span className="font-extrabold text-rose-700 text-xs mt-0.5 block">
-                  -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                <span className={`font-extrabold text-xs mt-0.5 block ${hasUnselectedClaimed ? 'text-rose-700' : 'text-slate-800'}`}>
+                  {selectedClaimedCount > 0 
+                    ? `-₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    : (hasUnselectedClaimed ? '⚠️ Required' : '₱0.00')}
                 </span>
               </div>
             </div>
@@ -686,12 +768,12 @@ function AttachWeeklyProofModal({
               className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
                 selectedClaimedCount > 0
                   ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70'
-                  : 'bg-gradient-to-r from-amber-50 via-amber-100/50 to-orange-50 border-amber-400 text-amber-950 hover:shadow-md'
+                  : 'bg-gradient-to-r from-rose-50 via-rose-100/60 to-red-50 border-2 border-rose-400 text-rose-950 shadow-sm hover:shadow-md'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                  selectedClaimedCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-200 text-amber-800'
+                  selectedClaimedCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-200 text-rose-800 animate-pulse'
                 }`}>
                   <AlertTriangle size={18} />
                 </div>
@@ -699,19 +781,19 @@ function AttachWeeklyProofModal({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
                       {selectedClaimedCount > 0
-                        ? `Claimed Deletions Deduction Applied (${selectedClaimedCount} of ${claimedAdjustmentItems.length} Selected)`
-                        : `⚠️ Warning: ${claimedAdjustmentItems.length} Claimed Ticket(s) Available for Deduction`}
+                        ? `Claimed Tickets Included & Deducted (${selectedClaimedCount} of ${claimedAdjustmentItems.length} Selected)`
+                        : `⚠️ Insufficient Balance to Continue: Action Required`}
                     </span>
                     <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
                       selectedClaimedCount > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
                     }`}>
-                      {selectedClaimedCount > 0 ? 'Deduction Active' : 'Action Required'}
+                      {selectedClaimedCount > 0 ? 'Inclusion Active' : 'Action Required'}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-600 truncate mt-0.5">
                     {selectedClaimedCount > 0
-                      ? `Total deduction of -₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} subtracted from net remittance. Click to modify.`
-                      : `Click here to open and select which Trans IDs to deduct before submitting remittance.`}
+                      ? `Total deduction of -₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} applied to remittance liability. Click to modify.`
+                      : `You have ${claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and deduct their win amount.`}
                   </p>
                 </div>
               </div>
@@ -725,7 +807,7 @@ function AttachWeeklyProofModal({
                 className={`px-3 py-1.5 rounded-lg text-xs font-black shrink-0 transition-colors cursor-pointer shadow-2xs ${
                   selectedClaimedCount > 0
                     ? 'bg-[#002B66] text-[#FFD700] hover:bg-blue-900'
-                    : 'bg-amber-500 hover:bg-amber-600 text-white'
+                    : 'bg-rose-600 hover:bg-rose-700 text-white'
                 }`}
               >
                 {selectedClaimedCount > 0 ? 'Edit Trans IDs' : 'Select Trans IDs →'}
@@ -736,10 +818,12 @@ function AttachWeeklyProofModal({
           {/* MEMOIZED TICKETS TABLE WITH CHECKBOX SELECTION */}
           <BatchTicketsTable
             items={filteredTickets}
+            selectedClaimedItems={selectedClaimedItems}
             selectedKeys={selectedKeys}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
             selectedWinTotal={selectedWinTotal}
+            selectedDeductionTotal={selectedDeductionTotal}
             totalWin={targetBatch.totalWin}
             modalTableSearch={modalTableSearch}
             onSearchChange={setModalTableSearch}
@@ -804,18 +888,49 @@ function AttachWeeklyProofModal({
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-extrabold text-slate-700 uppercase">
-                      Total Remittance Amount (₱) *
-                    </label>
+                  <div className="flex flex-col gap-1 mb-1">
+                    <div className="flex items-center justify-between">
+                      <label className={`text-[11px] font-black uppercase flex items-center gap-1.5 ${
+                        hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-700'
+                      }`}>
+                        {hasUnselectedClaimed && <AlertTriangle size={13} className="text-rose-600 animate-bounce" />}
+                        <span>Total Remittance Amount (₱) *</span>
+                      </label>
+                      {selectedClaimedCount > 0 && (
+                        <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
+                          ✓ -₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} deducted
+                        </span>
+                      )}
+                    </div>
+
+                    {hasUnselectedClaimed && (
+                      <div 
+                        onClick={() => setIsClaimedModalOpen(true)}
+                        className="text-[10px] sm:text-[10.5px] font-bold text-rose-700 bg-rose-50 border border-rose-300 px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-1.5 cursor-pointer hover:bg-rose-100 transition-colors shadow-2xs"
+                        title="Click to select Trans IDs to include tickets"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <AlertTriangle size={12} className="shrink-0 text-rose-600" />
+                          <span>Insufficient balance to continue: please select the Trans ID to include that ticket(s)</span>
+                        </span>
+                        <span className="text-[9.5px] uppercase font-black underline shrink-0 text-rose-800">
+                          Select Trans ID →
+                        </span>
+                      </div>
+                    )}
                   </div>
+
                   <input
                     type="number"
                     step="0.01"
                     required
                     value={customRemittanceAmount}
                     onChange={(e) => setCustomRemittanceAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 focus:border-[#002B66] focus:bg-white px-3 py-2 rounded-lg font-mono font-extrabold text-emerald-700 outline-none transition-all"
+                    className={`w-full px-3 py-2 rounded-lg font-mono font-extrabold outline-none transition-all ${
+                      hasUnselectedClaimed 
+                        ? 'bg-rose-50/70 border-2 border-rose-500 text-rose-800 ring-2 ring-rose-200/80 focus:bg-white' 
+                        : 'bg-slate-50 border border-slate-300 focus:border-[#002B66] focus:bg-white text-emerald-700'
+                    }`}
                   />
                 </div>
 
@@ -968,7 +1083,7 @@ function AttachWeeklyProofModal({
           <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-start gap-2.5 text-[11px] text-amber-900">
             <ShieldCheck size={16} className="shrink-0 text-amber-700 mt-0.5" />
             <span>
-              <strong>Automated Ledger Transition:</strong> Upon submission, all <strong>{selectedCount} selected records</strong> in this Sunday–Saturday batch will immediately move to <strong>Collections & Commissions</strong> with their 4-tier commission pools, and the remittance proof will be queued for superadmin verification.
+              <strong>Automated Ledger Transition:</strong> Upon submission, all <strong>{selectedCount} selected records{selectedClaimedCount > 0 ? ` and ${selectedClaimedCount} claimed ticket(s)` : ''}</strong> in this Sunday–Saturday batch will immediately move to <strong>Collections & Commissions</strong> with their 4-tier commission pools, and the remittance proof will be queued for superadmin verification.
             </span>
           </div>
 
@@ -1000,7 +1115,7 @@ function AttachWeeklyProofModal({
               className="flex items-center gap-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-5 py-2 rounded-xl font-black transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer text-xs"
             >
               <CheckCircle2 size={15} />
-              <span>Review & Attach Proof ({selectedCount} Records) →</span>
+              <span>Review & Attach Proof ({selectedCount + selectedClaimedCount} Records) →</span>
             </button>
           </div>
         </div>
@@ -1223,20 +1338,20 @@ function AttachWeeklyProofModal({
         {/* 6. SUBMISSION ALERT WARNING PROMPT (When claimed deletions are unselected) */}
         {showUnselectedClaimedWarning && (
           <div className="fixed inset-0 z-70 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-            <div className="bg-white border-2 border-amber-500 rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 text-center animate-in zoom-in-95 duration-150">
-              <div className="w-14 h-14 rounded-full bg-amber-100 border-2 border-amber-300 flex items-center justify-center mx-auto text-amber-600">
+            <div className="bg-white border-2 border-rose-500 rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 text-center animate-in zoom-in-95 duration-150">
+              <div className="w-14 h-14 rounded-full bg-rose-100 border-2 border-rose-300 flex items-center justify-center mx-auto text-rose-600">
                 <AlertTriangle size={30} />
               </div>
 
               <div className="space-y-1.5">
-                <h3 className="text-sm sm:text-base font-black text-slate-800 uppercase tracking-wide">
-                  Claimed Tickets Pending Deduction!
+                <h3 className="text-sm sm:text-base font-black text-rose-700 uppercase tracking-wide">
+                  Insufficient Balance to Continue!
                 </h3>
                 <p className="text-xs text-slate-600">
-                  There are <span className="font-black text-amber-800">{claimedAdjustmentItems.length}</span> claimed winning ticket(s) with deletion requests totaling <span className="font-bold text-rose-600 font-mono">₱{totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> available to offset your weekly deposit.
+                  There are <span className="font-black text-slate-900">{claimedAdjustmentItems.length}</span> claimed winning ticket(s) totaling <span className="font-bold text-rose-600 font-mono">₱{totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> available. To continue, you must select the Trans ID(s) to include that ticket(s) and deduct their win amount from your remittance liability.
                 </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 text-left font-medium">
-                  <strong>Action Required:</strong> If these tickets were already paid out to winners, you should select their Transaction IDs to deduct them from this remittance payment.
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-[11px] text-rose-900 text-left font-medium">
+                  <strong>Action Required:</strong> Please select the Trans ID to include that ticket(s) into this batch and deduct its amount from your total remittance.
                 </div>
               </div>
 
@@ -1250,18 +1365,14 @@ function AttachWeeklyProofModal({
                   className="w-full px-4 py-2.5 bg-[#002B66] text-[#FFD700] hover:bg-blue-900 rounded-xl font-black text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                 >
                   <CheckCircle2 size={15} />
-                  Select Trans IDs to Deduct
+                  Select Trans ID to Include Ticket(s) →
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowUnselectedClaimedWarning(false);
-                    setAllowBypassClaimed(true);
-                    setShowConfirmModal(true);
-                  }}
+                  onClick={() => setShowUnselectedClaimedWarning(false)}
                   className="w-full px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs transition-colors cursor-pointer"
                 >
-                  Proceed Without Deduction
+                  Back to Review
                 </button>
               </div>
             </div>
