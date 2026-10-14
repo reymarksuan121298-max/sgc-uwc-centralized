@@ -29,6 +29,23 @@ html {
 	animation: shake 0.4s ease-in-out;
 }
 
+@keyframes marqueeScroll {
+	0% { transform: translateX(100%); }
+	100% { transform: translateX(-100%); }
+}
+
+.animate-marquee-scroll {
+	display: inline-block;
+	white-space: nowrap;
+	animation: marqueeScroll 32s linear infinite;
+	will-change: transform;
+}
+
+.marquee-container:hover .animate-marquee-scroll,
+.animate-marquee-scroll:hover {
+	animation-play-state: paused;
+}
+
 .no-scrollbar::-webkit-scrollbar {
 	display: none;
 }

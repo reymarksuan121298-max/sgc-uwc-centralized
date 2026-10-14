@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Header from '../components/common/Header';
 import Sidebar from '../components/common/Sidebar';
+import SystemUpdateMarquee from '../components/common/SystemUpdateMarquee';
 import { CheckCircle2, MessageSquare, ShieldAlert, X, ArrowRight, Bell } from 'lucide-react';
 
 export default function MainLayout({
@@ -170,6 +171,12 @@ export default function MainLayout({
           onClearNotifications={onClearNotifications}
           onOpenProfileModal={onOpenProfileModal}
           onlineUserIds={onlineUserIds}
+        />
+
+        {/* System Updates Notification Marquee Tag */}
+        <SystemUpdateMarquee
+          currentUser={currentUser}
+          onNavigateTab={handleSelectTab}
         />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 md:p-6 bg-slate-100 w-full min-w-0">
