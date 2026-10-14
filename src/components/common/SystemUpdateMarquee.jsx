@@ -95,7 +95,7 @@ export default function SystemUpdateMarquee({
               <Sparkles size={13} className="text-[#002B66] shrink-0" />
               <span>{tagText}</span>
             </div>
-            {activeFeature.version && (
+            {activeFeature.version && /^\d+(\.\d+)/.test(activeFeature.version) && (
               <span className="text-[10px] font-mono font-bold text-blue-200 hidden md:inline">
                 v{activeFeature.version}
               </span>

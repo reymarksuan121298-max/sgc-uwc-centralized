@@ -44,9 +44,11 @@ export default function WhatsNewFeatureModal({
                 <span className="text-[10px] font-black tracking-wider uppercase bg-[#FFD700] text-[#002B66] px-2 py-0.5 rounded-full font-sans">
                   {feature.tag || 'SYSTEM UPDATE'}
                 </span>
-                <span className="text-[11px] font-mono text-blue-200">
-                  v{feature.version || '2.5.0'}
-                </span>
+                {feature.version && /^\d+(\.\d+)/.test(feature.version) && (
+                  <span className="text-[11px] font-mono text-blue-200">
+                    v{feature.version}
+                  </span>
+                )}
               </div>
               <h3 className="font-black text-sm sm:text-base text-white uppercase tracking-tight mt-0.5">
                 {feature.title || "What's New in This Update"}
@@ -74,15 +76,6 @@ export default function WhatsNewFeatureModal({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {feature.buildInfo?.branch && (
-                <div className="flex items-center gap-1.5 bg-white border border-blue-200 px-2.5 py-1 rounded-lg font-mono text-[10px] text-slate-700">
-                  <GitBranch size={12} className="text-[#002B66]" />
-                  <span>{feature.buildInfo.branch}</span>
-                  {feature.buildInfo.commitSha && (
-                    <span className="text-slate-400">({feature.buildInfo.commitSha})</span>
-                  )}
-                </div>
-              )}
               <div className="flex items-center gap-1.5 bg-white border border-blue-200 px-2.5 py-1 rounded-lg">
                 <Shield size={12} className="text-[#002B66]" />
                 <span className="text-[10px] font-bold text-slate-700">

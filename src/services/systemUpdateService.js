@@ -120,24 +120,16 @@ export const systemUpdateService = {
 
     const activeFeature = {
       id: `deploy_${buildInfo.commitSha}`,
-      version: buildInfo.commitSha,
+      version: null,
       tag,
       title: formattedTitle,
-      marqueeText: `${tag}: ${formattedTitle} (Branch: ${buildInfo.branch} • ${buildInfo.commitSha})`,
-      summary: `Automated release deployed on branch ${buildInfo.branch}.`,
+      marqueeText: `${tag}: ${formattedTitle}`,
+      summary: formattedTitle,
       allowedRoles: ['all'],
       highlights: [
         {
-          title: 'Latest Deployed Update',
-          description: buildInfo.commitMessage
-        },
-        {
-          title: 'Active Git Branch',
-          description: `Running deployment on branch '${buildInfo.branch}'`
-        },
-        {
-          title: 'Commit Identifier',
-          description: `Reference SHA ${buildInfo.commitSha}`
+          title: 'System Improvement',
+          description: formattedTitle
         }
       ],
       releaseDate: (buildInfo.buildTimestamp || '').slice(0, 10),
