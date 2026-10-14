@@ -386,29 +386,17 @@ function AttachWeeklyProofModal({
       setShowUnselectedClaimedWarning(false);
       setIsClaimedModalOpen(false);
 
-      // Pre-select all approved claimed deletion tickets so they are already deducted before ticket selection
-      const approvedClaimedItems = (claimedAdjustmentItems || []).filter(i => {
-        const st = String(i.deletion_request_status || i.status || '').toUpperCase().trim();
-        return st === 'APPROVED' || !st;
-      });
-      const initialClaimedKeys = new Set(
-        approvedClaimedItems.map(i => String(i.transactionId || i.transId || i.id).trim())
-      );
-      setSelectedClaimedKeys(initialClaimedKeys);
-
-      const initialDeductionTotal = approvedClaimedItems.reduce(
-        (sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0
-      );
+      // Default unchecked for claimed deletion tickets
+      setSelectedClaimedKeys(new Set());
 
       const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
       const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const initialNetRemittance = Math.max(0, targetAmount - initialDeductionTotal);
-      setCustomRemittanceAmount(initialNetRemittance.toFixed(2));
+      setCustomRemittanceAmount(targetAmount.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems]);
+  }, [isOpen, filteredData, currentUser]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
