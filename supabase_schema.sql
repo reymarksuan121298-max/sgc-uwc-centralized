@@ -609,6 +609,8 @@ CREATE TABLE IF NOT EXISTS public.returned_winnings_deletion_requests (
     reviewed_at TIMESTAMPTZ,
     reject_reason TEXT,
     deducted_from_collections BOOLEAN DEFAULT FALSE,
+    is_already_deposited BOOLEAN DEFAULT FALSE,
+    "isClaim" BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -617,6 +619,8 @@ CREATE INDEX IF NOT EXISTS idx_del_req_status ON public.returned_winnings_deleti
 CREATE INDEX IF NOT EXISTS idx_del_req_trans_id ON public.returned_winnings_deletion_requests(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_del_req_sub_office ON public.returned_winnings_deletion_requests(sub_office);
 CREATE INDEX IF NOT EXISTS idx_del_req_created_at ON public.returned_winnings_deletion_requests(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_del_req_is_deposited ON public.returned_winnings_deletion_requests(is_already_deposited);
+CREATE INDEX IF NOT EXISTS idx_del_req_is_claim ON public.returned_winnings_deletion_requests("isClaim");
 
 ALTER TABLE public.returned_winnings_deletion_requests ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to deletion requests for anon/authenticated" ON public.returned_winnings_deletion_requests;

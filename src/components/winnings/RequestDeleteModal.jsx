@@ -20,6 +20,7 @@ export default function RequestDeleteModal({
 }) {
   const [reason, setReason] = useState('Winning ticket has been claimed in the system. Requesting deletion and deduction from collections.');
   const [ticketImage, setTicketImage] = useState(null);
+  const [isAlreadyDeposited, setIsAlreadyDeposited] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -103,7 +104,7 @@ export default function RequestDeleteModal({
     setErrorMessage('');
 
     try {
-      await winningsService.createDeletionRequest(ticket, reason, ticketImage, currentUser);
+      await winningsService.createDeletionRequest(ticket, reason, ticketImage, currentUser, isAlreadyDeposited);
 
       if (onSuccess) {
         onSuccess(transId);
@@ -292,6 +293,25 @@ export default function RequestDeleteModal({
               placeholder="Provide reason for deletion request..."
               className="w-full bg-slate-50/50 border border-slate-300 rounded-xl p-3 text-xs outline-none focus:border-[#002B66] focus:ring-2 focus:ring-[#002B66]/20 font-medium transition-all"
             />
+          </div>
+
+          {/* Already Deposited Checkbox */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="already-deposited-check"
+              checked={isAlreadyDeposited}
+              onChange={(e) => setIsAlreadyDeposited(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+            />
+            <label htmlFor="already-deposited-check" className="cursor-pointer select-none">
+              <span className="font-bold text-slate-800 text-[11px] block">
+                Already Deposited in Remittance Collections
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">
+                Check this if this claimed ticket was already included and remitted in a previous collection batch.
+              </span>
+            </label>
           </div>
 
           {/* Error Message Alert */}

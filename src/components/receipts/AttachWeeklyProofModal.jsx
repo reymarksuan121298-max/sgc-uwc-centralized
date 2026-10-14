@@ -346,11 +346,28 @@ function AttachWeeklyProofModal({
     });
   }, [claimedAdjustmentItems, selectedClaimedKeys]);
 
-  const hasUnselectedClaimed = (claimedAdjustmentItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
+  // 3-Condition Rule: isClaim === true && is_already_deposited === true && status === 'APPROVED'
+  const isThreeConditionEligible = useCallback((item) => {
+    const isClaim = Boolean(item.isClaim || item.is_claim || item.isClaimed);
+    const isDeposited = Boolean(item.is_already_deposited);
+    const isApproved = String(item.status || item.deletion_request_status || '').toUpperCase() === 'APPROVED';
+    return isClaim && isDeposited && isApproved;
+  }, []);
+
+  const eligibleThreeConditionItems = useMemo(() => {
+    return (claimedAdjustmentItems || []).filter(isThreeConditionEligible);
+  }, [claimedAdjustmentItems, isThreeConditionEligible]);
+
+  const totalEligibleDeductions = useMemo(() => {
+    return eligibleThreeConditionItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  }, [eligibleThreeConditionItems]);
+
+  const hasUnselectedClaimed = eligibleThreeConditionItems.length > 0 && selectedClaimedKeys.size === 0;
 
   const netPayableTotal = useMemo(() => {
-    return (parseFloat(selectedWinTotal || 0) || 0) + selectedDeductionTotal;
-  }, [selectedWinTotal, selectedDeductionTotal]);
+    const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalEligibleDeductions);
+    return baseDeducted + selectedDeductionTotal;
+  }, [selectedWinTotal, totalEligibleDeductions, selectedDeductionTotal]);
 
   // Sync initial state on modal open
   useEffect(() => {
@@ -373,9 +390,12 @@ function AttachWeeklyProofModal({
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      setCustomRemittanceAmount(targetAmount.toFixed(2));
+      // When 3-condition eligible claimed tickets exist, Total Remittance Amount is initially deducted:
+      // e.g., ₱8,000.00 - ₱417.00 = ₱7,583.00
+      const initialDeducted = Math.max(0, targetAmount - totalEligibleDeductions);
+      setCustomRemittanceAmount(initialDeducted.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems]);
+  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems, totalEligibleDeductions]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
@@ -388,11 +408,12 @@ function AttachWeeklyProofModal({
       }
       const newItems = (targetBatch?.items || []).filter(t => next.has(getItemKey(t)));
       const newGross = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const newTotal = newGross + selectedDeductionTotal;
+      const baseDeducted = Math.max(0, newGross - totalEligibleDeductions);
+      const newTotal = baseDeducted + selectedDeductionTotal;
       setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, [targetBatch, selectedDeductionTotal]);
+  }, [targetBatch, totalEligibleDeductions, selectedDeductionTotal]);
 
   // Toggle select all visible / batch tickets
   const handleToggleSelectAll = useCallback(() => {
@@ -401,18 +422,19 @@ function AttachWeeklyProofModal({
       const visibleKeys = targetBatch.items.map(t => getItemKey(t));
       const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => prev.has(k));
       if (allSelected) {
-        setCustomRemittanceAmount(selectedDeductionTotal.toFixed(2));
+        setCustomRemittanceAmount('0.00');
         return new Set();
       } else {
         const fullTotal = targetBatch.items.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-        const newTotal = fullTotal + selectedDeductionTotal;
+        const baseDeducted = Math.max(0, fullTotal - totalEligibleDeductions);
+        const newTotal = baseDeducted + selectedDeductionTotal;
         setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set(visibleKeys);
       }
     });
-  }, [targetBatch, selectedDeductionTotal]);
+  }, [targetBatch, totalEligibleDeductions, selectedDeductionTotal]);
 
-  // Toggle claimed addition tickets
+  // Toggle claimed addition tickets to match subtotal: ₱7,583.00 + ₱417.00 = ₱8,000.00
   const handleToggleClaimedSelect = useCallback((key) => {
     setSelectedClaimedKeys(prev => {
       const next = new Set(prev);
@@ -424,28 +446,30 @@ function AttachWeeklyProofModal({
       const newAdditions = (claimedAdjustmentItems || [])
         .filter(i => next.has(String(i.transactionId || i.transId || i.id).trim()))
         .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-      const newTotal = (parseFloat(selectedWinTotal || 0) || 0) + newAdditions;
+      const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalEligibleDeductions);
+      const newTotal = baseDeducted + newAdditions; // ₱7,583.00 + ₱417.00 = ₱8,000.00
       setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, [claimedAdjustmentItems, selectedWinTotal]);
+  }, [claimedAdjustmentItems, selectedWinTotal, totalEligibleDeductions]);
 
   const handleToggleAllClaimed = useCallback(() => {
     if (!claimedAdjustmentItems || !claimedAdjustmentItems.length) return;
     setSelectedClaimedKeys(prev => {
       const allKeys = claimedAdjustmentItems.map(i => String(i.transactionId || i.transId || i.id).trim());
       const isAll = allKeys.length > 0 && allKeys.every(k => prev.has(k));
+      const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalEligibleDeductions);
       if (isAll) {
-        setCustomRemittanceAmount((parseFloat(selectedWinTotal || 0) || 0).toFixed(2));
+        setCustomRemittanceAmount(baseDeducted.toFixed(2));
         return new Set();
       } else {
         const fullAdditions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-        const newTotal = (parseFloat(selectedWinTotal || 0) || 0) + fullAdditions;
+        const newTotal = baseDeducted + fullAdditions;
         setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set(allKeys);
       }
     });
-  }, [claimedAdjustmentItems, selectedWinTotal]);
+  }, [claimedAdjustmentItems, selectedWinTotal, totalEligibleDeductions]);
 
   // Dynamically compute Remittance Serial Number based on sub-office and remittance date
   const effectiveBatchSrn = useMemo(() => {
@@ -794,16 +818,16 @@ function AttachWeeklyProofModal({
                     <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
                       selectedClaimedCount > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
                     }`}>
-                      {selectedClaimedCount > 0 ? 'Inclusion Active' : 'Action Required'}
+                      {selectedClaimedCount > 0 ? 'Subtotal Matched' : 'Action Required'}
                     </span>
                   </div>
                   {selectedClaimedCount > 0 ? (
                     <p className="text-[10px] text-slate-600 truncate mt-0.5">
-                      Total addition of +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added to remittance batch. Click to modify.
+                      Subtotal Matched: ₱{netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₱{(selectedWinTotal - totalEligibleDeductions).toLocaleString('en-US', { minimumFractionDigits: 2 })} + ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
                     </p>
                   ) : (
                     <marquee className="text-[10px] text-rose-800 font-bold block mt-0.5" scrollamount="5">
-                      You have {claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and add their win amount.
+                      You have {claimedAdjustmentItems.length} claimed winning ticket(s) available. To match the subtotal amount (₱{selectedWinTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}), please select the Trans ID(s) to include that ticket(s).
                     </marquee>
                   )}
                 </div>
@@ -905,14 +929,14 @@ function AttachWeeklyProofModal({
                     </label>
                     {selectedClaimedCount > 0 ? (
                       <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
-                        ✓ +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added
+                        ✓ Subtotal Matched: ₱{netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} (+₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
                       </span>
                     ) : hasUnselectedClaimed ? (
                       <button
                         type="button"
                         onClick={() => setIsClaimedModalOpen(true)}
                         className="p-0.5 rounded text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
-                        title="Action Required: Click to select claimed Trans IDs"
+                        title="Action Required: Select Trans ID to match subtotal amount"
                       >
                         <AlertTriangle size={15} className="text-rose-600 animate-bounce" />
                       </button>

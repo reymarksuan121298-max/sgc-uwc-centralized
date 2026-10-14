@@ -145,8 +145,14 @@ export const winningsService = {
   },
 
   // Create a new deletion request in returned_winnings_deletion_requests & update returned_winnings
-  async createDeletionRequest(ticket, reason, attachmentUrl, user) {
-    const transId = String(ticket.transactionId || ticket.transId || ticket.computedTransId || '').trim();
+  async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = false) {
+    const isClaimValue = Boolean(
+      ticket.isClaim == 1 || ticket.isClaim === true || ticket.isClaim === '1' ||
+      ticket.is_claim == 1 || ticket.is_claim === true || ticket.is_claim === '1' ||
+      ticket.isClaimed == 1 || ticket.isClaimed === true || ticket.isClaimed === '1' ||
+      ticket.is_claimed == 1 || ticket.is_claimed === true || ticket.is_claimed === '1'
+    );
+
     const payload = {
       returned_winnings_id: ticket.id || null,
       transaction_id: transId,
@@ -164,7 +170,10 @@ export const winningsService = {
       attachment_url: attachmentUrl || null,
       requested_by: user?.full_name || user?.username || 'SSR',
       requested_by_role: user?.role || 'SSR',
-      requested_at: new Date().toISOString()
+      requested_at: new Date().toISOString(),
+      is_already_deposited: Boolean(isAlreadyDeposited),
+      isClaim: isClaimValue,
+      deducted_from_collections: false
     };
 
     // 1. Insert into dedicated table

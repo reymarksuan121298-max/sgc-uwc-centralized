@@ -165,6 +165,9 @@ export default function ReturnedWinnings({
         winAmount: r.win_amount,
         deletion_request_reason: r.reason,
         deletion_request_status: r.status,
+        status: r.status,
+        is_already_deposited: Boolean(r.is_already_deposited),
+        isClaim: Boolean(r.isClaim ?? r.is_claim ?? r.isClaimed ?? r.is_claimed ?? true),
         date_returned: r.requested_at || r.created_at,
         created_at: r.created_at
       }));

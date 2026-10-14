@@ -187,6 +187,7 @@ export default function DeletionRequestsTable({
                 <th className="px-3 py-2.5 border-r border-blue-900/60 whitespace-nowrap">Teller / Outlet</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Draw & Combination</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 text-right whitespace-nowrap">Win Amount</th>
+                <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Deposited?</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Proof Photo</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 whitespace-nowrap">Requester</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Status</th>
@@ -245,6 +246,19 @@ export default function DeletionRequestsTable({
                         <span className="block text-[9px] text-slate-400 font-normal">
                           Bet: ₱{betAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
+                      </td>
+
+                      {/* Deposited Status */}
+                      <td className="px-3 py-2.5 border-r border-slate-100 text-center whitespace-nowrap">
+                        {item.is_already_deposited ? (
+                          <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[9.5px] px-2 py-0.5 rounded-full" title="Already deposited in previous collections">
+                            <CheckCircle2 size={10} className="text-emerald-700" /> DEPOSITED
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 font-semibold text-[9.5px] px-2 py-0.5 rounded-full" title="Not yet deposited in collections">
+                            NOT DEPOSITED
+                          </span>
+                        )}
                       </td>
 
                       {/* Hard Copy Proof Photo */}
@@ -337,7 +351,7 @@ export default function DeletionRequestsTable({
                 })
               ) : (
                 <tr>
-                  <td colSpan="8" className="px-4 py-12 text-center text-slate-400 font-medium text-xs">
+                  <td colSpan="9" className="px-4 py-12 text-center text-slate-400 font-medium text-xs">
                     No deletion requests match the selected filters.
                   </td>
                 </tr>
@@ -383,8 +397,19 @@ export default function DeletionRequestsTable({
                   </div>
                 </div>
 
-                <div className="text-[11px] text-slate-600 font-mono">
-                  <span>{betNo} ({betCode})</span> • <span>{formatDrawTime ? formatDrawTime(draw) : draw}</span>
+                <div className="flex items-center justify-between text-[11px] text-slate-600 font-mono">
+                  <div>
+                    <span>{betNo} ({betCode})</span> • <span>{formatDrawTime ? formatDrawTime(draw) : draw}</span>
+                  </div>
+                  {item.is_already_deposited ? (
+                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded-full">
+                      DEPOSITED
+                    </span>
+                  ) : (
+                    <span className="bg-slate-100 text-slate-500 border border-slate-200 font-semibold text-[8.5px] px-1.5 py-0.2 rounded-full">
+                      NOT DEPOSITED
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-[10px] text-slate-500" title={reason ? `Reason: ${reason}` : undefined}>

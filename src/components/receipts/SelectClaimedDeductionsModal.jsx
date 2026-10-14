@@ -187,9 +187,21 @@ export default function SelectClaimedDeductionsModal({
                         </td>
                         <td className="p-2.5 border-l border-slate-200 font-mono font-bold text-[#002B66] whitespace-nowrap">
                           {transId}
-                          <span className="block text-[9px] font-sans font-bold text-slate-400">
-                            {item.sub_office || 'All'}
-                          </span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[9px] font-sans font-bold text-slate-400">
+                              {item.sub_office || 'All'}
+                            </span>
+                            {Boolean(item.isClaim || item.is_claim || item.isClaimed) && (
+                              <span className="text-[8.5px] font-black bg-blue-100 text-[#002B66] px-1 py-0.2 rounded border border-blue-200 uppercase">
+                                CLAIMED
+                              </span>
+                            )}
+                            {Boolean(item.is_already_deposited) && (
+                              <span className="text-[8.5px] font-black bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200 uppercase">
+                                DEPOSITED
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-2.5 border-l border-slate-200 font-bold text-slate-800 uppercase whitespace-nowrap max-w-[220px] truncate" title={teller}>
                           {teller}
