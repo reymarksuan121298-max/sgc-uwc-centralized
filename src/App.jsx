@@ -18,8 +18,6 @@ import { notificationService } from './services/notificationService';
 import { systemService } from './services/systemService';
 import { startSettlementReminderCron } from './services/settlementReminderService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
-import { initAntiInspectLockdown, enforceLockdownOnNavigation } from './security/antiInspect';
-import AntiInspectGuard from './security/AntiInspectGuard';
 import { proxyFetch, fetchUnclaimedReceiptsViaProxy } from './services/proxyClient';
 
 const DEFAULT_COMMISSIONS = {
@@ -30,13 +28,6 @@ const DEFAULT_COMMISSIONS = {
 };
 
 export default function App() {
-  // Anti-Inspect Lockdown Activation (Blocks contextmenu, F12, DevTools shortcuts, and prunes storage)
-  useEffect(() => {
-    const cleanup = initAntiInspectLockdown();
-    return () => {
-      if (cleanup) cleanup();
-    };
-  }, []);
 
   // Persistent Authentication State
   const [currentUser, setCurrentUser] = useState(() => {
@@ -1720,7 +1711,7 @@ export default function App() {
   // If not logged in, render Login page (along with ProfileSettingsModal and HrApprovalModal)
   if (!currentUser) {
     return (
-      <AntiInspectGuard activeTab="login">
+      <>
         <Login onLoginSuccess={handleLoginSuccess} />
         <ProfileSettingsModal
           isOpen={isProfileModalOpen}
@@ -1748,12 +1739,12 @@ export default function App() {
             } catch {}
           }}
         />
-      </AntiInspectGuard>
+      </>
     );
   }
 
   return (
-    <AntiInspectGuard activeTab={activeTab}>
+    <>
       <MainLayout
         currentUser={currentUser}
         activeTab={activeTab}
@@ -1924,7 +1915,7 @@ export default function App() {
           await fetchData();
         }}
       />
-    </AntiInspectGuard>
+    </>
   );
 }
 
