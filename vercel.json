@@ -5,7 +5,11 @@
       "destination": "https://stl-ldn-api.com/:path*"
     },
     {
-      "source": "/((?!assets/|.*\\..*).*)",
+      "source": "/api-proxy/stl-mandaue/:path*",
+      "destination": "https://stl-mandaue-api.com/:path*"
+    },
+    {
+      "source": "/((?!api/|assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]

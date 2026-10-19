@@ -94,8 +94,8 @@ export default function TotalCollections({
 
   const executeApproveDeletion = async () => {
     if (!approvingItem) return;
-    const transId = approvingItem.batch_serial_no || approvingItem.transactionId || 'N/A';
-    const winAmt = parseFloat(approvingItem.winAmount ?? 0);
+    const transId = approvingItem.computedTransId || approvingItem.transaction_id || approvingItem.transactionId || approvingItem.batch_serial_no || 'N/A';
+    const winAmt = parseFloat(approvingItem.win_amount ?? approvingItem.winAmount ?? 0);
 
     setIsProcessingAdminAction(true);
     try {
@@ -113,10 +113,11 @@ export default function TotalCollections({
 
   const handleConfirmReject = async () => {
     if (!rejectingItem) return;
+    const transId = rejectingItem.computedTransId || rejectingItem.transaction_id || rejectingItem.transactionId || 'N/A';
     setIsProcessingAdminAction(true);
     try {
       await winningsService.rejectDeletionRequest(rejectingItem, rejectReason, currentUser);
-      showToast(`Deletion request rejected.`);
+      showToast(`Deletion request for ${transId} rejected.`);
       setRejectingItem(null);
       setRejectReason('');
       if (onDataUpdated) onDataUpdated();

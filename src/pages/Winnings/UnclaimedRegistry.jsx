@@ -88,6 +88,19 @@ export default function UnclaimedRegistry({
     };
   }, []);
 
+  // Load dynamic supervisor mappings via serverless proxy
+  useEffect(() => {
+    let isMounted = true;
+    fetchAllIliganSupervisors(gatewayEndpoints).then((res) => {
+      if (isMounted && res) {
+        setDynamicSupervisors(res);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [gatewayEndpoints]);
+
   const handleRowMouseEnter = (e, meta) => {
     const remarkObj = remarks[meta.transId];
     if (remarkObj && remarkObj.remark) {

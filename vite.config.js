@@ -32,6 +32,73 @@ function getGitBuildInfo() {
   };
 }
 
+function serverlessProxyPlugin() {
+  return {
+    name: 'serverless-proxy-plugin',
+    configureServer(server) {
+      server.middlewares.use('/api/proxy', async (req, res) => {
+        try {
+          const { default: handler } = await import('./api/proxy.js');
+          let body = undefined;
+          if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
+            const buffers = [];
+            for await (const chunk of req) {
+              buffers.push(chunk);
+            }
+            const rawBody = Buffer.concat(buffers).toString();
+            try {
+              body = JSON.parse(rawBody);
+            } catch {
+              body = rawBody;
+            }
+          }
+          const parsedUrl = new URL(req.url, 'http://localhost:5173');
+          const query = Object.fromEntries(parsedUrl.searchParams.entries());
+
+          const customReq = {
+            method: req.method,
+            headers: req.headers,
+            query,
+            body
+          };
+
+          const customRes = {
+            statusCode: 200,
+            setHeader(name, value) {
+              res.setHeader(name, value);
+            },
+            status(code) {
+              this.statusCode = code;
+              res.statusCode = code;
+              return this;
+            },
+            send(data) {
+              res.statusCode = this.statusCode;
+              res.end(data);
+            },
+            json(data) {
+              res.statusCode = this.statusCode;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(data));
+            },
+            end() {
+              res.statusCode = this.statusCode;
+              res.end();
+            }
+          };
+
+          await handler(customReq, customRes);
+        } catch (err) {
+          console.error('Local serverless proxy middleware error:', err);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+    }
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const buildInfo = getGitBuildInfo();
@@ -40,7 +107,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_BUILD_INFO__: JSON.stringify(buildInfo)
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), serverlessProxyPlugin()],
     build: {
       cssMinify: false
     },
@@ -59,6 +126,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api-proxy\/stl-ldn/, '')
+        },
+        '/api-proxy/stl-mandaue': {
+          target: 'https://stl-mandaue-api.com',
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/api-proxy\/stl-mandaue/, '')
         }
       }
     }

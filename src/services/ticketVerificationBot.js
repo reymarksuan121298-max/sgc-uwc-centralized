@@ -3,6 +3,7 @@
  * STL Mandaue Receipt & Ticket Auditor
  * Supports isClaim=0 (Unclaimed) and isClaim=1 (Claimed) live gateway verification
  */
+import { proxyFetch } from './proxyClient.js';
 
 /**
  * Extract ticket date from Transaction ID
@@ -121,6 +122,8 @@ export async function queryGatewayLive(searchKey, targetDate, gatewayEndpoints =
         let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
         if (typeof window !== 'undefined' && cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
           cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
+        } else if (typeof window !== 'undefined' && cleanBaseUrl.toLowerCase().includes('stl-mandaue-api.com')) {
+          cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-mandaue-api\.com/i, '/api-proxy/stl-mandaue');
         }
         let targetUrl = cleanBaseUrl;
         if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
@@ -138,13 +141,9 @@ export async function queryGatewayLive(searchKey, targetDate, gatewayEndpoints =
         const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
 
         try {
-          const res = await fetch(fullUrl, {
+          const res = await proxyFetch(fullUrl, {
             method: 'GET',
-            headers: {
-              'Authorization': authHeader,
-              'Accept': 'application/json, text/plain, */*',
-              'Content-Type': 'application/json'
-            }
+            authHeader
           });
 
           if (!res.ok) continue;
