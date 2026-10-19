@@ -52,20 +52,23 @@ export const winningsService = {
   },
 
   async approveDeletionAndDeductCollections(record, adminUser) {
-    const transId = record.transactionId || record.transId || record.computedTransId;
+    const transId = String(record.transaction_id || record.transactionId || record.transId || record.computedTransId || '').trim();
+    const returnedWinningsId = record.returned_winnings_id || (record.table !== 'returned_winnings_deletion_requests' ? record.id : null);
     let query = supabase.from('returned_winnings').delete();
-    if (record.id) {
-      query = query.eq('id', record.id);
+    if (returnedWinningsId) {
+      query = query.eq('id', returnedWinningsId);
     } else if (transId) {
       query = query.eq('transactionId', transId);
     }
 
     const { error } = await query;
-    if (error) throw error;
+    if (error) {
+      console.warn('returned_winnings delete warning:', error);
+    }
 
     // Also update returned_winnings_deletion_requests table if row exists
     try {
-      await supabase
+      let reqQuery = supabase
         .from('returned_winnings_deletion_requests')
         .update({
           status: 'APPROVED',
@@ -73,17 +76,51 @@ export const winningsService = {
           reviewed_at: new Date().toISOString(),
           deducted_from_collections: true,
           updated_at: new Date().toISOString()
-        })
-        .eq('transaction_id', transId);
+        });
+
+      if (record.id && !record.returned_winnings_id) {
+        reqQuery = reqQuery.eq('id', record.id);
+      } else if (transId) {
+        reqQuery = reqQuery.eq('transaction_id', transId);
+      }
+      await reqQuery;
     } catch (e) {
       console.warn('Note: returned_winnings_deletion_requests update error or table not yet migrated:', e);
+    }
+
+    // Insert audit log
+    try {
+      await supabase.from('audit_logs').insert([{
+        actor_username: adminUser?.username || 'admin',
+        actor_role: adminUser?.role || 'Super Admin',
+        action: 'HARDCOPY_CLAIM_DELETION_APPROVED',
+        target_type: 'RETURNED_WINNING',
+        target_id: transId || 'UNKNOWN',
+        sub_office: record.sub_office || adminUser?.sub_office || 'All',
+        details: {
+          teller_outlet: record.teller_outlet || record.fullName || record.outlet || record.username || 'N/A',
+          transId,
+          draw: record.draw_time || record.drawTime || record.drawDate || 'N/A',
+          betNo: record.bet_no || record.betNo || 'N/A',
+          betCode: record.bet_code || record.betCode || 'RS3',
+          betAmount: parseFloat(record.bet_amount ?? record.betAmount ?? 0),
+          winAmount: parseFloat(record.win_amount ?? record.winAmount ?? 0),
+          reason: record.reason || record.deletion_request_reason,
+          requestedBy: record.requested_by || record.deletion_request_by,
+          approvedBy: adminUser?.username,
+          deductedFromCollections: true
+        }
+      }]);
+    } catch (auditErr) {
+      console.warn('Audit log write error:', auditErr);
     }
 
     return true;
   },
 
   async rejectDeletionRequest(record, rejectReason, adminUser) {
-    const transId = record.transactionId || record.transId || record.computedTransId;
+    const transId = String(record.transaction_id || record.transactionId || record.transId || record.computedTransId || '').trim();
+    const returnedWinningsId = record.returned_winnings_id || (record.table !== 'returned_winnings_deletion_requests' ? record.id : null);
     let query = supabase
       .from('returned_winnings')
       .update({
@@ -92,8 +129,8 @@ export const winningsService = {
         updated_at: new Date().toISOString()
       });
 
-    if (record.id) {
-      query = query.eq('id', record.id);
+    if (returnedWinningsId) {
+      query = query.eq('id', returnedWinningsId);
     } else if (transId) {
       query = query.eq('transactionId', transId);
     }
@@ -105,7 +142,7 @@ export const winningsService = {
 
     // Also update returned_winnings_deletion_requests table
     try {
-      await supabase
+      let reqQuery = supabase
         .from('returned_winnings_deletion_requests')
         .update({
           status: 'REJECTED',
@@ -113,10 +150,41 @@ export const winningsService = {
           reviewed_by: adminUser?.username || 'admin',
           reviewed_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        })
-        .eq('transaction_id', transId);
+        });
+
+      if (record.id && !record.returned_winnings_id) {
+        reqQuery = reqQuery.eq('id', record.id);
+      } else if (transId) {
+        reqQuery = reqQuery.eq('transaction_id', transId);
+      }
+      await reqQuery;
     } catch (e) {
       console.warn('Note: returned_winnings_deletion_requests update error:', e);
+    }
+
+    // Insert audit log
+    try {
+      await supabase.from('audit_logs').insert([{
+        actor_username: adminUser?.username || 'admin',
+        actor_role: adminUser?.role || 'Super Admin',
+        action: 'HARDCOPY_CLAIM_DELETION_REJECTED',
+        target_type: 'RETURNED_WINNING',
+        target_id: transId || 'UNKNOWN',
+        sub_office: record.sub_office || adminUser?.sub_office || 'All',
+        details: {
+          teller_outlet: record.teller_outlet || record.fullName || record.outlet || record.username || 'N/A',
+          transId,
+          draw: record.draw_time || record.drawTime || record.drawDate || 'N/A',
+          betNo: record.bet_no || record.betNo || 'N/A',
+          betCode: record.bet_code || record.betCode || 'RS3',
+          betAmount: parseFloat(record.bet_amount ?? record.betAmount ?? 0),
+          winAmount: parseFloat(record.win_amount ?? record.winAmount ?? 0),
+          rejectReason: rejectReason || 'Rejected by administrator',
+          rejectedBy: adminUser?.username
+        }
+      }]);
+    } catch (auditErr) {
+      console.warn('Audit log write error:', auditErr);
     }
 
     return true;
@@ -146,6 +214,7 @@ export const winningsService = {
 
   // Create a new deletion request in returned_winnings_deletion_requests & update returned_winnings
   async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = false) {
+    const transId = String(ticket.transactionId || ticket.transId || ticket.transaction_id || ticket.computedTransId || '').trim();
     const isClaimValue = Boolean(
       ticket.isClaim == 1 || ticket.isClaim === true || ticket.isClaim === '1' ||
       ticket.is_claim == 1 || ticket.is_claim === true || ticket.is_claim === '1' ||
@@ -210,6 +279,34 @@ export const winningsService = {
       await rwQuery;
     } catch (rwErr) {
       console.warn('returned_winnings status update error:', rwErr);
+    }
+
+    // 3. Write audit log entry for request submission
+    try {
+      await supabase.from('audit_logs').insert([{
+        actor_username: user?.username || 'SSR',
+        actor_role: user?.role || 'SSR',
+        action: 'CLAIMED_TICKET_DELETION_REQUESTED',
+        target_type: 'RETURNED_WINNING',
+        target_id: transId || 'UNKNOWN',
+        sub_office: payload.sub_office,
+        details: {
+          teller_outlet: payload.teller_outlet,
+          transId,
+          draw: payload.draw_time,
+          betNo: payload.bet_no,
+          betCode: payload.bet_code,
+          betAmount: payload.bet_amount,
+          winAmount: payload.win_amount,
+          dateReturned: payload.draw_date,
+          reason: payload.reason,
+          requestedBy: payload.requested_by,
+          hasHardCopyProof: Boolean(attachmentUrl),
+          isAlreadyDeposited: Boolean(isAlreadyDeposited)
+        }
+      }]);
+    } catch (auditErr) {
+      console.warn('Audit log write error for deletion request:', auditErr);
     }
 
     return insertedRecord || payload;

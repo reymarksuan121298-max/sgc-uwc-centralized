@@ -76,7 +76,7 @@ export default function ReturnedWinnings({
       return true;
     }
 
-    // Direct isClaim=1 property check on live record
+    // Direct claim properties check on live or Supabase record
     return Boolean(
       item.isClaim == 1 ||
       item.isClaim === '1' ||
@@ -93,7 +93,15 @@ export default function ReturnedWinnings({
       item.is_claimed == 1 ||
       item.is_claimed === '1' ||
       item.is_claimed === true ||
-      item.is_claimed === 'true'
+      item.is_claimed === 'true' ||
+      (item.claimDate && String(item.claimDate).trim() !== '' && item.claimDate !== 'null') ||
+      (item.claim_date && String(item.claim_date).trim() !== '' && item.claim_date !== 'null') ||
+      (item.claimed_at && String(item.claimed_at).trim() !== '' && item.claimed_at !== 'null') ||
+      (item.claimedAt && String(item.claimedAt).trim() !== '' && item.claimedAt !== 'null') ||
+      parseFloat(item.paidAmount ?? item.paid_amount ?? 0) > 0 ||
+      item.status === 'CLAIMED' ||
+      item.claim_status === 'CLAIMED' ||
+      item.is_already_claimed
     );
   };
 
@@ -252,8 +260,8 @@ export default function ReturnedWinnings({
 
   const executeApproveDeletion = async () => {
     if (!approvingItem) return;
-    const transId = approvingItem.computedTransId || approvingItem.transactionId || approvingItem.transId || 'N/A';
-    const winAmt = parseFloat(approvingItem.winAmount ?? 0);
+    const transId = approvingItem.computedTransId || approvingItem.transaction_id || approvingItem.transactionId || approvingItem.transId || 'N/A';
+    const winAmt = parseFloat(approvingItem.win_amount ?? approvingItem.winAmount ?? 0);
 
     setIsProcessingAdminAction(true);
     try {
@@ -273,10 +281,11 @@ export default function ReturnedWinnings({
   // Admin Action: Reject Deletion Request
   const handleConfirmReject = async () => {
     if (!rejectingItem) return;
+    const transId = rejectingItem.computedTransId || rejectingItem.transaction_id || rejectingItem.transactionId || rejectingItem.transId || 'N/A';
     setIsProcessingAdminAction(true);
     try {
       await winningsService.rejectDeletionRequest(rejectingItem, rejectReason, currentUser);
-      showToast(`Deletion request for ${rejectingItem.transactionId || rejectingItem.computedTransId} rejected.`);
+      showToast(`Deletion request for ${transId} rejected.`);
       setRejectingItem(null);
       setRejectReason('');
       if (onDataUpdated) onDataUpdated();
@@ -665,7 +674,7 @@ export default function ReturnedWinnings({
                                             <Ban size={11} className="text-rose-600" /> Rejected by HR
                                           </span>
                                         )}
-                                        {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
+                                        {isRemitted && !isClaimedInSourceSystem && (
                                           <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
                                         )}
                                         {isClaimedInSourceSystem && (
@@ -673,7 +682,13 @@ export default function ReturnedWinnings({
                                             type="button"
                                             onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
                                             className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-600 hover:text-white hover:bg-amber-600 border border-amber-300 hover:border-amber-600 rounded-xs transition-all cursor-pointer shadow-2xs"
-                                            title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                            title={
+                                              isRemitted 
+                                                ? "Request admin approval to delete and deduct from Collections" 
+                                                : isUnderSettlement 
+                                                  ? "Request admin approval to delete claimed settlement ticket"
+                                                  : "Request deletion for this claimed unremitted ticket"
+                                            }
                                           >
                                             <Trash2 size={12} /> Request Delete
                                           </button>
@@ -895,15 +910,21 @@ export default function ReturnedWinnings({
                                       <Ban size={11} className="text-rose-600" /> Rejected by HR
                                     </span>
                                   )}
-                                  {isRemitted && !isClaimedInSourceSystem && !item.unclaimed_approval_status && (
+                                  {isRemitted && !isClaimedInSourceSystem && (
                                     <span className="text-[10px] text-emerald-700 font-bold">Proof Attached</span>
                                   )}
                                   {isClaimedInSourceSystem && (
                                     <button
                                       type="button"
                                       onClick={() => setSelectedForRequestDelete({ ...item, computedTransId: transId })}
-                                      className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase shadow-2xs"
-                                      title={isRemitted ? "Request admin approval to delete and deduct from Collections" : "Request deletion for this claimed ticket"}
+                                      className="px-2.5 py-1 text-amber-600 border border-amber-300 rounded-lg text-[10px] font-bold uppercase shadow-2xs cursor-pointer"
+                                      title={
+                                        isRemitted 
+                                          ? "Request admin approval to delete and deduct from Collections" 
+                                          : isUnderSettlement 
+                                            ? "Request admin approval to delete claimed settlement ticket"
+                                            : "Request deletion for this claimed unremitted ticket"
+                                      }
                                     >
                                       Request Delete
                                     </button>

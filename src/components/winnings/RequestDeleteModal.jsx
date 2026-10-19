@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
   Trash2, X, AlertTriangle, Send, Loader2, UploadCloud, 
   Image as ImageIcon, Camera, CheckCircle2, ShieldAlert,
@@ -26,6 +26,13 @@ export default function RequestDeleteModal({
   const [errorMessage, setErrorMessage] = useState('');
   const [isTimestampModalOpen, setIsTimestampModalOpen] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (ticket) {
+      const isRemitted = Boolean(ticket.receipt_status && ticket.receipt_status !== 'NO_RECEIPT');
+      setIsAlreadyDeposited(isRemitted);
+    }
+  }, [ticket]);
 
   const canUseTimestampScreen = currentUser && (
     isSSRRole(currentUser.role) || 

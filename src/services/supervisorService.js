@@ -2,6 +2,7 @@
  * Supervisor Service
  * Fetches, filters, and resolves supervisor mappings per sub-office (e.g. ILIGAN SET A/B from stl-ldn-api.com).
  */
+import { proxyFetch } from './proxyClient';
 
 // ─── ILIGAN SET B ────────────────────────────────────────────────────────────
 export const ILIGAN_ALLOWED_SUPERVISORS = [
@@ -216,16 +217,18 @@ const SUPERVISOR_CACHE_TTL = 10 * 60 * 1000;
  * @returns {Promise<Object>}
  */
 async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
-  // If no Iligan/LDN auth token is configured, skip network requests silently and use static fallbacks
-  if (!authHeader) {
+  // If requesting LDN supervisors without an active LDN token, skip to avoid 401 Unauthorized
+  if (!authHeader && urls.some(u => u.includes('stl-ldn-api.com'))) {
     return {};
   }
 
   const headers = {
     'Accept': 'application/json, text/plain, */*',
-    'Content-Type': 'application/json',
-    'Authorization': authHeader
+    'Content-Type': 'application/json'
   };
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
 
   const merged = {};
   const now = Date.now();
@@ -258,10 +261,7 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000);
-        const fetchUrl = (typeof window !== 'undefined' && url.toLowerCase().includes('stl-ldn-api.com'))
-          ? url.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn')
-          : url;
-        const res = await fetch(fetchUrl, { method: 'GET', headers, signal: controller.signal });
+        const res = await proxyFetch(url, { method: 'GET', headers, signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (!res.ok) {
@@ -307,7 +307,7 @@ async function fetchSupervisorsFromUrls(urls, authHeader, allowFn = null) {
             }
           }
         });
-      } catch (err) {
+      } catch {
         // Cache error state with timestamp so failed URLs are not constantly hammered
         supervisorUrlCache.set(url, { timestamp: now, data: [] });
       }
@@ -329,6 +329,8 @@ export async function fetchIliganSupervisors(gatewayEndpoints = []) {
   if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
 
   const authHeader = getIliganAuthHeader(gatewayEndpoints);
+  if (!authHeader) return {};
+
   const result = await fetchSupervisorsFromUrls(
     ['https://stl-ldn-api.com/api/accountant/supervisor?id=7'],
     authHeader,
@@ -352,6 +354,8 @@ export async function fetchIliganSetASupervisors(gatewayEndpoints = []) {
   if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
 
   const authHeader = getIliganAuthHeader(gatewayEndpoints);
+  if (!authHeader) return {};
+
   const result = await fetchSupervisorsFromUrls(
     [
       'https://stl-ldn-api.com/api/accountant/supervisor?id=5',
@@ -377,6 +381,8 @@ export async function fetchLalaOfficeSupervisors(gatewayEndpoints = []) {
   if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
 
   const authHeader = getIliganAuthHeader(gatewayEndpoints);
+  if (!authHeader) return {};
+
   const result = await fetchSupervisorsFromUrls(
     ['https://stl-ldn-api.com/api/accountant/supervisor?id=2'],
     authHeader,
@@ -399,6 +405,8 @@ export async function fetchBaloiOfficeSupervisors(gatewayEndpoints = []) {
   if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
 
   const authHeader = getIliganAuthHeader(gatewayEndpoints);
+  if (!authHeader) return {};
+
   const result = await fetchSupervisorsFromUrls(
     ['https://stl-ldn-api.com/api/accountant/supervisor?id=6'],
     authHeader,
@@ -409,13 +417,41 @@ export async function fetchBaloiOfficeSupervisors(gatewayEndpoints = []) {
   return result;
 }
 
+// ─── MANDAUE (id=7) ─────────────────────────────────────────────────────────
+
 /**
- * Fetch all Iligan-related supervisors (SET A + SET B + LALA OFFICE + BALOI OFFICE) merged into one map.
+ * Fetch supervisors for Mandaue Central (supervisor?id=7)
+ * @param {Array} gatewayEndpoints
+ * @returns {Promise<Object>}
+ */
+export async function fetchMandaueSupervisors(gatewayEndpoints = []) {
+  const cacheKey = 'MANDAUE_SUPERVISORS';
+  if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
+
+  const eps = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
+  const mandaueEp = eps.find(e => {
+    const sub = (e.sub_office || e.name || '').toLowerCase();
+    const url = (e.baseUrl || '').toLowerCase();
+    return sub.includes('mandaue') || url.includes('stl-mandaue') || sub === 'all';
+  });
+  const authHeader = mandaueEp?.token ? (mandaueEp.token.startsWith('Bearer ') ? mandaueEp.token : `Bearer ${mandaueEp.token}`) : '';
+
+  const result = await fetchSupervisorsFromUrls(
+    ['https://stl-mandaue-api.com/api/accountant/supervisor?id=7'],
+    authHeader
+  );
+
+  supervisorCache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * Fetch all supervisors (Mandaue + SET A + SET B + LALA + BALOI) merged into one map.
  * @param {Array} gatewayEndpoints
  * @returns {Promise<Object>}
  */
 export async function fetchAllIliganSupervisors(gatewayEndpoints = []) {
-  const cacheKey = 'ALL_ILIGAN_SUPERVISORS';
+  const cacheKey = 'ALL_SUPERVISORS';
   if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
 
   if (inFlightPromises.has(cacheKey)) {
@@ -424,13 +460,14 @@ export async function fetchAllIliganSupervisors(gatewayEndpoints = []) {
 
   const promise = (async () => {
     try {
-      const [setA, setB, lala, baloi] = await Promise.all([
+      const [mandaue, setA, setB, lala, baloi] = await Promise.all([
+        fetchMandaueSupervisors(gatewayEndpoints),
         fetchIliganSetASupervisors(gatewayEndpoints),
         fetchIliganSupervisors(gatewayEndpoints),
         fetchLalaOfficeSupervisors(gatewayEndpoints),
         fetchBaloiOfficeSupervisors(gatewayEndpoints)
       ]);
-      const merged = { ...setB, ...setA, ...lala, ...baloi };
+      const merged = { ...mandaue, ...setB, ...setA, ...lala, ...baloi };
       supervisorCache.set(cacheKey, merged);
       return merged;
     } finally {

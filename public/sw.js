@@ -2,7 +2,7 @@
 // Provides Offline Caching, Background Web Push, Action Buttons & Cross-Tab Coordination
 /* eslint-disable no-restricted-globals */
 
-const CACHE_NAME = 'sgc-portal-v2.1';
+const CACHE_NAME = 'sgc-portal-v2.2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -49,8 +49,13 @@ self.addEventListener('fetch', (event) => {
 
   // In local development or Vite HMR, bypass SW fetch handling entirely
   const isDev = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
+  // Only handle same-origin requests: cross-origin API calls (CORS) cannot be
+  // cached meaningfully and a failed fetch would resolve with `undefined`,
+  // crashing respondWith ("Failed to convert value to 'Response'").
+  const isSameOrigin = request.url.startsWith(self.location.origin);
   if (
     isDev ||
+    !isSameOrigin ||
     request.method !== 'GET' ||
     !request.url.startsWith('http') ||
     request.headers.get('upgrade') === 'websocket' ||
@@ -61,6 +66,8 @@ self.addEventListener('fetch', (event) => {
     request.url.includes('token=') ||
     request.url.includes('supabase.co') ||
     request.url.includes('/rest/v1/') ||
+    request.url.includes('/api-proxy/') ||
+    request.url.includes('/api/proxy') ||
     request.url.includes('turn:') ||
     request.url.includes('stun:')
   ) {
@@ -78,7 +85,7 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match('/index.html') || caches.match('/'))
+        .catch(() => caches.match('/index.html').then((cached) => cached || caches.match('/')))
     );
     return;
   }
@@ -94,7 +101,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => cachedResponse);
+        .catch(() => cachedResponse || Response.error());
 
       return cachedResponse || fetchPromise;
     })

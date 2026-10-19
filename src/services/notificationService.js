@@ -55,6 +55,28 @@ class NotificationService {
       return null;
     }
     try {
+      // ── Cleanup stale/orphaned service workers ─────────────────────────────
+      // Older deployments registered workers under other names (e.g. "2sw.js").
+      // Those leftovers keep controlling the page and run outdated fetch logic
+      // (cross-origin interception → CORS block → "Failed to convert value to
+      // 'Response'"). Unregister anything that isn't our current "/sw.js".
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations.map(async (reg) => {
+            const scriptUrl = (reg.active && reg.active.scriptURL) ||
+                              (reg.installing && reg.installing.scriptURL) ||
+                              (reg.waiting && reg.waiting.scriptURL) || '';
+            const isCurrentWorker = scriptUrl.endsWith('/sw.js');
+            if (!isCurrentWorker) {
+              await reg.unregister().catch(() => {});
+            }
+          })
+        );
+      } catch {
+        // Ignore cleanup failures (restricted environments)
+      }
+
       this.swRegistration = await navigator.serviceWorker.register('/sw.js', {
         scope: '/'
       });

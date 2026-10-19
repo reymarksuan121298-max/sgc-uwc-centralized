@@ -18,7 +18,9 @@ import { notificationService } from './services/notificationService';
 import { systemService } from './services/systemService';
 import { startSettlementReminderCron } from './services/settlementReminderService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
-import { isIliganAllowedSupervisor, isIliganSetAAllowedSupervisor, isLalaOfficeAllowedSupervisor, isBaloiOfficeAllowedSupervisor } from './services/supervisorService';
+import { initAntiInspectLockdown, enforceLockdownOnNavigation } from './security/antiInspect';
+import AntiInspectGuard from './security/AntiInspectGuard';
+import { proxyFetch, fetchUnclaimedReceiptsViaProxy } from './services/proxyClient';
 
 const DEFAULT_COMMISSIONS = {
   adminPercent: 50,
@@ -28,6 +30,14 @@ const DEFAULT_COMMISSIONS = {
 };
 
 export default function App() {
+  // Anti-Inspect Lockdown Activation (Blocks contextmenu, F12, DevTools shortcuts, and prunes storage)
+  useEffect(() => {
+    const cleanup = initAntiInspectLockdown();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, []);
+
   // Persistent Authentication State
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -77,26 +87,38 @@ export default function App() {
 
   const liveClaimedTransactionIds = useMemo(() => {
     const ids = new Set();
-    if (data && data.length) {
-      data.forEach(r => {
-        const isClaimedFlag = (
-          r.isClaim == 1 || r.isClaim === '1' || r.isClaim === true || r.isClaim === 'true' ||
-          r.is_claim == 1 || r.is_claim === '1' || r.is_claim === true || r.is_claim === 'true' ||
-          r.is_claimed == 1 || r.is_claimed === '1' || r.is_claimed === true || r.is_claimed === 'true' ||
-          r.isClaimed == 1 || r.isClaimed === '1' || r.isClaimed === true || r.isClaimed === 'true'
-        );
-        if (isClaimedFlag) {
-          const tid = String(r.transactionId || r.transId || r.receipt_no || r.ticket_no || '').trim();
-          if (tid) {
-            ids.add(tid);
-            ids.add(tid.toUpperCase());
-            ids.add(tid.toLowerCase());
-          }
+    const addIfClaimed = (r) => {
+      if (!r) return;
+      const isClaimedFlag = Boolean(
+        r.isClaim == 1 || r.isClaim === '1' || r.isClaim === true || r.isClaim === 'true' ||
+        r.is_claim == 1 || r.is_claim === '1' || r.is_claim === true || r.is_claim === 'true' ||
+        r.is_claimed == 1 || r.is_claimed === '1' || r.is_claimed === true || r.is_claimed === 'true' ||
+        r.isClaimed == 1 || r.isClaimed === '1' || r.isClaimed === true || r.isClaimed === 'true' ||
+        (r.claimDate && String(r.claimDate).trim() !== '' && r.claimDate !== 'null') ||
+        (r.claim_date && String(r.claim_date).trim() !== '' && r.claim_date !== 'null') ||
+        (r.claimed_at && String(r.claimed_at).trim() !== '' && r.claimed_at !== 'null') ||
+        (r.claimedAt && String(r.claimedAt).trim() !== '' && r.claimedAt !== 'null') ||
+        parseFloat(r.paidAmount ?? r.paid_amount ?? 0) > 0 ||
+        r.status === 'CLAIMED' || r.claim_status === 'CLAIMED' || r.is_already_claimed
+      );
+      if (isClaimedFlag) {
+        const tid = String(r.transactionId || r.transId || r.receipt_no || r.ticket_no || '').trim();
+        if (tid) {
+          ids.add(tid);
+          ids.add(tid.toUpperCase());
+          ids.add(tid.toLowerCase());
         }
-      });
+      }
+    };
+
+    if (data && data.length) {
+      data.forEach(addIfClaimed);
+    }
+    if (returnedData && returnedData.length) {
+      returnedData.forEach(addIfClaimed);
     }
     return ids;
-  }, [data]);
+  }, [data, returnedData]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [showDailyTable, setShowDailyTable] = useState(true);
@@ -510,6 +532,8 @@ export default function App() {
   const claimedChunkCacheRef = useRef(new Map());
   const CLAIMED_CHUNK_TTL_MS = 90 * 1000;
   const memoryCacheRef = useRef({ key: '', timestamp: 0, data: [] });
+  const initialPageFetchDoneRef = useRef(false);
+  const inFlightFetchPromiseRef = useRef(null);
   const realtimeDebounceTimerRef = useRef(null);
   const chatEventDebounceRef = useRef(null);
 
@@ -544,6 +568,10 @@ export default function App() {
   // Fetch Winning Numbers from Central Live Gateway
   // Fetch Winning Numbers from Central Live Gateway with High-Speed Progressive Sync
   const fetchData = useCallback(async (force = false, customFrom = null, customTo = null, endpointsOverride = null, configOverride = null) => {
+    // Deduplicate in-flight requests unless explicitly forced
+    if (isFetchingLiveRef.current && !force && inFlightFetchPromiseRef.current) {
+      return inFlightFetchPromiseRef.current;
+    }
     if (isFetchingLiveRef.current && !force) return;
 
     const today = getLocalDateString();
@@ -556,36 +584,15 @@ export default function App() {
     const cacheKey = `${selectedEndpointFilter}_${currentUser?.sub_office || 'All'}_${apiFromDate}_${apiToDate}`;
     const now = Date.now();
 
-    // 1. Fast Memory Cache (60s TTL)
+    // 1. Fast Volatile Memory Cache (60s TTL) - Strictly memory-only, no localStorage
     if (!force && memoryCacheRef.current.key === cacheKey && (now - memoryCacheRef.current.timestamp) < 60000 && memoryCacheRef.current.data?.length > 0) {
       setData(memoryCacheRef.current.data);
       setLoading(false);
       return;
     }
 
-    // 2. Instant Local Storage Stale-While-Revalidate Hit (0ms UI render)
-    let hasLocalRendered = false;
-    try {
-      const localSaved = localStorage.getItem(`stl_unclaimed_cache_${cacheKey}`);
-      if (localSaved) {
-        const parsed = JSON.parse(localSaved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setData(parsed);
-          hasLocalRendered = true;
-          // If fresh (<20s) and not forced, return immediately
-          const savedTs = parseInt(localStorage.getItem(`stl_unclaimed_ts_${cacheKey}`) || '0', 10);
-          if (!force && (now - savedTs) < 20000) {
-            setLoading(false);
-            return;
-          }
-        }
-      }
-    } catch {}
-
     isFetchingLiveRef.current = true;
-    if (!hasLocalRendered) {
-      setLoading(true);
-    }
+    setLoading(true);
     setErrorMsg(null);
 
     try {
@@ -640,9 +647,6 @@ export default function App() {
       // Helper to build clean endpoint fetch configurations
       const endpointConfigs = targetEndpoints.map(cfg => {
         let cleanBaseUrl = cfg.baseUrl.trim().replace(/\/+$/, '');
-        if (cleanBaseUrl.toLowerCase().includes('stl-ldn-api.com')) {
-          cleanBaseUrl = cleanBaseUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
-        }
         let targetUrl = cleanBaseUrl;
         if (!targetUrl.toLowerCase().includes('unclaimedreceipts')) {
           if (targetUrl.toLowerCase().endsWith('/api')) {
@@ -708,18 +712,17 @@ export default function App() {
 
       // ─── STAGE 1: Fast Fetch Primary Unclaimed Records (isClaim=0) ────────────
       const fetchUnclaimedPromises = endpointConfigs.map(async (epMeta) => {
-        const fullUrl = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=0&from=${apiFromDate}&to=${apiToDate}`;
+        const endpoint = epMeta.isIliganEndpoint ? 'ldn' : 'mandaue';
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 9000);
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
 
         try {
-          const res = await fetch(fullUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': epMeta.authHeader,
-              'Accept': 'application/json, text/plain, */*',
-              'Content-Type': 'application/json'
-            },
+          const res = await fetchUnclaimedReceiptsViaProxy({
+            isClaim: 0,
+            from: apiFromDate,
+            to: apiToDate,
+            endpoint,
+            authHeader: epMeta.authHeader,
             signal: controller.signal
           });
           clearTimeout(timeoutId);
@@ -758,35 +761,30 @@ export default function App() {
         return !seen.has(key) && seen.add(key);
       });
 
-      // Instantly update UI with unclaimed ledger data & persist in cache
+      // Instantly update UI with unclaimed ledger data & persist in volatile memory cache only
       memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: uniqueUnclaimed };
       setData(uniqueUnclaimed);
       setLoading(false); // Stop loading immediately once primary unclaimed data is ready!
-
-      try {
-        localStorage.setItem(`stl_unclaimed_cache_${cacheKey}`, JSON.stringify(uniqueUnclaimed));
-        localStorage.setItem(`stl_unclaimed_ts_${cacheKey}`, String(Date.now()));
-      } catch {}
 
       if (errors.length && uniqueUnclaimed.length === 0) {
         setErrorMsg(`Gateway connection warning: ${errors.join(', ')}`);
       }
 
-      // ─── STAGE 2: Progressive Background Sync for Claimed Records (isClaim=1) ─
+      // ─── STAGE 2: Progressive Sync for Claimed Records (isClaim=1) ─────────────
+      // Syncs claimed tickets for the active date range in safe <= 30-day slices
+      // (Pre-empts upstream 500 crashes and avoids multi-year background floods)
       (async () => {
         try {
-          const pastD = new Date();
-          pastD.setFullYear(pastD.getFullYear() - 1);
-          const futD = new Date();
-          futD.setDate(futD.getDate() + 2);
+          const startDate = new Date(apiFromDate);
+          const endDate = new Date(apiToDate);
+          const validEnd = isNaN(endDate.getTime()) ? new Date() : endDate;
+          let currentStart = isNaN(startDate.getTime()) ? new Date(validEnd) : new Date(startDate);
 
-          // Fast 6-month chunking (2 fast parallel requests instead of 4-5)
-          let currentStart = new Date(pastD);
           const dateChunks = [];
-          while (currentStart < futD) {
+          while (currentStart <= validEnd) {
             let chunkEnd = new Date(currentStart);
-            chunkEnd.setMonth(chunkEnd.getMonth() + 6);
-            if (chunkEnd > futD) chunkEnd = futD;
+            chunkEnd.setDate(chunkEnd.getDate() + 29);
+            if (chunkEnd > validEnd) chunkEnd = new Date(validEnd);
             dateChunks.push({
               from: getLocalDateString(currentStart),
               to: getLocalDateString(chunkEnd)
@@ -796,13 +794,12 @@ export default function App() {
           }
 
           const fetchClaimedPromises = endpointConfigs.flatMap((epMeta) => {
-            if (!epMeta.authHeader) return []; // Skip unauthenticated endpoints to prevent Laravel 500 RouteNotFoundException
+            const endpoint = epMeta.isIliganEndpoint ? 'ldn' : 'mandaue';
             return dateChunks.map(async (chunk) => {
-              const url = `${epMeta.targetUrl}${epMeta.queryGlue}isClaim=1&from=${chunk.from}&to=${chunk.to}`;
+              const chunkCacheKey = `${endpoint}_1_${chunk.from}_${chunk.to}`;
 
-              // Reuse a recent raw response for this exact chunk URL instead of
-              // hitting the (slow) live endpoint again with an identical request.
-              const cacheHit = claimedChunkCacheRef.current.get(url);
+              // Check short-TTL in-memory cache to prevent duplicate live hits
+              const cacheHit = claimedChunkCacheRef.current.get(chunkCacheKey);
               const cacheIsFresh = cacheHit && (Date.now() - cacheHit.ts) < CLAIMED_CHUNK_TTL_MS;
               let rawArr = cacheIsFresh ? cacheHit.arr : null;
 
@@ -810,13 +807,12 @@ export default function App() {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 12000);
                 try {
-                  const res = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                      'Authorization': epMeta.authHeader,
-                      'Accept': 'application/json, text/plain, */*',
-                      'Content-Type': 'application/json'
-                    },
+                  const res = await fetchUnclaimedReceiptsViaProxy({
+                    isClaim: 1,
+                    from: chunk.from,
+                    to: chunk.to,
+                    endpoint,
+                    authHeader: epMeta.authHeader,
                     signal: controller.signal
                   });
                   clearTimeout(timeoutId);
@@ -824,14 +820,13 @@ export default function App() {
                   const result = await res.json();
                   const deepData = result?.data?.data || result?.data || result;
                   rawArr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-                  claimedChunkCacheRef.current.set(url, { ts: Date.now(), arr: rawArr });
+                  claimedChunkCacheRef.current.set(chunkCacheKey, { ts: Date.now(), arr: rawArr });
                 } catch {
                   clearTimeout(timeoutId);
                   return [];
                 }
               }
 
-              // Raw array is shared via the cache; filter/map must not mutate it.
               const filtered = filterIligan(rawArr, epMeta);
               return filtered.map(item => ({
                 ...item,
@@ -856,24 +851,20 @@ export default function App() {
                 return !innerSeen.has(key) && innerSeen.add(key);
               });
               memoryCacheRef.current = { key: cacheKey, timestamp: Date.now(), data: mergedUnique };
-              try {
-                localStorage.setItem(`stl_unclaimed_cache_${cacheKey}`, JSON.stringify(mergedUnique));
-              } catch {}
               return mergedUnique;
             });
           }
         } catch (bgErr) {
-          console.warn('Background claimed tickets sync completed with warnings:', bgErr);
+          console.warn('Claimed tickets sync completed with warnings:', bgErr);
         }
       })();
 
     } catch (error) {
       setErrorMsg(error.message);
-      if (!hasLocalRendered) {
-        setData([]);
-      }
+      setData([]);
     } finally {
       isFetchingLiveRef.current = false;
+      inFlightFetchPromiseRef.current = null;
       setLoading(false);
     }
   }, [fromDate, toDate, selectedEndpointFilter, currentUser, gatewayConfig, gatewayEndpoints]);
@@ -907,7 +898,7 @@ export default function App() {
     };
   }, [currentUser, fetchPendingChatCount, fetchReturnedFromSupabase, fetchData, gatewayEndpoints, gatewayConfig]);
 
-  // Parallel Initial Load to eliminate waterfall delays
+  // Parallel Initial Load (Single-flight on page open)
   useEffect(() => {
     if (!currentUser) return;
     let isMounted = true;
@@ -920,15 +911,19 @@ export default function App() {
           fetchPendingChatCount(),
           fetchData(true, fromDate, toDate, settingsRes?.loadedEndpoints, settingsRes?.loadedConfig)
         ]);
+        if (isMounted) {
+          initialPageFetchDoneRef.current = true;
+        }
       }
     })();
 
     return () => { isMounted = false; };
   }, [currentUser?.id || currentUser?.username]);
 
-  // Re-fetch on filter changes
+  // Re-fetch on filter changes (strictly after initial page open has finished)
   useEffect(() => {
     if (!currentUser) return;
+    if (!initialPageFetchDoneRef.current) return;
     if (gatewayEndpoints.length > 0 || gatewayConfig?.baseUrl) {
       fetchData(false);
     }
@@ -1653,6 +1648,7 @@ export default function App() {
 
   const handleTabChange = (newTab) => {
     setActiveTab(newTab);
+    enforceLockdownOnNavigation(newTab);
     try {
       localStorage.setItem('stl_active_tab', newTab);
     } catch { }
@@ -1724,7 +1720,7 @@ export default function App() {
   // If not logged in, render Login page (along with ProfileSettingsModal and HrApprovalModal)
   if (!currentUser) {
     return (
-      <>
+      <AntiInspectGuard activeTab="login">
         <Login onLoginSuccess={handleLoginSuccess} />
         <ProfileSettingsModal
           isOpen={isProfileModalOpen}
@@ -1752,12 +1748,12 @@ export default function App() {
             } catch {}
           }}
         />
-      </>
+      </AntiInspectGuard>
     );
   }
 
   return (
-    <>
+    <AntiInspectGuard activeTab={activeTab}>
       <MainLayout
         currentUser={currentUser}
         activeTab={activeTab}
@@ -1822,6 +1818,7 @@ export default function App() {
           liveData={data}
           isLoadingLive={loading}
           onDeleteRecord={handleDeleteRecord}
+          onDataUpdated={fetchReturnedFromSupabase}
           onNavigateToSettlement={handleNavigateToSettlement}
           // Settlement Props
           selectedSettlementTicketId={selectedSettlementTicketId}
@@ -1927,7 +1924,7 @@ export default function App() {
           await fetchData();
         }}
       />
-    </>
+    </AntiInspectGuard>
   );
 }
 

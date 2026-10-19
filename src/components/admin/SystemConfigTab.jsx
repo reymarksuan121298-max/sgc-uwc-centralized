@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  Settings, Save, CheckCircle2, AlertCircle, RefreshCw, KeyRound, Globe, 
-  Coins, ShieldCheck, Plus, Trash2, Edit2, Play, Building2, Check, X, Shield, 
+import {
+  Settings, Save, CheckCircle2, AlertCircle, RefreshCw, KeyRound, Globe,
+  Coins, ShieldCheck, Plus, Trash2, Edit2, Play, Building2, Check, X, Shield,
   ExternalLink, Server, QrCode, Copy, Users, UserCheck, Search, SlidersHorizontal,
   ToggleLeft, ToggleRight, EyeOff
 } from 'lucide-react';
@@ -10,12 +10,13 @@ import { formatRoleName, isSSRRole } from '../../utils/permissions';
 import { systemService } from '../../services/systemService';
 import { userService } from '../../services/userService';
 import { clearSupervisorCache } from '../../services/supervisorService';
+import { proxyFetch, saveCommissionsViaProxy } from '../../services/proxyClient';
 import ConfirmPopover from '../common/ConfirmPopover';
 
 export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
   // API Endpoints State
   const [gatewayEndpoints, setGatewayEndpoints] = useState([]);
-  
+
   // Endpoint Modal State (Create / Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState(null);
@@ -110,7 +111,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
           if (!row.value) return;
           let parsed = row.value;
           while (typeof parsed === 'string') {
-            try { 
+            try {
               const next = JSON.parse(parsed);
               if (next === parsed) break;
               parsed = next;
@@ -186,19 +187,12 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     const startTime = Date.now();
 
     try {
-      let cleanUrl = endpoint.baseUrl.replace(/\/+$/, '');
-      if (typeof window !== 'undefined' && cleanUrl.toLowerCase().includes('stl-ldn-api.com')) {
-        cleanUrl = cleanUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
-      }
+      const cleanUrl = endpoint.baseUrl.replace(/\/+$/, '');
       const url = `${cleanUrl}/api/accountant/UnclaimedReceipts?isClaim=0&from=${fromStr}&to=${toStr}`;
 
-      const res = await fetch(url, {
+      const res = await proxyFetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': endpoint.token.trim(),
-          'Accept': 'application/json, text/plain, */*',
-          'Content-Type': 'application/json'
-        }
+        authHeader: endpoint.token.trim()
       });
 
       const latency = Date.now() - startTime;
@@ -429,6 +423,18 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
         details: { adminPercent, agentPercent, staffPercent, collectorPercent }
       }]);
 
+      // Dispatch commission update to serverless proxy
+      try {
+        await saveCommissionsViaProxy({
+          adminPercent: parseFloat(adminPercent),
+          agentPercent: parseFloat(agentPercent),
+          staffPercent: parseFloat(staffPercent),
+          collectorPercent: parseFloat(collectorPercent)
+        });
+      } catch (proxyErr) {
+        console.warn('[Proxy] save_commissions warning:', proxyErr.message);
+      }
+
       showToast('Commission distribution rates saved!');
     } catch (err) {
       setErrorMessage(err.message || 'Failed to save commission rates.');
@@ -462,11 +468,11 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
         action: 'USER_FEATURE_PERMISSIONS_UPDATED',
         target_type: 'SYSTEM',
         target_id: 'USER_FEATURES',
-        details: { 
+        details: {
           default_copy_transaction: config.default_copy_transaction,
           default_qr_modal: config.default_qr_modal,
           default_hide_trans_id: config.default_hide_trans_id,
-          userOverridesCount: Object.keys(config.users || {}).length 
+          userOverridesCount: Object.keys(config.users || {}).length
         }
       }]);
 
@@ -494,7 +500,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
       enableQrModal: nextState,
       enableHideTransId: currentPerms.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false
     };
-    
+
     const newConfig = {
       ...userFeaturesConfig,
       users: currentUsers
@@ -538,7 +544,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
       ...currentPerms,
       enableHideTransId: !currentPerms.enableHideTransId
     };
-    
+
     const newConfig = {
       ...userFeaturesConfig,
       users: currentUsers
@@ -553,7 +559,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     const uKey = String(username || '').toLowerCase().trim();
     const newUsers = { ...(userFeaturesConfig.users || {}) };
     delete newUsers[uKey];
-    
+
     const newConfig = {
       ...userFeaturesConfig,
       users: newUsers
@@ -585,7 +591,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
   return (
     <div className="w-full space-y-6">
-      
+
       {/* Toast Alert */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border-l-4 border-[#FFD700] text-xs font-bold animate-bounce">
@@ -711,11 +717,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                         </td>
 
                         <td className="px-4 py-3.5 border-r border-slate-100 text-center font-bold">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full ${
-                            endpoint.sub_office === 'All'
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full ${endpoint.sub_office === 'All'
                               ? 'bg-blue-100 text-[#002B66] border border-blue-300'
                               : 'bg-amber-100 text-amber-900 border border-amber-300'
-                          }`}>
+                            }`}>
                             <Building2 size={11} /> {endpoint.sub_office}
                           </span>
                         </td>
@@ -729,11 +734,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                         <td className="px-4 py-3.5 border-r border-slate-100 text-center">
                           <button
                             onClick={() => handleToggleActive(endpoint.id)}
-                            className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full cursor-pointer transition-all ${
-                              endpoint.is_active
+                            className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full cursor-pointer transition-all ${endpoint.is_active
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                 : 'bg-slate-100 text-slate-500 border border-slate-300'
-                            }`}
+                              }`}
                           >
                             <span className={`w-1.5 h-1.5 rounded-full ${endpoint.is_active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                             <span>{endpoint.is_active ? 'Active' : 'Disabled'}</span>
@@ -778,11 +782,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
                           {/* Test Result Indicator */}
                           {test && (
-                            <div className={`mt-2 p-1.5 rounded-lg text-[10px] font-mono flex items-center justify-between gap-1 border ${
-                              test.status === 'SUCCESS' 
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                            <div className={`mt-2 p-1.5 rounded-lg text-[10px] font-mono flex items-center justify-between gap-1 border ${test.status === 'SUCCESS'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                 : 'bg-rose-50 text-rose-800 border-rose-200'
-                            }`}>
+                              }`}>
                               <span className="font-bold">{test.status}: {test.message}</span>
                               {test.latency && <span className="font-bold shrink-0">{test.latency}ms</span>}
                             </div>
@@ -814,9 +817,8 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
               </p>
             </div>
           </div>
-          <span className={`px-3 py-1 rounded-full text-xs font-black font-mono ${
-            totalPercent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-          }`}>
+          <span className={`px-3 py-1 rounded-full text-xs font-black font-mono ${totalPercent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+            }`}>
             Total: {totalPercent}% / 100%
           </span>
         </div>
@@ -900,247 +902,243 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
       {/* SECTION 3: Per-User Feature Permissions (Copy Transaction & QR Modal) */}
       {showGatewaysCard && (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        
-        {/* Card Header */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-[#002B66] text-[#FFD700] rounded-xl shadow-xs">
-              <SlidersHorizontal size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm sm:text-base font-black text-[#002B66] uppercase tracking-wide">
-                  SSR Feature Permissions & Capabilities
-                </h3>
-                <span className="text-[10px] font-bold bg-blue-100 text-[#002B66] px-2 py-0.5 rounded-full border border-blue-200">
-                  {filteredUsersList.length} Accounts
-                </span>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+
+          {/* Card Header */}
+          <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-[#002B66] text-[#FFD700] rounded-xl shadow-xs">
+                <SlidersHorizontal size={20} />
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Enable or restrict <strong>Copy Transaction</strong> and <strong>Ticket QR Modal</strong> access per SSR account (Disabled by default for SSRs).
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Global Default Toggles & Quick Actions Toolbar */}
-        <div className="p-4 bg-slate-50/70 border-b border-slate-200 space-y-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-            
-            {/* Global Default Switch */}
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-extrabold text-slate-700 text-[11px] uppercase tracking-wider">SSR Global Default:</span>
-              
-              <button
-                type="button"
-                onClick={handleToggleDefaultMerged}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
-                  (userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal)
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs'
-                    : 'bg-slate-100 text-slate-600 border-slate-300'
-                }`}
-                title="Toggle default copy transaction & QR modal permission for unconfigured SSR accounts"
-              >
-                <div className="flex items-center gap-1 text-emerald-600">
-                  <Copy size={14} className={userFeaturesConfig.default_copy_transaction ? 'text-emerald-600' : 'text-slate-400'} />
-                  <QrCode size={14} className={userFeaturesConfig.default_qr_modal ? 'text-emerald-600' : 'text-slate-400'} />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-black text-[#002B66] uppercase tracking-wide">
+                    SSR Feature Permissions & Capabilities
+                  </h3>
+                  <span className="text-[10px] font-bold bg-blue-100 text-[#002B66] px-2 py-0.5 rounded-full border border-blue-200">
+                    {filteredUsersList.length} Accounts
+                  </span>
                 </div>
-                <span>SSR Default: <strong>{(userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal) ? 'ENABLED' : 'DISABLED'}</strong></span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleToggleDefaultHideTransId}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${
-                  userFeaturesConfig.default_hide_trans_id
-                    ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-xs'
-                    : 'bg-slate-100 text-slate-600 border-slate-300'
-                }`}
-                title="Toggle default for hiding Trans ID for unconfigured SSR accounts"
-              >
-                <div className="flex items-center gap-1">
-                  <EyeOff size={14} className={userFeaturesConfig.default_hide_trans_id ? 'text-rose-600' : 'text-slate-400'} />
-                </div>
-                <span>Hide Trans ID: <strong>{userFeaturesConfig.default_hide_trans_id ? 'ENABLED' : 'DISABLED'}</strong></span>
-              </button>
-            </div>
-
-          </div>
-
-          {/* Search and Filters Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search SSR by username, name, sub-office..."
-                value={userSearchQuery}
-                onChange={(e) => setUserSearchQuery(e.target.value)}
-                className="w-full bg-white border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-medium text-slate-800 focus:border-[#002B66] outline-none"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <select
-                value={userRoleFilter}
-                onChange={(e) => setUserRoleFilter(e.target.value)}
-                className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
-              >
-                <option value="SSR">Sales Service Representatives (SSR)</option>
-                <option value="ALL">All Roles</option>
-                <option value="Admin">Admin</option>
-                <option value="Unclaimed Specialist">Unclaimed Specialist</option>
-              </select>
-
-              <select
-                value={userOfficeFilter}
-                onChange={(e) => setUserOfficeFilter(e.target.value)}
-                className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
-              >
-                <option value="ALL">All Branches</option>
-                {subOfficesList.filter(s => s !== 'All').map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Enable or restrict <strong>Copy Transaction</strong> and <strong>Ticket QR Modal</strong> access per SSR account (Disabled by default for SSRs).
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Users Feature Permissions Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[650px]">
-            <thead>
-              <tr className="bg-slate-100/90 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
-                <th className="px-4 py-2.5">User Account</th>
-                <th className="px-3 py-2.5">Role</th>
-                <th className="px-3 py-2.5">Sub-Office</th>
-                <th className="px-4 py-2.5 text-center">Copy Transaction & QR Access</th>
-                <th className="px-4 py-2.5 text-center">Hide Trans ID</th>
-                <th className="px-3 py-2.5 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredUsersList.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-bold">
-                    No users found matching your search criteria.
-                  </td>
+          {/* Global Default Toggles & Quick Actions Toolbar */}
+          <div className="p-4 bg-slate-50/70 border-b border-slate-200 space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+
+              {/* Global Default Switch */}
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-extrabold text-slate-700 text-[11px] uppercase tracking-wider">SSR Global Default:</span>
+
+                <button
+                  type="button"
+                  onClick={handleToggleDefaultMerged}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${(userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal)
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs'
+                      : 'bg-slate-100 text-slate-600 border-slate-300'
+                    }`}
+                  title="Toggle default copy transaction & QR modal permission for unconfigured SSR accounts"
+                >
+                  <div className="flex items-center gap-1 text-emerald-600">
+                    <Copy size={14} className={userFeaturesConfig.default_copy_transaction ? 'text-emerald-600' : 'text-slate-400'} />
+                    <QrCode size={14} className={userFeaturesConfig.default_qr_modal ? 'text-emerald-600' : 'text-slate-400'} />
+                  </div>
+                  <span>SSR Default: <strong>{(userFeaturesConfig.default_copy_transaction && userFeaturesConfig.default_qr_modal) ? 'ENABLED' : 'DISABLED'}</strong></span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleDefaultHideTransId}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold border transition-all cursor-pointer ${userFeaturesConfig.default_hide_trans_id
+                      ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-xs'
+                      : 'bg-slate-100 text-slate-600 border-slate-300'
+                    }`}
+                  title="Toggle default for hiding Trans ID for unconfigured SSR accounts"
+                >
+                  <div className="flex items-center gap-1">
+                    <EyeOff size={14} className={userFeaturesConfig.default_hide_trans_id ? 'text-rose-600' : 'text-slate-400'} />
+                  </div>
+                  <span>Hide Trans ID: <strong>{userFeaturesConfig.default_hide_trans_id ? 'ENABLED' : 'DISABLED'}</strong></span>
+                </button>
+              </div>
+
+            </div>
+
+            {/* Search and Filters Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search SSR by username, name, sub-office..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-slate-200 pl-8 pr-3 py-1.5 rounded-xl text-xs font-medium text-slate-800 focus:border-[#002B66] outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value)}
+                  className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="SSR">Sales Service Representatives (SSR)</option>
+                  <option value="ALL">All Roles</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Unclaimed Specialist">Unclaimed Specialist</option>
+                </select>
+
+                <select
+                  value={userOfficeFilter}
+                  onChange={(e) => setUserOfficeFilter(e.target.value)}
+                  className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="ALL">All Branches</option>
+                  {subOfficesList.filter(s => s !== 'All').map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Users Feature Permissions Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[650px]">
+              <thead>
+                <tr className="bg-slate-100/90 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                  <th className="px-4 py-2.5">User Account</th>
+                  <th className="px-3 py-2.5">Role</th>
+                  <th className="px-3 py-2.5">Sub-Office</th>
+                  <th className="px-4 py-2.5 text-center">Copy Transaction & QR Access</th>
+                  <th className="px-4 py-2.5 text-center">Hide Trans ID</th>
+                  <th className="px-3 py-2.5 text-center">Action</th>
                 </tr>
-              ) : (
-                filteredUsersList.map((user) => {
-                  const uKey = String(user.username || '').toLowerCase().trim();
-                  const userOverride = userFeaturesConfig.users?.[uKey];
-                  const hasCustomOverride = Boolean(userOverride);
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {filteredUsersList.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-bold">
+                      No users found matching your search criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredUsersList.map((user) => {
+                    const uKey = String(user.username || '').toLowerCase().trim();
+                    const userOverride = userFeaturesConfig.users?.[uKey];
+                    const hasCustomOverride = Boolean(userOverride);
 
-                  const isCopyEnabled = userOverride?.enableCopyTransaction ?? userFeaturesConfig.default_copy_transaction ?? false;
-                  const isQrEnabled = userOverride?.enableQrModal ?? userFeaturesConfig.default_qr_modal ?? false;
-                  const isMergedEnabled = isCopyEnabled && isQrEnabled;
+                    const isCopyEnabled = userOverride?.enableCopyTransaction ?? userFeaturesConfig.default_copy_transaction ?? false;
+                    const isQrEnabled = userOverride?.enableQrModal ?? userFeaturesConfig.default_qr_modal ?? false;
+                    const isMergedEnabled = isCopyEnabled && isQrEnabled;
 
-                  return (
-                    <tr key={user.id || user.username} className="hover:bg-slate-50/75 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center font-black text-xs shrink-0">
-                            {(user.username || 'U')[0].toUpperCase()}
+                    return (
+                      <tr key={user.id || user.username} className="hover:bg-slate-50/75 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full bg-[#002B66] text-[#FFD700] flex items-center justify-center font-black text-xs shrink-0">
+                              {(user.username || 'U')[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <span className="font-mono font-bold text-slate-900 block leading-tight">
+                                @{user.username}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {user.full_name || 'No Name Set'}
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="font-mono font-bold text-slate-900 block leading-tight">
-                              @{user.username}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-medium">
-                              {user.full_name || 'No Name Set'}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="px-3 py-3">
-                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 font-bold text-[10px] px-2 py-0.5 rounded-md">
-                          {formatRoleName(user.role)}
-                        </span>
-                      </td>
+                        <td className="px-3 py-3">
+                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 font-bold text-[10px] px-2 py-0.5 rounded-md">
+                            {formatRoleName(user.role)}
+                          </span>
+                        </td>
 
-                      <td className="px-3 py-3">
-                        <span className="font-bold text-slate-700 text-xs">
-                          {user.sub_office || 'All Branches'}
-                        </span>
-                      </td>
+                        <td className="px-3 py-3">
+                          <span className="font-bold text-slate-700 text-xs">
+                            {user.sub_office || 'All Branches'}
+                          </span>
+                        </td>
 
-                      {/* Merged Copy Transaction & QR Modal Toggle */}
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleUserMergedFeatures(user.username)}
-                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs ${
-                            isMergedEnabled
-                              ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                          title={`Click to ${isMergedEnabled ? 'disable' : 'enable'} Copy Transaction & QR Modal access for @${user.username}`}
-                        >
-                          <div className="flex items-center gap-1">
-                            <Copy size={13} />
-                            <QrCode size={13} />
-                          </div>
-                          <span>{isMergedEnabled ? 'ENABLED' : 'DISABLED'}</span>
-                        </button>
-                      </td>
-
-                      {/* Hide Trans ID Toggle */}
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleUserHideTransId(user.username)}
-                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs ${
-                            (userOverride?.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false)
-                              ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          <EyeOff size={13} />
-                          <span>{(userOverride?.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false) ? 'HIDDEN' : 'VISIBLE'}</span>
-                        </button>
-                      </td>
-
-                      {/* Reset to Default Button */}
-                      <td className="px-3 py-3 text-center">
-                        {hasCustomOverride ? (
+                        {/* Merged Copy Transaction & QR Modal Toggle */}
+                        <td className="px-4 py-3 text-center">
                           <button
                             type="button"
-                            onClick={() => handleResetUserToDefault(user.username)}
-                            className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
-                            title="Reset to global default permissions"
+                            onClick={() => handleToggleUserMergedFeatures(user.username)}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs ${isMergedEnabled
+                                ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              }`}
+                            title={`Click to ${isMergedEnabled ? 'disable' : 'enable'} Copy Transaction & QR Modal access for @${user.username}`}
                           >
-                            Reset
+                            <div className="flex items-center gap-1">
+                              <Copy size={13} />
+                              <QrCode size={13} />
+                            </div>
+                            <span>{isMergedEnabled ? 'ENABLED' : 'DISABLED'}</span>
                           </button>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 font-medium">Default</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                        </td>
 
-        {/* Footer info */}
-        <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-xs">
-          <p className="text-slate-500 text-[11px]">
-            * Permissions apply immediately across all web sessions once saved.
-          </p>
-        </div>
+                        {/* Hide Trans ID Toggle */}
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUserHideTransId(user.username)}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs ${(userOverride?.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false)
+                                ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
+                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              }`}
+                          >
+                            <EyeOff size={13} />
+                            <span>{(userOverride?.enableHideTransId ?? userFeaturesConfig.default_hide_trans_id ?? false) ? 'HIDDEN' : 'VISIBLE'}</span>
+                          </button>
+                        </td>
 
-      </div>
+                        {/* Reset to Default Button */}
+                        <td className="px-3 py-3 text-center">
+                          {hasCustomOverride ? (
+                            <button
+                              type="button"
+                              onClick={() => handleResetUserToDefault(user.username)}
+                              className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+                              title="Reset to global default permissions"
+                            >
+                              Reset
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-medium">Default</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer info */}
+          <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-xs">
+            <p className="text-slate-500 text-[11px]">
+              * Permissions apply immediately across all web sessions once saved.
+            </p>
+          </div>
+
+        </div>
       )}
 
       {/* MODAL: Add / Edit Gateway */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            
+
             <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700]">
               <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white">
                 <Globe size={16} className="text-[#FFD700]" />
@@ -1150,7 +1148,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
             </div>
 
             <form onSubmit={handleSaveEndpointModal} className="p-5 space-y-4 text-xs">
-              
+
               {/* Endpoint Name */}
               <div>
                 <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
@@ -1179,11 +1177,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
 
                 <div className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 space-y-1.5 max-h-52 overflow-y-auto">
                   {/* All option */}
-                  <label className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
-                    selectedOffices.includes('All')
+                  <label className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${selectedOffices.includes('All')
                       ? 'bg-blue-50/90 border-blue-300 text-[#002B66] font-extrabold'
                       : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                  }`}>
+                    }`}>
                     <input
                       type="checkbox"
                       checked={selectedOffices.includes('All')}
@@ -1201,11 +1198,10 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
                     return (
                       <label
                         key={office}
-                        className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
-                          isChecked 
-                            ? 'bg-blue-50/90 border-blue-300 text-[#002B66] font-extrabold' 
+                        className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${isChecked
+                            ? 'bg-blue-50/90 border-blue-300 text-[#002B66] font-extrabold'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
+                          }`}
                       >
                         <input
                           type="checkbox"
