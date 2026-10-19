@@ -19,6 +19,7 @@ import { systemService } from './services/systemService';
 import { startSettlementReminderCron } from './services/settlementReminderService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { proxyFetch, fetchUnclaimedReceiptsViaProxy } from './services/proxyClient';
+import { initAntiInspectLockdown, enforceLockdownOnNavigation } from './security/antiInspect';
 
 const DEFAULT_COMMISSIONS = {
   adminPercent: 50,
@@ -28,6 +29,13 @@ const DEFAULT_COMMISSIONS = {
 };
 
 export default function App() {
+  // Silent Anti-Inspect Lockdown Activation (Blocks contextmenu, F12, DevTools shortcuts without any UI overlay)
+  useEffect(() => {
+    const cleanup = initAntiInspectLockdown();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, []);
 
   // Persistent Authentication State
   const [currentUser, setCurrentUser] = useState(() => {
