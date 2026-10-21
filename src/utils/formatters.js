@@ -9,7 +9,9 @@ export const superClean = (val) => String(val || '').replace(/[^a-zA-Z0-9]/g, ''
 
 export const getTicketTransId = (item, fallback = '') => {
   if (!item) return fallback;
-  return String(item.computedTransId || item.transactionId || item.transId || item.receipt_no || item.ticket_no || item.id || fallback).trim();
+  const raw = String(item.computedTransId || item.transactionId || item.transId || item.receipt_no || item.ticket_no || item.id || fallback).trim();
+  // Strip any internal multi-bet suffix like __RS3 or #RS3
+  return raw.replace(/(__|#)[A-Za-z0-9_-]+$/, '');
 };
 
 /**

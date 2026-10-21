@@ -15,6 +15,26 @@
  */
 
 /**
+ * Helper to normalize and extract headers from Headers instances, arrays, or objects
+ */
+function extractHeaders(headers) {
+  const result = {};
+  if (!headers) return result;
+  if (typeof headers.entries === 'function') {
+    for (const [key, value] of headers.entries()) {
+      result[key] = value;
+    }
+  } else if (Array.isArray(headers)) {
+    for (const [key, value] of headers) {
+      result[key] = value;
+    }
+  } else if (typeof headers === 'object') {
+    Object.assign(result, headers);
+  }
+  return result;
+}
+
+/**
  * Universal proxy fetch that transforms gateway and database queries to clean same-origin serverless URLs
  */
 export async function proxyFetch(targetUrl, options = {}) {
@@ -26,7 +46,20 @@ export async function proxyFetch(targetUrl, options = {}) {
     authHeader
   } = options;
 
-  const resolvedAuth = authHeader || headers['Authorization'] || headers['authorization'] || '';
+  const inputHeaders = extractHeaders(headers);
+  if (targetUrl && typeof targetUrl === 'object' && targetUrl.headers && typeof targetUrl.headers.entries === 'function') {
+    for (const [k, v] of targetUrl.headers.entries()) {
+      if (!inputHeaders[k]) {
+        inputHeaders[k] = v;
+      }
+    }
+  }
+
+  const resolvedAuth = authHeader ||
+    inputHeaders['Authorization'] ||
+    inputHeaders['authorization'] ||
+    (typeof headers.get === 'function' ? headers.get('authorization') : '') ||
+    '';
 
   // In browser environments, route through the serverless proxy
   if (typeof window !== 'undefined') {
@@ -123,7 +156,7 @@ export async function proxyFetch(targetUrl, options = {}) {
     try {
       const fetchHeaders = {
         'Accept': 'application/json, text/plain, */*',
-        ...headers
+        ...inputHeaders
       };
       if (resolvedAuth) {
         fetchHeaders['Authorization'] = resolvedAuth;
@@ -171,7 +204,7 @@ export async function proxyFetch(targetUrl, options = {}) {
           'Authorization': resolvedAuth,
           'Accept': 'application/json, text/plain, */*',
           'Content-Type': 'application/json',
-          ...headers
+          ...inputHeaders
         },
         body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
         signal
@@ -186,7 +219,7 @@ export async function proxyFetch(targetUrl, options = {}) {
       'Authorization': resolvedAuth,
       'Accept': 'application/json, text/plain, */*',
       'Content-Type': 'application/json',
-      ...headers
+      ...inputHeaders
     },
     body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
     signal

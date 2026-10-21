@@ -126,8 +126,24 @@ export default async function handler(req, res) {
       const qs = searchParams.toString();
       targetUrl = `${DEFAULT_SUPABASE_BASE}${path}${qs ? `?${qs}` : ''}`;
 
-      if (!authHeader) {
-        authHeader = req.headers['authorization'] || `Bearer ${DEFAULT_SUPABASE_ANON}`;
+      // Ensure authHeader for Supabase is a valid unexpired Supabase JWT for this project
+      const isValidSupabaseJwt = (header) => {
+        if (!header || typeof header !== 'string') return false;
+        const token = header.replace(/^Bearer\s+/i, '').trim();
+        const parts = token.split('.');
+        if (parts.length !== 3) return false;
+        try {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+          if (payload.exp && payload.exp * 1000 < Date.now()) return false;
+          if (payload.ref && payload.ref !== 'iatvnqefuzxvaotaibeu') return false;
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      if (!isValidSupabaseJwt(authHeader)) {
+        authHeader = `Bearer ${DEFAULT_SUPABASE_ANON}`;
       }
     }
 
@@ -167,15 +183,24 @@ export default async function handler(req, res) {
     }
 
     // Forward Supabase / PostgREST specific headers
-    const apikey = req.headers['apikey'] || query.apikey || DEFAULT_SUPABASE_ANON;
-    if (apikey && targetUrl.includes('supabase.co')) {
+    const apikey = req.headers['apikey'] || req.headers['Apikey'] || query.apikey || DEFAULT_SUPABASE_ANON;
+    if (targetUrl.includes('supabase.co')) {
+      headers['apikey'] = DEFAULT_SUPABASE_ANON;
+    } else if (apikey) {
       headers['apikey'] = apikey;
     }
-    if (req.headers['prefer']) headers['Prefer'] = req.headers['prefer'];
+    const preferHeader = req.headers['prefer'] || req.headers['Prefer'] || query.prefer;
+    if (preferHeader) {
+      headers['Prefer'] = preferHeader;
+    } else if (targetUrl.includes('supabase.co') && ['POST', 'PATCH', 'PUT'].includes(targetMethod) && (query.on_conflict || query.table === 'system_settings')) {
+      headers['Prefer'] = 'resolution=merge-duplicates';
+    }
+
     if (req.headers['range']) headers['Range'] = req.headers['range'];
     if (req.headers['range-unit']) headers['Range-Unit'] = req.headers['range-unit'];
     if (req.headers['content-profile']) headers['Content-Profile'] = req.headers['content-profile'];
     if (req.headers['accept-profile']) headers['Accept-Profile'] = req.headers['accept-profile'];
+    if (req.headers['x-client-info']) headers['x-client-info'] = req.headers['x-client-info'];
 
     // Prepare request body for mutating methods
     if (['POST', 'PATCH', 'PUT'].includes(targetMethod)) {

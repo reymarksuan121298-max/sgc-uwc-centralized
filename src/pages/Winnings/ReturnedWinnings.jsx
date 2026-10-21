@@ -110,6 +110,11 @@ export default function ReturnedWinnings({
     return (filteredData || []).filter(item => isPendingDeletionRecord(item));
   }, [filteredData]);
 
+  // Dedicated Counts for Deletion Requests Tab
+  const pendingRequestsCount = useMemo(() => {
+    return (dedicatedDeletionRequests || []).filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'PENDING').length;
+  }, [dedicatedDeletionRequests]);
+
   const isInactiveTeller = (item) => isInactiveTellerRecord(item);
 
   // Unremitted items available strictly for weekly remittance deposit (excluding under settlement, inactive/AWOL/pullout, and pending deletion)
@@ -195,12 +200,13 @@ export default function ReturnedWinnings({
       const q = searchQuery.toLowerCase().trim();
       list = list.filter(item => {
         const transId = getTicketTransId(item).toLowerCase();
+        const betCode = String(item.betCode || '').toLowerCase();
         const username = String(item.username || '').toLowerCase();
         const claimant = String(item.fullName || item.outlet || '').toLowerCase();
         const betNo = String(item.betNo || '').toLowerCase();
         const action = String(item.action || '').toLowerCase();
         const reason = String(item.reason || '').toLowerCase();
-        return transId.includes(q) || username.includes(q) || claimant.includes(q) || betNo.includes(q) || action.includes(q) || reason.includes(q);
+        return transId.includes(q) || betCode.includes(q) || username.includes(q) || claimant.includes(q) || betNo.includes(q) || action.includes(q) || reason.includes(q);
       });
     }
 
@@ -269,7 +275,8 @@ export default function ReturnedWinnings({
       showToast(`Transaction ${transId} approved! Deducted ₱${winAmt.toLocaleString()} from Collections.`);
       setApprovingItem(null);
       if (onDataUpdated) onDataUpdated();
-      loadDedicatedDeletionRequests();
+      await loadDedicatedDeletionRequests();
+      setActiveFilterTab('REQUESTS');
     } catch (err) {
       console.error('Approve deletion failed:', err);
       showToast(`Failed to approve deletion: ${err.message}`);
@@ -400,13 +407,13 @@ export default function ReturnedWinnings({
             onClick={() => setActiveFilterTab('REQUESTS')}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeFilterTab === 'REQUESTS'
               ? 'bg-amber-600 text-white shadow-sm'
-              : dedicatedDeletionRequests.some(r => r.status === 'PENDING_APPROVAL')
+              : pendingRequestsCount > 0
                 ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black animate-pulse'
                 : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
-            <AlertTriangle size={14} className={dedicatedDeletionRequests.some(r => r.status === 'PENDING_APPROVAL') ? 'text-amber-700' : ''} />
-            <span>{canApprove ? 'Approve Requests' : 'Deletion Requests'} ({dedicatedDeletionRequests.filter(r => r.status === 'PENDING_APPROVAL').length})</span>
+            <AlertTriangle size={14} className={pendingRequestsCount > 0 && activeFilterTab !== 'REQUESTS' ? 'text-amber-700' : ''} />
+            <span>Deletion Requests ({pendingRequestsCount})</span>
           </button>
 
           <button
@@ -456,14 +463,14 @@ export default function ReturnedWinnings({
       </div>
 
       {/* PENDING DELETION REQUESTS BANNER FOR STAFF & ADMIN */}
-      {canApprove && pendingDeletionRequests.length > 0 && activeFilterTab !== 'REQUESTS' && (
+      {canApprove && pendingRequestsCount > 0 && activeFilterTab !== 'REQUESTS' && (
         <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border-l-4 border-l-amber-500 border border-amber-200 p-3.5 rounded-2xl flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5">
             <ShieldAlert size={18} className="text-amber-700 shrink-0" />
             <div>
               <span className="font-black text-amber-900 uppercase">Attention Staff & Management:</span>
               <p className="text-slate-700 font-medium mt-0.5">
-                There are <strong className="text-amber-900 font-bold">{pendingDeletionRequests.length} pending deletion request(s)</strong> awaiting your review and approval.
+                There are <strong className="text-amber-900 font-bold">{pendingRequestsCount} pending deletion request(s)</strong> awaiting your review and approval.
               </p>
             </div>
           </div>
@@ -472,7 +479,7 @@ export default function ReturnedWinnings({
             onClick={() => setActiveFilterTab('REQUESTS')}
             className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black uppercase text-[10px] rounded-lg shadow-xs cursor-pointer shrink-0"
           >
-            Approve Requests →
+            Review Requests →
           </button>
         </div>
       )}
@@ -548,7 +555,7 @@ export default function ReturnedWinnings({
                       </tr>
 
                       {items.map((item, i) => {
-                        const transId = item.transactionId || `REC-${i + 1}`;
+                        const transId = getTicketTransId(item, `REC-${i + 1}`);
                         const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
                         const isUnderSettlement = Boolean(item.isUnderSettlement && item.settlementStatus !== 'FULLY PAID');
                         const recordTimestamp = item.date_returned || item.created_at;
@@ -556,7 +563,7 @@ export default function ReturnedWinnings({
                         const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
 
                         return (
-                          <tr key={item.id || item.transactionId || transId || i} className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-slate-100/80 ${isDeletionPending ? 'bg-amber-50/60 border-l-4 border-l-amber-500' : item.isAuditLog ? 'border-l-4 border-l-[#002B66]' : ''}`}>
+                          <tr key={item.id || `${item.transactionId || transId}-${item.betCode || i}`} className={`transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-slate-100/80 ${isDeletionPending ? 'bg-amber-50/60 border-l-4 border-l-amber-500' : item.isAuditLog ? 'border-l-4 border-l-[#002B66]' : ''}`}>
                             <td className="px-3 py-2 border-r border-slate-200 font-semibold text-slate-800 uppercase whitespace-nowrap">{item.fullName || item.outlet || 'N/A'}</td>
                             <td className="px-3 py-2 border-r border-slate-200 font-mono text-[#003366] font-semibold whitespace-nowrap">{transId}</td>
                             <td className="px-3 py-2 border-r border-slate-200 text-center font-mono text-[11px] whitespace-nowrap">{formatDrawTime ? formatDrawTime(item.drawTime || item.drawDate || item.created_at || 'N/A') : 'N/A'}</td>
@@ -687,7 +694,7 @@ export default function ReturnedWinnings({
                                                 ? "Request admin approval to delete and deduct from Collections" 
                                                 : isUnderSettlement 
                                                   ? "Request admin approval to delete claimed settlement ticket"
-                                                  : "Request deletion for this claimed unremitted ticket"
+                                                  : "Request deletion for this ticket with hard copy proof"
                                             }
                                           >
                                             <Trash2 size={12} /> Request Delete
@@ -755,7 +762,7 @@ export default function ReturnedWinnings({
                   </div>
 
                   {items.map((item, i) => {
-                    const transId = item.transactionId || `REC-${i + 1}`;
+                    const transId = getTicketTransId(item, `REC-${i + 1}`);
                     const isClaimedInSourceSystem = checkIsExplicitlyClaimed(item);
                     const isUnderSettlement = Boolean(item.isUnderSettlement && item.settlementStatus !== 'FULLY PAID');
                     const recordTimestamp = item.date_returned || item.created_at;
@@ -763,7 +770,7 @@ export default function ReturnedWinnings({
                     const isDeletionPending = item.deletion_request_status === 'PENDING_ADMIN_APPROVAL';
 
                     return (
-                      <div key={item.id || item.transactionId || transId || i} className={`bg-white border rounded-xl p-3 space-y-2.5 shadow-2xs relative ${isDeletionPending ? 'border-amber-400 bg-amber-50/40' : item.isAuditLog ? 'border-blue-400 bg-blue-50/20' : 'border-slate-300'}`}>
+                      <div key={item.id || `${item.transactionId || transId}-${item.betCode || i}`} className={`bg-white border rounded-xl p-3 space-y-2.5 shadow-2xs relative ${isDeletionPending ? 'border-amber-400 bg-amber-50/40' : item.isAuditLog ? 'border-blue-400 bg-blue-50/20' : 'border-slate-300'}`}>
                         <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${isDeletionPending ? 'bg-amber-500' : item.isAuditLog ? 'bg-[#002B66]' : isRemitted ? 'bg-emerald-600' : 'bg-[#003366]'}`}></div>
 
                         <div className="flex justify-between items-start gap-2 pl-2 border-b border-slate-100 pb-2">

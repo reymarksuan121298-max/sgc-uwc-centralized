@@ -45,7 +45,7 @@ INSERT INTO public.returned_winnings_deletion_requests (
 ) VALUES (
     '100226-0OUGQYRI',
     'Mandaue City',
-    'MARILYN MACUTO',
+    'MARY ANN, CATIPAY',
     'spvr-molly',
     '9PM',
     '2026-10-10',
