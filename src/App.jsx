@@ -1324,47 +1324,72 @@ export default function App() {
       ? currentUser.sub_office
       : (selectedTicket.location || selectedTicket.address || 'Mandaue Central');
 
-    const payload = {
-      apiId: selectedTicket.id || selectedTicket.sourceId || null,
-      transactionId: String(selectedTicket.computedTransId).trim(),
-      username: selectedTicket.username || null,
-      fullName: selectedTicket.fullName || selectedTicket.outlet || null,
-      address: selectedTicket.address || null,
-      location: selectedTicket.location || null,
-      outlet: selectedTicket.outlet || null,
-      supervisor: selectedTicket.supervisor || null,
-      sub_office: targetSubOffice,
-      drawTime: selectedTicket.drawTime || selectedTicket.draw || null,
-      drawDate: selectedTicket.drawDate || selectedTicket.created_at || null,
-      betNo: selectedTicket.betNo || selectedTicket.CombiNo || selectedTicket.SoldOutCombiNo || null,
-      betCode: selectedTicket.betCode || (selectedTicket.rambolito ? 'RS3' : 'TS3'),
-      betAmount: parseFloat(selectedTicket.betAmount ?? selectedTicket.amount ?? selectedTicket.gross ?? 0),
-      winAmount: winAmt,
-      return_amount_out: winAmt,
-      admin_commission: adminComm,
-      agent_commission: agentComm,
-      staff_commission: staffComm,
-      collector_commission: collectorComm,
-      receipt_status: 'NO_RECEIPT',
-      teller_status: tellerStatus !== 'ACTIVE' ? tellerStatus : null,
-      hr_valid_email: isInactiveStatus ? hrValidEmail : null,
-      unclaimed_approval_status: isApprovalRequired ? 'PENDING' : null,
-      unclaimed_approved_by: null,
-      status: selectedTicket.status ?? (gatewayConfig?.isClaim === 1 ? 1 : 0)
-    };
+    const targetTransId = String(selectedTicket.computedTransId || selectedTicket.transactionId || '').trim();
+    // Detect all bets on the same physical ticket (matching transactionId)
+    const siblingBets = (data || []).filter(item => {
+      const itemTid = String(item.transactionId || item.transId || '').trim();
+      return itemTid && itemTid.toLowerCase() === targetTransId.toLowerCase();
+    });
+
+    const targets = siblingBets.length > 0 ? siblingBets : [selectedTicket];
+    const payloads = targets.map(ticket => {
+      const itemWinAmt = parseFloat(ticket.winAmount ?? 0);
+      const itemAdminComm = itemWinAmt * (admP / 100);
+      const itemAgentComm = itemWinAmt * (agtP / 100);
+      const itemStaffComm = itemWinAmt * (stfP / 100);
+      const itemColComm = itemWinAmt * (colP / 100);
+
+      return {
+        apiId: ticket.id || ticket.sourceId || null,
+        transactionId: targetTransId,
+        username: ticket.username || null,
+        fullName: ticket.fullName || ticket.outlet || null,
+        address: ticket.address || null,
+        location: ticket.location || null,
+        outlet: ticket.outlet || null,
+        supervisor: ticket.supervisor || null,
+        sub_office: targetSubOffice,
+        drawTime: ticket.drawTime || ticket.draw || null,
+        drawDate: ticket.drawDate || ticket.created_at || null,
+        betNo: ticket.betNo || ticket.CombiNo || ticket.SoldOutCombiNo || null,
+        betCode: ticket.betCode || (ticket.rambolito ? 'RS3' : 'TS3'),
+        rambolito: ticket.rambolito !== undefined ? ticket.rambolito : (ticket.betCode === 'RS3' ? 1 : 0),
+        betAmount: parseFloat(ticket.betAmount ?? ticket.amount ?? ticket.gross ?? 0),
+        winAmount: itemWinAmt,
+        return_amount_out: itemWinAmt,
+        admin_commission: itemAdminComm,
+        agent_commission: itemAgentComm,
+        staff_commission: itemStaffComm,
+        collector_commission: itemColComm,
+        receipt_status: 'NO_RECEIPT',
+        teller_status: tellerStatus !== 'ACTIVE' ? tellerStatus : null,
+        hr_valid_email: isInactiveStatus ? hrValidEmail : null,
+        unclaimed_approval_status: isApprovalRequired ? 'PENDING' : null,
+        unclaimed_approved_by: null,
+        status: ticket.status ?? (gatewayConfig?.isClaim === 1 ? 1 : 0)
+      };
+    });
 
     try {
-      const { error } = await supabase.from('returned_winnings').upsert([payload], { onConflict: 'transactionId' });
+      const { error } = await supabase.from('returned_winnings').upsert(payloads, { onConflict: 'transactionId,betCode' });
       if (error) throw error;
+
+      const totalWin = payloads.reduce((sum, p) => sum + p.winAmount, 0);
+      const totalAdminComm = payloads.reduce((sum, p) => sum + p.admin_commission, 0);
 
       await supabase.from('audit_logs').insert([{
         actor_username: currentUser?.username || 'SYSTEM',
-        actor_role: currentUser?.role || 'Unclaimed Specialist',
+        actor_role: currentUser?.role || 'Sales Service Representative',
         action: 'TICKET_RETURNED',
         target_type: 'returned_winnings',
-        target_id: String(selectedTicket.computedTransId).trim(),
+        target_id: targetTransId,
         sub_office: targetSubOffice,
-        details: { winAmount: winAmt, admin_commission: adminComm }
+        details: { 
+          winAmount: totalWin, 
+          admin_commission: totalAdminComm,
+          betsCount: payloads.length,
+          betCodes: payloads.map(p => p.betCode)
+        }
       }]);
 
       if (isInactiveStatus && hrValidEmail) {

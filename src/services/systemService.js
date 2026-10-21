@@ -172,14 +172,9 @@ export const systemService = {
   },
 
   async updateSetting(key, value, actorUser) {
-    await supabase
-      .from('system_settings')
-      .delete()
-      .eq('key', key);
-
     const { data, error } = await supabase
       .from('system_settings')
-      .insert([{ key, value, updated_at: new Date().toISOString() }])
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
       .select();
 
     if (error) throw error;

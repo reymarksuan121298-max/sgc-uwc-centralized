@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle, CheckCircle2, Ban, Clock, Search, Eye,
   FileText, ShieldAlert, UserCheck, Image as ImageIcon,
@@ -13,10 +13,23 @@ export default function DeletionRequestsTable({
   onApprove,
   onReject,
   onViewTicket,
-  onRefresh
+  onRefresh,
+  initialStatusFilter = 'ALL',
+  onStatusFilterChange
 }) {
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, PENDING_APPROVAL, APPROVED, REJECTED
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter || 'ALL');
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (initialStatusFilter) {
+      setStatusFilter(initialStatusFilter);
+    }
+  }, [initialStatusFilter]);
+
+  const handleStatusFilter = (st) => {
+    setStatusFilter(st);
+    if (onStatusFilterChange) onStatusFilterChange(st);
+  };
 
   // Counts
   const counts = useMemo(() => {
@@ -114,7 +127,7 @@ export default function DeletionRequestsTable({
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
-            onClick={() => setStatusFilter('ALL')}
+            onClick={() => handleStatusFilter('ALL')}
             className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               statusFilter === 'ALL'
                 ? 'bg-[#002B66] text-[#FFD700] shadow-xs'
@@ -126,7 +139,7 @@ export default function DeletionRequestsTable({
 
           <button
             type="button"
-            onClick={() => setStatusFilter('PENDING_APPROVAL')}
+            onClick={() => handleStatusFilter('PENDING_APPROVAL')}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               statusFilter === 'PENDING_APPROVAL'
                 ? 'bg-amber-600 text-white shadow-xs'
@@ -139,7 +152,7 @@ export default function DeletionRequestsTable({
 
           <button
             type="button"
-            onClick={() => setStatusFilter('APPROVED')}
+            onClick={() => handleStatusFilter('APPROVED')}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               statusFilter === 'APPROVED'
                 ? 'bg-emerald-600 text-white shadow-xs'
@@ -152,7 +165,7 @@ export default function DeletionRequestsTable({
 
           <button
             type="button"
-            onClick={() => setStatusFilter('REJECTED')}
+            onClick={() => handleStatusFilter('REJECTED')}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               statusFilter === 'REJECTED'
                 ? 'bg-rose-600 text-white shadow-xs'

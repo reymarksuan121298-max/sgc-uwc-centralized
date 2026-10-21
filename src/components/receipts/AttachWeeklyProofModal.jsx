@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
-import { generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord } from '../../utils/formatters';
+import { generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord, getTicketTransId } from '../../utils/formatters';
 import SelectClaimedDeductionsModal from './SelectClaimedDeductionsModal';
 
 // Fast Date Formatter (cached, avoids heavy toLocaleString overhead on every render)
@@ -144,7 +144,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
               <>
                 {items.map((t, idx) => {
                   const key = getItemKey(t) || `REC-${idx + 1}`;
-                  const transId = t.transactionId || t.transId || `REC-${idx + 1}`;
+                  const transId = getTicketTransId(t, `REC-${idx + 1}`);
                   const recordTimestamp = t.date_returned || t.created_at;
                   const isSelected = selectedKeys.has(key);
 

@@ -353,7 +353,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
             description: 'Gateway Connections',
             updated_by: currentUser?.username || 'admin',
             updated_at: new Date().toISOString()
-          }),
+          }, { onConflict: 'key' }),
         supabase
           .from('system_settings')
           .upsert({
@@ -362,7 +362,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
             description: 'Gateway Connections',
             updated_by: currentUser?.username || 'admin',
             updated_at: new Date().toISOString()
-          })
+          }, { onConflict: 'key' })
       ]);
 
       // Invalidate memory cache so all components fetch fresh settings
@@ -408,7 +408,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
           },
           updated_by: currentUser?.username || 'admin',
           updated_at: new Date().toISOString()
-        });
+        }, { onConflict: 'key' });
 
       if (error) throw error;
 
@@ -456,7 +456,7 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
           description: 'Per-User Permissions for Copy Transaction & QR Modal',
           updated_by: currentUser?.username || 'admin',
           updated_at: new Date().toISOString()
-        });
+        }, { onConflict: 'key' });
 
       if (error) throw error;
 
