@@ -1,13 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   AlertTriangle,
   Search,
   Check,
   X,
-  Clock,
-  CheckCircle2,
-  Ticket,
-  MinusCircle
+  Ticket
 } from 'lucide-react';
 
 export default function SelectClaimedDeductionsModal({
@@ -165,7 +162,6 @@ export default function SelectClaimedDeductionsModal({
                     const draw = item.drawTime || item.draw_time || 'N/A';
                     const reason = item.deletion_request_reason || item.reason || 'Ticket claimed';
                     const requester = item.requested_by || item.username || 'SSR';
-                    const status = item.deletion_request_status || item.status || 'PENDING_APPROVAL';
 
                     return (
                       <tr

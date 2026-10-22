@@ -10,8 +10,14 @@
 ALTER TABLE public.returned_winnings 
 DROP CONSTRAINT IF EXISTS "returned_winnings_transactionId_key";
 
--- STEP 2: Create a composite unique index on (transactionId, betCode)
+-- STEP 2: Create a composite unique constraint on (transactionId, betCode)
 -- Allows a ticket to have distinct bet codes (TS3, RS3, etc.) while preventing exact duplicate inserts of the same bet.
+ALTER TABLE public.returned_winnings 
+DROP CONSTRAINT IF EXISTS "returned_winnings_trans_bet_unique";
+
+ALTER TABLE public.returned_winnings 
+ADD CONSTRAINT "returned_winnings_trans_bet_unique" UNIQUE ("transactionId", "betCode");
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_returned_winnings_trans_bet 
 ON public.returned_winnings ("transactionId", "betCode");
 
@@ -79,7 +85,7 @@ SET
 -- Also explicitly update existing record to ensure Date Returned displays Oct 20, 2026, 1:04 PM
 UPDATE public.returned_winnings
 SET "created_at" = '2026-10-20 13:04:25+08'
-WHERE ("transactionId" = '101526-AOOMYUOW' OR "transactionId" = '101526-AOOMYUOW__RS3') AND "betCode" = 'RS3';
+WHERE ("transactionId" = '101526-AOOMYUOW') AND "betCode" = 'RS3';
 
 -- STEP 4: Record that SSR Ryan performed the return of this transaction
 UPDATE public.audit_logs 

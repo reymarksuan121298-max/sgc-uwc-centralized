@@ -15,21 +15,36 @@
  */
 
 /**
- * Helper to normalize and extract headers from Headers instances, arrays, or objects
+ * Helper to normalize and extract headers into canonical lowercase keys with deduplicated values
  */
-function extractHeaders(headers) {
+function normalizeHeaders(headers) {
   const result = {};
   if (!headers) return result;
+
+  const setHeader = (k, v) => {
+    if (k && v !== undefined && v !== null) {
+      const lowerKey = String(k).trim().toLowerCase();
+      let strVal = String(v).trim();
+      // Deduplicate comma-separated media types (e.g. "application/json, application/json")
+      if (lowerKey === 'content-type' && strVal.includes(',')) {
+        strVal = strVal.split(',')[0].trim();
+      }
+      result[lowerKey] = strVal;
+    }
+  };
+
   if (typeof headers.entries === 'function') {
     for (const [key, value] of headers.entries()) {
-      result[key] = value;
+      setHeader(key, value);
     }
   } else if (Array.isArray(headers)) {
     for (const [key, value] of headers) {
-      result[key] = value;
+      setHeader(key, value);
     }
   } else if (typeof headers === 'object') {
-    Object.assign(result, headers);
+    for (const [key, value] of Object.entries(headers)) {
+      setHeader(key, value);
+    }
   }
   return result;
 }
@@ -46,19 +61,21 @@ export async function proxyFetch(targetUrl, options = {}) {
     authHeader
   } = options;
 
-  const inputHeaders = extractHeaders(headers);
+  const inputHeaders = normalizeHeaders(headers);
   if (targetUrl && typeof targetUrl === 'object' && targetUrl.headers && typeof targetUrl.headers.entries === 'function') {
     for (const [k, v] of targetUrl.headers.entries()) {
-      if (!inputHeaders[k]) {
-        inputHeaders[k] = v;
+      const lower = String(k).trim().toLowerCase();
+      if (!inputHeaders[lower]) {
+        let strVal = String(v).trim();
+        if (lower === 'content-type' && strVal.includes(',')) strVal = strVal.split(',')[0].trim();
+        inputHeaders[lower] = strVal;
       }
     }
   }
 
   const resolvedAuth = authHeader ||
-    inputHeaders['Authorization'] ||
     inputHeaders['authorization'] ||
-    (typeof headers.get === 'function' ? headers.get('authorization') : '') ||
+    (typeof headers?.get === 'function' ? headers.get('authorization') : '') ||
     '';
 
   // In browser environments, route through the serverless proxy
@@ -155,17 +172,17 @@ export async function proxyFetch(targetUrl, options = {}) {
 
     try {
       const fetchHeaders = {
-        'Accept': 'application/json, text/plain, */*',
+        'accept': 'application/json, text/plain, */*',
         ...inputHeaders
       };
       if (resolvedAuth) {
-        fetchHeaders['Authorization'] = resolvedAuth;
+        fetchHeaders['authorization'] = resolvedAuth;
       }
 
       let fetchBody = undefined;
       if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
-        if (!fetchHeaders['Content-Type'] && body) {
-          fetchHeaders['Content-Type'] = 'application/json';
+        if (!fetchHeaders['content-type'] && body) {
+          fetchHeaders['content-type'] = 'application/json';
         }
         if (proxyUrl === '/api/proxy') {
           fetchBody = JSON.stringify({
@@ -198,14 +215,18 @@ export async function proxyFetch(targetUrl, options = {}) {
         fallbackUrl = fallbackUrl.replace(/https?:\/\/stl-ldn-api\.com/i, '/api-proxy/stl-ldn');
       }
 
+      const fallbackHeaders = {
+        'accept': 'application/json, text/plain, */*',
+        ...inputHeaders
+      };
+      if (resolvedAuth) fallbackHeaders['authorization'] = resolvedAuth;
+      if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) && !fallbackHeaders['content-type'] && body) {
+        fallbackHeaders['content-type'] = 'application/json';
+      }
+
       return fetch(fallbackUrl, {
         method,
-        headers: {
-          'Authorization': resolvedAuth,
-          'Accept': 'application/json, text/plain, */*',
-          'Content-Type': 'application/json',
-          ...inputHeaders
-        },
+        headers: fallbackHeaders,
         body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
         signal
       });
@@ -213,14 +234,18 @@ export async function proxyFetch(targetUrl, options = {}) {
   }
 
   // Non-browser / Node execution fallback
+  const nodeHeaders = {
+    'accept': 'application/json, text/plain, */*',
+    ...inputHeaders
+  };
+  if (resolvedAuth) nodeHeaders['authorization'] = resolvedAuth;
+  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) && !nodeHeaders['content-type'] && body) {
+    nodeHeaders['content-type'] = 'application/json';
+  }
+
   return fetch(targetUrl, {
     method,
-    headers: {
-      'Authorization': resolvedAuth,
-      'Accept': 'application/json, text/plain, */*',
-      'Content-Type': 'application/json',
-      ...inputHeaders
-    },
+    headers: nodeHeaders,
     body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
     signal
   });

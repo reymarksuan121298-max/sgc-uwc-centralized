@@ -158,10 +158,17 @@ export default function ReturnedWinnings({
     };
   }, []);
 
-  // Claimed deletion requests from dedicated table eligible to offset/deduct in remittance proof
+  // Claimed deletion requests from dedicated table eligible to add as additions in remittance proof
+  // STRICT RULE: If an approved claimed ticket has already been included in a remittance batch (deducted_from_collections === true), do NOT fetch or include it!
   const claimedDeletionAdjustmentItems = useMemo(() => {
     return (dedicatedDeletionRequests || [])
-      .filter(r => (r.status === 'PENDING_APPROVAL' || r.status === 'APPROVED' || r.status === 'PENDING_ADMIN_APPROVAL' || r.status === 'PENDING') && !r.deducted_from_collections)
+      .filter(r => {
+        const isEligibleStatus = r.status === 'PENDING_APPROVAL' || r.status === 'APPROVED' || r.status === 'PENDING_ADMIN_APPROVAL' || r.status === 'PENDING';
+        if (!isEligibleStatus) return false;
+        // Strictly exclude tickets already added to a previous remittance batch
+        if (r.deducted_from_collections) return false;
+        return true;
+      })
       .map(r => ({
         id: r.returned_winnings_id || r.id,
         transactionId: r.transaction_id,

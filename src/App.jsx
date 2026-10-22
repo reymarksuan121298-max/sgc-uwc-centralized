@@ -19,6 +19,12 @@ import { systemService } from './services/systemService';
 import { startSettlementReminderCron } from './services/settlementReminderService';
 import { useGlobalPresence } from './hooks/useGlobalPresence';
 import { proxyFetch, fetchUnclaimedReceiptsViaProxy } from './services/proxyClient';
+import {
+  isIliganAllowedSupervisor,
+  isIliganSetAAllowedSupervisor,
+  isLalaOfficeAllowedSupervisor,
+  isBaloiOfficeAllowedSupervisor
+} from './services/supervisorService';
 import { initAntiInspectLockdown, enforceLockdownOnNavigation } from './security/antiInspect';
 
 const DEFAULT_COMMISSIONS = {
@@ -1371,7 +1377,27 @@ export default function App() {
     });
 
     try {
-      const { error } = await supabase.from('returned_winnings').upsert(payloads, { onConflict: 'transactionId,betCode' });
+      // Single-bet tickets use 'transactionId' directly to align with existing unique constraint.
+      // Multi-bet tickets use 'transactionId,betCode' to support distinct combination rows.
+      const initialConflictTarget = payloads.length > 1 ? 'transactionId,betCode' : 'transactionId';
+      let { error } = await supabase.from('returned_winnings').upsert(payloads, { onConflict: initialConflictTarget });
+
+      if (error && (error.code === '42P10' || String(error.message || '').includes('ON CONFLICT'))) {
+        const alternateTarget = initialConflictTarget === 'transactionId' ? 'transactionId,betCode' : 'transactionId';
+        if (payloads.length === 1) {
+          const fallbackRes = await supabase.from('returned_winnings').upsert(payloads, { onConflict: alternateTarget });
+          error = fallbackRes.error;
+        } else {
+          for (const p of payloads) {
+            const fallbackRes = await supabase.from('returned_winnings').upsert([p], { onConflict: alternateTarget });
+            if (fallbackRes.error) {
+              error = fallbackRes.error;
+              break;
+            }
+          }
+          if (!error?.message?.includes('ON CONFLICT')) error = null;
+        }
+      }
       if (error) throw error;
 
       const totalWin = payloads.reduce((sum, p) => sum + p.winAmount, 0);

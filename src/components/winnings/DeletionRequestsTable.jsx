@@ -304,10 +304,19 @@ export default function DeletionRequestsTable({
                             <Clock size={10} className="text-amber-700 animate-spin" /> PENDING APPROVAL
                           </span>
                         ) : isApproved ? (
-                          <div>
+                          <div className="space-y-1">
                             <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] px-2 py-0.5 rounded-full">
                               <CheckCircle2 size={10} className="text-emerald-700" /> APPROVED
                             </span>
+                            {item.deducted_from_collections ? (
+                              <span className="inline-flex items-center gap-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded block mx-auto max-w-fit uppercase" title="Already added to remittance batch">
+                                ✓ Added to Remittance
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-700 border border-amber-200 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded block mx-auto max-w-fit uppercase" title="Pending inclusion in next remittance batch">
+                                Pending Remittance
+                              </span>
+                            )}
                             {item.reviewed_by && (
                               <span className="block text-[8px] text-slate-400 font-medium mt-0.5">By @{item.reviewed_by}</span>
                             )}

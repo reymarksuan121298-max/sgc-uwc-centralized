@@ -101,7 +101,7 @@ export const winningsService = {
             status: 'APPROVED',
             reviewed_by: reviewer,
             reviewed_at: nowIso,
-            deducted_from_collections: true,
+            deducted_from_collections: false,
             updated_at: nowIso
           })
           .in('id', targetIds);
@@ -127,7 +127,7 @@ export const winningsService = {
           requested_at: record.requested_at || record.deletion_request_at || nowIso,
           reviewed_by: reviewer,
           reviewed_at: nowIso,
-          deducted_from_collections: true,
+          deducted_from_collections: false,
           is_already_deposited: Boolean(record.is_already_deposited || (record.receipt_status && record.receipt_status !== 'NO_RECEIPT')),
           is_claim: Boolean(record.isClaim ?? record.is_claim ?? record.isClaimed ?? record.is_claimed ?? false),
           created_at: record.created_at || nowIso,

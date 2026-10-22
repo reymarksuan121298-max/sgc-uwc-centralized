@@ -5,8 +5,8 @@
 const DEFAULT_MANDAUE_BASE = 'https://stl-mandaue-api.com';
 const DEFAULT_LDN_BASE = 'https://stl-ldn-api.com';
 const DEFAULT_TOKEN = 'Bearer 2860|OCyU72t1DzxdBeSjj3izVKCIcCwHkqNbwjRlxHp5';
-const DEFAULT_SUPABASE_BASE = process.env.VITE_SUPABASE_URL || 'https://iatvnqefuzxvaotaibeu.supabase.co';
-const DEFAULT_SUPABASE_ANON = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhdHZucWVmdXp4dmFvdGFpYmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0Mjc0NTYsImV4cCI6MjEwNTAwMzQ1Nn0.R51uCfddbc60lnlI1xY-LVQNnVQPZpTrl2rpWyb-qgw';
+const DEFAULT_SUPABASE_BASE = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://iatvnqefuzxvaotaibeu.supabase.co';
+const DEFAULT_SUPABASE_ANON = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhdHZucWVmdXp4dmFvdGFpYmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0Mjc0NTYsImV4cCI6MjEwNTAwMzQ1Nn0.R51uCfddbc60lnlI1xY-LVQNnVQPZpTrl2rpWyb-qgw';
 
 export default async function handler(req, res) {
   // Response headers supporting REST and PostgREST protocol
@@ -174,9 +174,15 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Proxy access restricted to permitted API gateways' });
     }
 
+    let incomingContentType = req.headers['content-type'] || 'application/json';
+    if (incomingContentType.includes(',')) {
+      incomingContentType = incomingContentType.split(',')[0].trim();
+    }
+    const incomingAccept = req.headers['accept'] || 'application/json, text/plain, */*';
+
     const headers = {
-      'Accept': req.headers['accept'] || 'application/json, text/plain, */*',
-      'Content-Type': req.headers['content-type'] || 'application/json'
+      'Accept': incomingAccept,
+      'Content-Type': incomingContentType
     };
     if (authHeader) {
       headers['Authorization'] = authHeader;
@@ -212,15 +218,58 @@ export default async function handler(req, res) {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const upstreamRes = await fetch(targetUrl, {
+    let upstreamRes = await fetch(targetUrl, {
       method: targetMethod,
       headers,
       body: reqBody,
       signal: controller.signal
     });
     clearTimeout(timeout);
+
+    // Auto-fallback: if upsert on_conflict fails with 42P10 (missing unique constraint on specified key),
+    // automatically swap between composite (transactionId,betCode) and single (transactionId)
+    if (upstreamRes.status === 400 && targetUrl.includes('returned_winnings') && (query.on_conflict || '').includes('transactionId')) {
+      const errText = await upstreamRes.text();
+      if (errText.includes('42P10') || errText.includes('ON CONFLICT') || errText.includes('unique or exclusion constraint')) {
+        let fallbackUrl = targetUrl;
+        if ((query.on_conflict || '').includes('betCode')) {
+          fallbackUrl = targetUrl
+            .replace(/on_conflict=transactionId%2CbetCode/i, 'on_conflict=transactionId')
+            .replace(/on_conflict=transactionId,betCode/i, 'on_conflict=transactionId')
+            .replace(/onConflict=transactionId%2CbetCode/i, 'onConflict=transactionId')
+            .replace(/onConflict=transactionId,betCode/i, 'onConflict=transactionId');
+        } else {
+          fallbackUrl = targetUrl
+            .replace(/on_conflict=transactionId/i, 'on_conflict=transactionId%2CbetCode')
+            .replace(/onConflict=transactionId/i, 'onConflict=transactionId%2CbetCode');
+        }
+
+        const retryController = new AbortController();
+        const retryTimeout = setTimeout(() => retryController.abort(), 15000);
+        upstreamRes = await fetch(fallbackUrl, {
+          method: targetMethod,
+          headers,
+          body: reqBody,
+          signal: retryController.signal
+        });
+        clearTimeout(retryTimeout);
+      } else {
+        // Re-wrap the consumed text so response handling downstream works seamlessly
+        upstreamRes = new Response(errText, {
+          status: upstreamRes.status,
+          statusText: upstreamRes.statusText,
+          headers: upstreamRes.headers
+        });
+      }
+    }
+
+    // RFC 7231 / RFC 9110: 204 No Content MUST NOT include Content-Type or body
+    if (upstreamRes.status === 204) {
+      res.status(204);
+      return res.end();
+    }
 
     const contentType = upstreamRes.headers.get('content-type') || 'application/json';
     res.setHeader('Content-Type', contentType);
@@ -235,6 +284,9 @@ export default async function handler(req, res) {
     res.status(upstreamRes.status);
 
     const data = await upstreamRes.text();
+    if (!data && upstreamRes.status >= 200 && upstreamRes.status < 300) {
+      return res.end();
+    }
     return res.send(data);
   } catch (err) {
     console.error('[Serverless Proxy Error]:', err.message);

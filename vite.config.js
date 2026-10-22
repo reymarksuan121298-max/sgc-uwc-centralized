@@ -2,6 +2,8 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { execSync } from 'child_process'
+import path from 'path'
+import { pathToFileURL } from 'url'
 
 function getGitBuildInfo() {
   let branch = process.env.VERCEL_GIT_COMMIT_REF || process.env.GIT_BRANCH || '';
@@ -38,7 +40,8 @@ function serverlessProxyPlugin() {
     configureServer(server) {
       server.middlewares.use('/api/proxy', async (req, res) => {
         try {
-          const { default: handler } = await import('./api/proxy.js');
+          const proxyModuleUrl = pathToFileURL(path.resolve(process.cwd(), 'api/proxy.js')).href + `?v=${Date.now()}`;
+          const { default: handler } = await import(proxyModuleUrl);
           let body = undefined;
           if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
             const buffers = [];
@@ -81,9 +84,9 @@ function serverlessProxyPlugin() {
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify(data));
             },
-            end() {
+            end(data) {
               res.statusCode = this.statusCode;
-              res.end();
+              res.end(data);
             }
           };
 
