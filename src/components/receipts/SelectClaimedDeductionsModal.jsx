@@ -66,10 +66,10 @@ export default function SelectClaimedDeductionsModal({
             </div>
             <div>
               <h3 className="font-black uppercase tracking-wider text-xs sm:text-sm text-white flex items-center gap-2">
-                Include Claimed Tickets in Remittance Batch
+                Include Approved Deletion Ticket in Remittance Batch
               </h3>
               <p className="text-[10px] text-blue-200">
-                Select claimed Trans IDs to include in this batch. Their amounts will be added to your remittance total.
+                Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Select ticket to include in the attach proof modal table.
               </p>
             </div>
           </div>
@@ -87,10 +87,10 @@ export default function SelectClaimedDeductionsModal({
           <AlertTriangle size={16} className="text-[#002B66] shrink-0 mt-0.5" />
           <div className="leading-tight">
             <span className="font-extrabold uppercase text-[10px] tracking-wide text-[#002B66] block">
-              Batch Addition
+              Approved Deletion Reconciliation
             </span>
             <span className="text-[11px] text-slate-700">
-              Claimed tickets requested for deletion will be included as additions in the batch report and added to your Total Remittance Amount.
+              Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Select ticket below to include in the attach proof modal table.
             </span>
           </div>
         </div>
@@ -250,7 +250,7 @@ export default function SelectClaimedDeductionsModal({
               className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
             >
               <Check size={14} className="text-[#FFD700]" />
-              Include & Add Trans IDs ({selectedCount} Selected • ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              Include & Match Selected ({selectedCount} Selected • ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
             </button>
           </div>
         </div>

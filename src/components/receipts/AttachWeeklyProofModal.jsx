@@ -43,7 +43,9 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
   selectedDeductionTotal = 0,
   modalTableSearch,
   onSearchChange,
-  formatDrawTime
+  formatDrawTime,
+  hasUnselectedClaimed = false,
+  onOpenClaimedModal
 }) {
   const masterCheckboxRef = React.useRef(null);
   const isAllSelected = items.length > 0 && items.every(i => selectedKeys.has(getItemKey(i)));
@@ -65,13 +67,23 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={15} className="text-[#002B66] shrink-0" />
           <span className="font-extrabold text-[11px] text-[#002B66] uppercase tracking-wider truncate">
-            Included Returned Winnings & Additions ({totalIncludedRecords} of {items.length + (selectedClaimedItems?.length || 0)} Total)
+            Included Returned Winnings & Deductions ({totalIncludedRecords} of {items.length + (selectedClaimedItems?.length || 0)} Total)
           </span>
-          {selectedClaimedItems.length > 0 && (
+          {selectedClaimedItems.length > 0 ? (
             <span className="bg-amber-100 text-amber-800 border border-amber-300 font-black px-1.5 py-0.2 rounded text-[9.5px]">
-              +{selectedClaimedItems.length} Claimed Included
+              +{selectedClaimedItems.length} Approved Deletion Included
             </span>
-          )}
+          ) : hasUnselectedClaimed ? (
+            <button
+              type="button"
+              onClick={onOpenClaimedModal}
+              className="bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 font-extrabold px-2 py-0.5 rounded text-[9.5px] cursor-pointer flex items-center gap-1 transition-colors"
+              title="Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Need to open the modal and select ticket to include in the attach proof modal table."
+            >
+              <AlertTriangle size={11} className="text-rose-600 animate-pulse" />
+              <span>Approved Deletion Available — Open Modal to Include</span>
+            </button>
+          ) : null}
         </div>
         
         {/* Live Search & Quick Toggle inside Modal */}
@@ -99,8 +111,8 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
               Gross: ₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
             {selectedDeductionTotal > 0 && (
-              <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title="Claimed Additions">
-                +₱{Number(selectedDeductionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span className="font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full" title="Approved Deletions Deducted">
+                -₱{Number(selectedDeductionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             )}
           </div>
@@ -223,8 +235,8 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                       <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono text-slate-800">
                         ₱{parseFloat(c.betAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-extrabold whitespace-nowrap text-emerald-700">
-                        ₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      <td className="px-3 py-1.5 border-r border-slate-200 text-right font-mono font-extrabold whitespace-nowrap text-rose-700">
+                        -₱{parseFloat(c.winAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td className="px-3 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">
                         {fastFormatTimestamp(c.date_returned || c.created_at)}
@@ -244,7 +256,7 @@ const BatchTicketsTable = memo(function BatchTicketsTable({
                 ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.betAmount ?? 0), 0) + (selectedClaimedItems || []).reduce((s, c) => s + parseFloat(c.betAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-right font-mono font-extrabold text-emerald-800 border-r border-slate-200">
-                ₱{(items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.winAmount ?? 0), 0) + (selectedClaimedItems || []).reduce((s, c) => s + parseFloat(c.winAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₱{Math.max(0, items.filter(i => selectedKeys.has(getItemKey(i))).reduce((s, i) => s + parseFloat(i.winAmount ?? 0), 0) - (selectedClaimedItems || []).reduce((s, c) => s + parseFloat(c.winAmount ?? 0), 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </td>
               <td className="px-3 py-1.5 text-center font-mono text-slate-500">
                 {totalIncludedRecords} of {totalPossibleRecords} Total Records
@@ -346,8 +358,10 @@ function AttachWeeklyProofModal({
   const hasUnselectedClaimed = (claimedAdjustmentItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
 
   const netPayableTotal = useMemo(() => {
-    return (parseFloat(selectedWinTotal || 0) || 0) + selectedDeductionTotal;
-  }, [selectedWinTotal, selectedDeductionTotal]);
+    const baseWin = parseFloat(selectedWinTotal || 0) || 0;
+    const deduction = selectedClaimedKeys.size > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
+    return Math.max(0, baseWin - deduction);
+  }, [selectedWinTotal, selectedDeductionTotal, totalClaimedWinAmount, selectedClaimedKeys.size]);
 
   // Sync initial state on modal open
   useEffect(() => {
@@ -369,9 +383,10 @@ function AttachWeeklyProofModal({
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      setCustomRemittanceAmount(targetAmount.toFixed(2));
+      const initialDeducted = Math.max(0, targetAmount - totalClaimedWinAmount);
+      setCustomRemittanceAmount(initialDeducted.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems]);
+  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems, totalClaimedWinAmount]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
@@ -384,11 +399,12 @@ function AttachWeeklyProofModal({
       }
       const newItems = (targetBatch?.items || []).filter(t => next.has(getItemKey(t)));
       const newGross = newItems.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const newTotal = newGross + selectedDeductionTotal;
+      const deduction = selectedClaimedKeys.size > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
+      const newTotal = Math.max(0, newGross - deduction);
       setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, [targetBatch, selectedDeductionTotal]);
+  }, [targetBatch, selectedClaimedKeys.size, selectedDeductionTotal, totalClaimedWinAmount]);
 
   // Toggle select all visible / batch tickets
   const handleToggleSelectAll = useCallback(() => {
@@ -396,19 +412,20 @@ function AttachWeeklyProofModal({
     setSelectedKeys(prev => {
       const visibleKeys = targetBatch.items.map(t => getItemKey(t));
       const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => prev.has(k));
+      const deduction = selectedClaimedKeys.size > 0 ? selectedDeductionTotal : totalClaimedWinAmount;
       if (allSelected) {
-        setCustomRemittanceAmount(selectedDeductionTotal.toFixed(2));
+        setCustomRemittanceAmount('0.00');
         return new Set();
       } else {
         const fullTotal = targetBatch.items.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-        const newTotal = fullTotal + selectedDeductionTotal;
+        const newTotal = Math.max(0, fullTotal - deduction);
         setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set(visibleKeys);
       }
     });
-  }, [targetBatch, selectedDeductionTotal]);
+  }, [targetBatch, selectedClaimedKeys.size, selectedDeductionTotal, totalClaimedWinAmount]);
 
-  // Toggle claimed addition tickets
+  // Toggle claimed deletion tickets
   const handleToggleClaimedSelect = useCallback((key) => {
     setSelectedClaimedKeys(prev => {
       const next = new Set(prev);
@@ -417,14 +434,15 @@ function AttachWeeklyProofModal({
       } else {
         next.add(key);
       }
-      const newAdditions = (claimedAdjustmentItems || [])
+      const newDeductions = (claimedAdjustmentItems || [])
         .filter(i => next.has(String(i.transactionId || i.transId || i.id).trim()))
         .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-      const newTotal = (parseFloat(selectedWinTotal || 0) || 0) + newAdditions;
+      const effectiveDeduction = next.size > 0 ? newDeductions : totalClaimedWinAmount;
+      const newTotal = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - effectiveDeduction);
       setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, [claimedAdjustmentItems, selectedWinTotal]);
+  }, [claimedAdjustmentItems, selectedWinTotal, totalClaimedWinAmount]);
 
   const handleToggleAllClaimed = useCallback(() => {
     if (!claimedAdjustmentItems || !claimedAdjustmentItems.length) return;
@@ -432,16 +450,17 @@ function AttachWeeklyProofModal({
       const allKeys = claimedAdjustmentItems.map(i => String(i.transactionId || i.transId || i.id).trim());
       const isAll = allKeys.length > 0 && allKeys.every(k => prev.has(k));
       if (isAll) {
-        setCustomRemittanceAmount((parseFloat(selectedWinTotal || 0) || 0).toFixed(2));
+        const newTotal = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalClaimedWinAmount);
+        setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set();
       } else {
-        const fullAdditions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-        const newTotal = (parseFloat(selectedWinTotal || 0) || 0) + fullAdditions;
+        const fullDeductions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+        const newTotal = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - fullDeductions);
         setCustomRemittanceAmount(newTotal.toFixed(2));
         return new Set(allKeys);
       }
     });
-  }, [claimedAdjustmentItems, selectedWinTotal]);
+  }, [claimedAdjustmentItems, selectedWinTotal, totalClaimedWinAmount]);
 
   // Dynamically compute Remittance Serial Number based on sub-office and remittance date
   const effectiveBatchSrn = useMemo(() => {
@@ -514,7 +533,7 @@ function AttachWeeklyProofModal({
     // SUBMISSION ALERT WARNING GATE:
     // If there are claimed deletion requests and SSR has 0 selected, intercept with Insufficient Balance alert!
     if (hasUnselectedClaimed) {
-      setFormError('Insufficient balance to continue: please select the Trans ID to include that ticket(s).');
+      setFormError('Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Need to open the modal and select ticket to include in the attach proof modal table.');
       setShowUnselectedClaimedWarning(true);
       return;
     }
@@ -741,30 +760,30 @@ function AttachWeeklyProofModal({
                 className={`p-2.5 rounded-lg border shadow-2xs transition-all ${
                   claimedAdjustmentItems.length > 0 ? (hasUnselectedClaimed ? 'bg-rose-50/70 border-rose-300 cursor-pointer hover:bg-rose-100/70' : 'bg-amber-50/60 border-amber-200 cursor-pointer hover:bg-amber-100/70') : 'bg-white border-blue-100/80'
                 }`}
-                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to include & add" : undefined}
+                title={claimedAdjustmentItems.length > 0 ? "Click to select claimed tickets to include & deduct" : undefined}
               >
                 <div className="flex items-center justify-between">
                   <span className={`text-[9px] font-sans font-extrabold uppercase block ${hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-400'}`}>
-                    Claimed Additions
+                    Approved Deletions
                   </span>
                   {claimedAdjustmentItems.length > 0 && (
                     <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                      hasUnselectedClaimed ? 'bg-rose-200 text-rose-900' : 'text-amber-700 bg-amber-100'
+                      hasUnselectedClaimed ? 'bg-rose-200 text-rose-900' : 'text-rose-700 bg-rose-100'
                     }`}>
                       {selectedClaimedCount}/{claimedAdjustmentItems.length}
                     </span>
                   )}
                 </div>
-                <span className={`font-extrabold text-xs mt-0.5 block ${hasUnselectedClaimed ? 'text-rose-700' : (selectedClaimedCount > 0 ? 'text-emerald-700' : 'text-slate-800')}`}>
+                <span className={`font-extrabold text-xs mt-0.5 block ${hasUnselectedClaimed ? 'text-rose-700' : (selectedClaimedCount > 0 ? 'text-rose-700' : 'text-slate-800')}`}>
                   {selectedClaimedCount > 0 
-                    ? `+₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                    : (hasUnselectedClaimed ? '⚠️ Required' : '₱0.00')}
+                    ? `-₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    : (hasUnselectedClaimed ? `-₱${totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} (Required)` : '₱0.00')}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* CLAIMED ADDITION ALERT WARNING BANNER */}
+          {/* APPROVED DELETION ALERT WARNING BANNER */}
           {claimedAdjustmentItems.length > 0 && (
             <div
               onClick={() => setIsClaimedModalOpen(true)}
@@ -784,19 +803,19 @@ function AttachWeeklyProofModal({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
                       {selectedClaimedCount > 0
-                        ? `Claimed Ticket Inclusions (+${selectedClaimedCount} Selected)`
-                        : `Action Required: Include Claimed Tickets (${claimedAdjustmentItems.length} Available)`}
+                        ? `Approved Deletion Ticket Included (+${selectedClaimedCount} Selected)`
+                        : `Action Required: Approved Deletion Ticket Reconciliation (${claimedAdjustmentItems.length} Available)`}
                     </span>
                     <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
                       selectedClaimedCount > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
                     }`}>
-                      {selectedClaimedCount > 0 ? 'Inclusion Active' : 'Action Required'}
+                      {selectedClaimedCount > 0 ? 'Subtotal Matched' : 'Action Required'}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-600 truncate mt-0.5">
                     {selectedClaimedCount > 0
-                      ? `Total addition of +₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added to remittance batch. Click to modify.`
-                      : `You have ${claimedAdjustmentItems.length} claimed winning ticket(s) available. Please select the Trans ID(s) to include that ticket(s) and add their win amount.`}
+                      ? `Approved deletion ticket (+₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}) included in remittance table. Selected subtotal matched. Click to modify.`
+                      : `Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Need to open the modal and select ticket to include in the attach proof modal table.`}
                   </p>
                 </div>
               </div>
@@ -813,7 +832,7 @@ function AttachWeeklyProofModal({
                     : 'bg-rose-600 hover:bg-rose-700 text-white'
                 }`}
               >
-                {selectedClaimedCount > 0 ? 'Edit Trans IDs' : 'Select Trans IDs →'}
+                {selectedClaimedCount > 0 ? 'Edit Selected Tickets' : 'Select Ticket to Include →'}
               </button>
             </div>
           )}
@@ -831,6 +850,8 @@ function AttachWeeklyProofModal({
             modalTableSearch={modalTableSearch}
             onSearchChange={setModalTableSearch}
             formatDrawTime={formatDrawTime}
+            hasUnselectedClaimed={hasUnselectedClaimed}
+            onOpenClaimedModal={() => setIsClaimedModalOpen(true)}
           />
 
           {/* Payment Channel Selector (Hidden on Admin side) */}
@@ -899,14 +920,14 @@ function AttachWeeklyProofModal({
                     </label>
                     {selectedClaimedCount > 0 ? (
                       <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
-                        ✓ +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} added
+                        ✓ +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} matched
                       </span>
                     ) : hasUnselectedClaimed ? (
                       <button
                         type="button"
                         onClick={() => setIsClaimedModalOpen(true)}
                         className="p-0.5 rounded text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
-                        title="Action Required: Click to select claimed Trans IDs"
+                        title="Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Need to open the modal and select ticket to include in the attach proof modal table."
                       >
                         <AlertTriangle size={15} className="text-rose-600 animate-bounce" />
                       </button>
@@ -1087,7 +1108,7 @@ function AttachWeeklyProofModal({
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500">
             <span>Gross: <strong className="text-slate-700">₱{Number(selectedWinTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
             {selectedDeductionTotal > 0 && (
-              <span>• Additions: <strong className="text-emerald-700 font-black">+₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+              <span>• Deductions: <strong className="text-rose-700 font-black">-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
             )}
             <span>• Total Remittance: <strong className="text-emerald-700 font-mono font-black text-xs">₱{netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
           </div>
@@ -1208,8 +1229,8 @@ function AttachWeeklyProofModal({
 
                       {selectedDeductionTotal > 0 && (
                         <div className="border-t border-slate-200 pt-1.5 flex justify-between items-center text-[11px] font-mono">
-                          <span className="font-sans text-emerald-700 font-bold">Claimed Additions ({selectedClaimedCount} tickets):</span>
-                          <span className="font-bold text-emerald-700">+₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-sans text-rose-700 font-bold">Approved Deletions ({selectedClaimedCount} tickets):</span>
+                          <span className="font-bold text-rose-700">-₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )}
 
@@ -1338,13 +1359,13 @@ function AttachWeeklyProofModal({
 
               <div className="space-y-1.5">
                 <h3 className="text-sm sm:text-base font-black text-rose-700 uppercase tracking-wide">
-                  Insufficient Balance to Continue!
+                  Approved Deletion Ticket Required to Match Subtotal!
                 </h3>
                 <p className="text-xs text-slate-600">
-                  There are <span className="font-black text-slate-900">{claimedAdjustmentItems.length}</span> claimed winning ticket(s) totaling <span className="font-bold text-rose-600 font-mono">₱{totalClaimedWinAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> available. To continue, you must select the Trans ID(s) to include that ticket(s) and add their win amount to your remittance total.
+                  Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Need to open the modal and select ticket to include in the attach proof modal table.
                 </p>
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-[11px] text-rose-900 text-left font-medium">
-                  <strong>Action Required:</strong> Please select the Trans ID to include that ticket(s) into this batch and add its amount to your total remittance.
+                  <strong>Action Required:</strong> Click below to open the selection modal and select the approved deletion ticket(s) to include into the attach proof table.
                 </div>
               </div>
 
@@ -1358,7 +1379,7 @@ function AttachWeeklyProofModal({
                   className="w-full px-4 py-2.5 bg-[#002B66] text-[#FFD700] hover:bg-blue-900 rounded-xl font-black text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                 >
                   <CheckCircle2 size={15} />
-                  Select Trans ID to Include Ticket(s) →
+                  Select Ticket to Include →
                 </button>
                 <button
                   type="button"
