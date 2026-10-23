@@ -118,7 +118,7 @@ export default function SelectClaimedDeductionsModal({
             <div className="bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg text-right">
               <span className="text-[9px] font-extrabold text-emerald-600 uppercase block leading-none">Addition Total</span>
               <span className="font-mono text-xs font-black text-emerald-800">
-                ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -211,7 +211,7 @@ export default function SelectClaimedDeductionsModal({
                         </td>
                         <td className="p-2.5 border-l border-slate-200 text-right whitespace-nowrap">
                           <span className="font-mono font-black text-emerald-700 text-xs">
-                            ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            +₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td className="p-2.5 border-l border-slate-200 text-[10px] text-slate-500 max-w-[260px] truncate" title={reason}>
@@ -250,7 +250,7 @@ export default function SelectClaimedDeductionsModal({
               className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
             >
               <Check size={14} className="text-[#FFD700]" />
-              Include & Match Selected ({selectedCount} Selected • ₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              Include & Match Selected ({selectedCount} Selected • +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
             </button>
           </div>
         </div>

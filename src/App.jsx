@@ -1377,13 +1377,13 @@ export default function App() {
     });
 
     try {
-      // Single-bet tickets use 'transactionId' directly to align with existing unique constraint.
-      // Multi-bet tickets use 'transactionId,betCode' to support distinct combination rows.
-      const initialConflictTarget = payloads.length > 1 ? 'transactionId,betCode' : 'transactionId';
+      // Prioritize composite constraint (transactionId,betCode) for both multi-bet and single-bet rows.
+      // Falls back to legacy 'transactionId' if composite constraint is not yet applied in database.
+      const initialConflictTarget = 'transactionId,betCode';
       let { error } = await supabase.from('returned_winnings').upsert(payloads, { onConflict: initialConflictTarget });
 
       if (error && (error.code === '42P10' || String(error.message || '').includes('ON CONFLICT'))) {
-        const alternateTarget = initialConflictTarget === 'transactionId' ? 'transactionId,betCode' : 'transactionId';
+        const alternateTarget = 'transactionId';
         if (payloads.length === 1) {
           const fallbackRes = await supabase.from('returned_winnings').upsert(payloads, { onConflict: alternateTarget });
           error = fallbackRes.error;

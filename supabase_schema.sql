@@ -54,7 +54,7 @@ CREATE TABLE public.app_users (
 -- ==============================================================================
 CREATE TABLE public.returned_winnings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    "transactionId" TEXT NOT NULL UNIQUE,
+    "transactionId" TEXT NOT NULL,
     "apiId" TEXT,
     username TEXT,
     "fullName" TEXT,
@@ -114,7 +114,8 @@ CREATE TABLE public.returned_winnings (
     deletion_request_attachment TEXT,
     hard_copy_ticket_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT "returned_winnings_trans_bet_unique" UNIQUE ("transactionId", "betCode")
 );
 
 -- ==============================================================================
