@@ -14,8 +14,9 @@ import ViewHardCopyTicketModal from '../../components/winnings/ViewHardCopyTicke
 import ConfirmPopover from '../../components/common/ConfirmPopover';
 import SettlementDetailsModal from '../../components/winnings/SettlementDetailsModal';
 import DeletionRequestsTable from '../../components/winnings/DeletionRequestsTable';
+import ModernDropdown from '../../components/common/ModernDropdown';
 import { superClean, getTicketTransId, generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord, isPendingDeletionRecord } from '../../utils/formatters';
-import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole } from '../../utils/permissions';
+import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 
 import { DEFAULT_SUPERVISOR_NAMES } from '../../services/supervisorService';
 
@@ -57,7 +58,45 @@ export default function ReturnedWinnings({
   // Admin / Staff Approval Permission (SSR can request, Staff/Admin can approve)
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
   const isSSR = isSSRRole(currentUser?.role);
+  const isUnclaimedSpecialist = isUnclaimedSpecialistRole(currentUser?.role);
+  const canFilterSubOffice = isAdmin || isUnclaimedSpecialist;
   const canApprove = canApproveDeletionRequests(currentUser?.role) || isAdmin;
+
+  // Sub-Office Filter State (Unclaimed Specialist & Admin only)
+  const [dbSubOffices, setDbSubOffices] = useState([]);
+  const [selectedSubOfficeFilter, setSelectedSubOfficeFilter] = useState('ALL');
+
+  // Load sub-offices from database with realtime sync
+  useEffect(() => {
+    if (!canFilterSubOffice) return;
+
+    const fetchSubOffices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sub_offices')
+          .select('*')
+          .order('name', { ascending: true });
+        if (!error && data) {
+          setDbSubOffices(data);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch sub-offices in ReturnedWinnings:", err);
+      }
+    };
+
+    fetchSubOffices();
+
+    const channel = supabase
+      .channel('sub_offices_realtime_rw')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        fetchSubOffices();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [canFilterSubOffice]);
 
   const checkIsExplicitlyClaimed = (item) => {
     if (!item) return false;
@@ -105,27 +144,103 @@ export default function ReturnedWinnings({
     );
   };
 
+  // Available Sub-Offices compiled from DB and live data records
+  const availableSubOffices = useMemo(() => {
+    const set = new Set();
+    (dbSubOffices || []).forEach(so => {
+      if (so.name && so.status !== 'INACTIVE') {
+        set.add(so.name.trim());
+      }
+    });
+    (filteredData || []).forEach(item => {
+      const o = item.sub_office || item.location;
+      if (o && o !== 'All') {
+        set.add(o.trim());
+      }
+    });
+    (dedicatedDeletionRequests || []).forEach(r => {
+      const o = r.sub_office;
+      if (o && o !== 'All') {
+        set.add(o.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [dbSubOffices, filteredData, dedicatedDeletionRequests]);
+
+  // Filtered data scoped by sub-office for Admin / Unclaimed Specialist
+  const scopedReturnedData = useMemo(() => {
+    if (!canFilterSubOffice || !selectedSubOfficeFilter || selectedSubOfficeFilter === 'ALL') {
+      return filteredData || [];
+    }
+    const targetOffice = selectedSubOfficeFilter.toLowerCase().trim();
+    return (filteredData || []).filter(item => {
+      const itemOffice = String(item.sub_office || item.location || 'Mandaue Central').toLowerCase().trim();
+      return itemOffice === targetOffice || itemOffice.includes(targetOffice) || targetOffice.includes(itemOffice);
+    });
+  }, [filteredData, selectedSubOfficeFilter, canFilterSubOffice]);
+
+  // Filtered deletion requests scoped by sub-office for Admin / Unclaimed Specialist
+  const scopedDeletionRequests = useMemo(() => {
+    if (!canFilterSubOffice || !selectedSubOfficeFilter || selectedSubOfficeFilter === 'ALL') {
+      return dedicatedDeletionRequests || [];
+    }
+    const targetOffice = selectedSubOfficeFilter.toLowerCase().trim();
+    return (dedicatedDeletionRequests || []).filter(r => {
+      const rOffice = String(r.sub_office || 'Mandaue Central').toLowerCase().trim();
+      return rOffice === targetOffice || rOffice.includes(targetOffice) || targetOffice.includes(rOffice);
+    });
+  }, [dedicatedDeletionRequests, selectedSubOfficeFilter, canFilterSubOffice]);
+
+  // Sub-Office Dropdown Options with live badge counts
+  const subOfficeDropdownOptions = useMemo(() => {
+    const totalActive = (filteredData || []).filter(item => !isInactiveTellerRecord(item)).length;
+    const options = [
+      {
+        value: 'ALL',
+        label: `All Sub-Offices (${availableSubOffices.length})`,
+        badge: totalActive
+      }
+    ];
+
+    availableSubOffices.forEach(office => {
+      const target = office.toLowerCase().trim();
+      const count = (filteredData || []).filter(item => {
+        if (isInactiveTellerRecord(item)) return false;
+        const o = String(item.sub_office || item.location || 'Mandaue Central').toLowerCase().trim();
+        return o === target || o.includes(target) || target.includes(o);
+      }).length;
+
+      options.push({
+        value: office,
+        label: office,
+        badge: count
+      });
+    });
+
+    return options;
+  }, [availableSubOffices, filteredData]);
+
   // Pending Deletion Requests
   const pendingDeletionRequests = useMemo(() => {
-    return (filteredData || []).filter(item => isPendingDeletionRecord(item));
-  }, [filteredData]);
+    return (scopedReturnedData || []).filter(item => isPendingDeletionRecord(item));
+  }, [scopedReturnedData]);
 
   // Dedicated Counts for Deletion Requests Tab
   const pendingRequestsCount = useMemo(() => {
-    return (dedicatedDeletionRequests || []).filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'PENDING').length;
-  }, [dedicatedDeletionRequests]);
+    return (scopedDeletionRequests || []).filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'PENDING').length;
+  }, [scopedDeletionRequests]);
 
   const isInactiveTeller = (item) => isInactiveTellerRecord(item);
 
   // Unremitted items available strictly for weekly remittance deposit (excluding under settlement, inactive/AWOL/pullout, and pending deletion)
   const unremittedDepositItems = useMemo(() => {
-    return (filteredData || []).filter(item => isEligibleForRemittanceProof(item));
-  }, [filteredData]);
+    return (scopedReturnedData || []).filter(item => isEligibleForRemittanceProof(item));
+  }, [scopedReturnedData]);
 
   // Inactive Teller items (Pull-out, AWOL, Terminated)
   const inactiveTellerItems = useMemo(() => {
-    return (filteredData || []).filter(item => isInactiveTellerRecord(item));
-  }, [filteredData]);
+    return (scopedReturnedData || []).filter(item => isInactiveTellerRecord(item));
+  }, [scopedReturnedData]);
 
   // Fetch deletion requests from the dedicated table
   const loadDedicatedDeletionRequests = async () => {
@@ -161,7 +276,7 @@ export default function ReturnedWinnings({
   // Claimed deletion requests from dedicated table eligible to add as additions in remittance proof
   // STRICT RULE: If an approved claimed ticket has already been included in a remittance batch (deducted_from_collections === true), do NOT fetch or include it!
   const claimedDeletionAdjustmentItems = useMemo(() => {
-    return (dedicatedDeletionRequests || [])
+    return (scopedDeletionRequests || [])
       .filter(r => {
         const isEligibleStatus = r.status === 'PENDING_APPROVAL' || r.status === 'APPROVED' || r.status === 'PENDING_ADMIN_APPROVAL' || r.status === 'PENDING';
         if (!isEligibleStatus) return false;
@@ -191,11 +306,11 @@ export default function ReturnedWinnings({
         date_returned: r.requested_at || r.created_at,
         created_at: r.created_at
       }));
-  }, [dedicatedDeletionRequests]);
+  }, [scopedDeletionRequests]);
 
   // Filtered display items based on activeFilterTab & searchQuery
   const displayItems = useMemo(() => {
-    let list = (filteredData || []).filter(item => !isInactiveTellerRecord(item));
+    let list = (scopedReturnedData || []).filter(item => !isInactiveTellerRecord(item));
 
     if (activeFilterTab === 'UNREMITTED') {
       list = unremittedDepositItems;
@@ -218,7 +333,7 @@ export default function ReturnedWinnings({
     }
 
     return list;
-  }, [filteredData, activeFilterTab, unremittedDepositItems, inactiveTellerItems, searchQuery]);
+  }, [scopedReturnedData, activeFilterTab, unremittedDepositItems, inactiveTellerItems, searchQuery]);
 
   // Grouped active items by Username for table rendering
   const activeGroupedData = useMemo(() => {
@@ -346,8 +461,8 @@ export default function ReturnedWinnings({
   const unremittedTotalTickets = unremittedDepositItems;
   const unremittedTotalWin = unremittedDepositItems.reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
   const totalReturnedWin = useMemo(() => {
-    return (filteredData || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
-  }, [filteredData]);
+    return (scopedReturnedData || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
+  }, [scopedReturnedData]);
 
   const displayTotalWin = useMemo(() => {
     return (displayItems || []).reduce((sum, item) => sum + parseFloat(item.winAmount ?? 0), 0);
@@ -359,9 +474,11 @@ export default function ReturnedWinnings({
 
   // Compute clean Remittance Serial Number dynamically from active unremitted tickets (e.g. MAN-260901-892301)
   const batchSerialNumber = useMemo(() => {
-    const subOffice = currentUser?.sub_office && currentUser.sub_office !== 'All'
-      ? currentUser.sub_office
-      : (unremittedDepositItems[0]?.sub_office || filteredData[0]?.sub_office || 'Mandaue Central');
+    const subOffice = (canFilterSubOffice && selectedSubOfficeFilter !== 'ALL')
+      ? selectedSubOfficeFilter
+      : (currentUser?.sub_office && currentUser.sub_office !== 'All'
+        ? currentUser.sub_office
+        : (unremittedDepositItems[0]?.sub_office || scopedReturnedData[0]?.sub_office || 'Mandaue Central'));
 
     if (unremittedDepositItems.length > 0) {
       const firstTicket = unremittedDepositItems[0];
@@ -370,7 +487,7 @@ export default function ReturnedWinnings({
     }
 
     return generateRemittanceSerial(subOffice, '892301');
-  }, [unremittedDepositItems, filteredData, currentUser]);
+  }, [unremittedDepositItems, scopedReturnedData, currentUser, canFilterSubOffice, selectedSubOfficeFilter]);
 
   return (
     <div className="w-full space-y-4">
@@ -395,7 +512,7 @@ export default function ReturnedWinnings({
               : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
               }`}
           >
-            All Returned ({(filteredData || []).filter(item => !isInactiveTeller(item)).length})
+            All Returned ({(scopedReturnedData || []).filter(item => !isInactiveTeller(item)).length})
           </button>
 
           <button
@@ -437,6 +554,19 @@ export default function ReturnedWinnings({
 
         {/* Action Buttons & Search */}
         <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+          {/* Sub-Office Filter Dropdown for Unclaimed Specialist and Admin only */}
+          {canFilterSubOffice && availableSubOffices.length > 0 && (
+            <ModernDropdown
+              icon={Building2}
+              label="SUB-OFFICE"
+              value={selectedSubOfficeFilter}
+              onChange={setSelectedSubOfficeFilter}
+              options={subOfficeDropdownOptions}
+              searchable={availableSubOffices.length > 5}
+              size="md"
+            />
+          )}
+
           {!isAdmin && unremittedTotalTickets.length > 0 && (
             <button
               onClick={() => setIsWeeklyModalOpen(true)}
@@ -496,7 +626,7 @@ export default function ReturnedWinnings({
       {/* REQUESTS VIEW (Dedicated Table) vs NORMAL RETURNED WINNINGS TABLE */}
       {activeFilterTab === 'REQUESTS' ? (
         <DeletionRequestsTable
-          requests={dedicatedDeletionRequests}
+          requests={scopedDeletionRequests}
           isLoading={isLoadingDeletionRequests}
           canApprove={canApprove}
           formatDrawTime={formatDrawTime}
@@ -512,6 +642,12 @@ export default function ReturnedWinnings({
             <h3 className="font-extrabold text-[#002B66] text-xs uppercase tracking-wider truncate">
               Returned Winnings Summary
             </h3>
+            {canFilterSubOffice && selectedSubOfficeFilter !== 'ALL' && (
+              <span className="text-[10px] font-bold bg-blue-100 text-[#002B66] border border-blue-300/80 px-2 py-0.5 rounded-md font-mono shadow-2xs shrink-0 flex items-center gap-1">
+                <Building2 size={11} className="text-[#002B66]" />
+                <span>{selectedSubOfficeFilter}</span>
+              </span>
+            )}
             <span className="text-[10px] font-bold bg-[#002B66] text-[#FFD700] px-2 py-0.5 rounded font-mono shadow-2xs shrink-0 flex items-center gap-1">
               <span className="text-[9px] text-[#FFD700]/75 uppercase">SRN</span>
               <span>{batchSerialNumber}</span>
@@ -966,7 +1102,7 @@ export default function ReturnedWinnings({
         isOpen={isWeeklyModalOpen}
         onClose={() => setIsWeeklyModalOpen(false)}
         batchSerialNumber={batchSerialNumber}
-        filteredData={filteredData}
+        filteredData={scopedReturnedData}
         claimedAdjustmentItems={claimedDeletionAdjustmentItems}
         currentUser={currentUser}
         formatDrawTime={formatDrawTime}
