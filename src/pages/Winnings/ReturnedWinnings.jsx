@@ -343,7 +343,16 @@ export default function ReturnedWinnings({
       const rawSpvr = (item.supervisor || '').trim();
       const rawUser = (item.username || '').trim();
       const isGenericUser = !rawUser || rawUser.toLowerCase().startsWith('ssr-');
-      const userKey = ((isGenericUser && rawSpvr) ? rawSpvr : (rawSpvr || rawUser || 'UNASSIGNED-USER')).toUpperCase();
+      const isNumericSpvr = /^\d+$/.test(rawSpvr);
+      const isNamedUser = rawUser && !isGenericUser;
+
+      let keyToUse = rawSpvr || rawUser || 'UNASSIGNED-USER';
+      if (isNumericSpvr && isNamedUser) {
+        keyToUse = rawUser;
+      } else if (isGenericUser && rawSpvr) {
+        keyToUse = rawSpvr;
+      }
+      const userKey = keyToUse.toUpperCase();
       (acc[userKey] = acc[userKey] || []).push(item);
       return acc;
     }, {});

@@ -1,8 +1,8 @@
 -- ==============================================================================
 -- INSERT QUERY: RETURNED WINNINGS FOR ILIGAN SET A SUB-OFFICE
 -- Sub-Office: ILIGAN SET A
--- Total Records: 15 Tickets
--- Total Win Amount: ₱48,583.00
+-- Total Records: 16 Tickets
+-- Total Win Amount: ₱49,083.00
 -- ==============================================================================
 
 INSERT INTO public.returned_winnings (
@@ -34,11 +34,11 @@ INSERT INTO public.returned_winnings (
 ) VALUES 
 (
     '101126-UEIA9EDO',
-    'STEVERODRIGUEZ@GFLDN',
+    'EDGARDOCAINGLESJR@GFLDN',
     'ILI - MARK NEIL Y. SARDILLA',
     'ILI - MARK NEIL Y. SARDILLA',
     'ILIGAN SET A',
-    'STEVERODRIGUEZ@GFLDN',
+    'EDGARDOCAINGLESJR@GFLDN',
     '14:00',
     '2026-10-11 00:00:00',
     'TS3',
@@ -436,6 +436,33 @@ INSERT INTO public.returned_winnings (
     'PENDING',
     '2026-10-22 06:00:00+00',
     '2026-10-22 06:00:00+00'
+),
+(
+    '102226-UEURXPUA',
+    'CLINTDARYLBALANSAG@GFLDN',
+    'ILI - Shirley T. Lopez',
+    'ILI 084',
+    'ILIGAN SET A',
+    'CLINTDARYLBALANSAG@GFLDN',
+    '14:00',
+    '2026-10-22 00:00:00',
+    'RS3',
+    '867',
+    6.00,
+    500.00,
+    0.00,
+    500.00,
+    'NO_RECEIPT',
+    250.00,
+    150.00,
+    50.00,
+    50.00,
+    1,
+    1,
+    FALSE,
+    'PENDING',
+    '2026-10-24 03:19:48+00',
+    '2026-10-24 03:19:48+00'
 )
 ON CONFLICT ("transactionId") DO UPDATE SET
     username = EXCLUDED.username,

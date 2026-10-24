@@ -109,6 +109,20 @@ export const DEFAULT_SUPERVISOR_NAMES = {
   "25": "JOEL ESTORCO",
   "26": "HARRY EYA",
   "27": "CARL MANGRUBAN",
+  "28": "JED MELENDREZ",
+  "29": "NYOR SESALDO",
+  "30": "NARCISO TAGUD JR.",
+  "31": "MOLLY BATUBALANOS",
+
+  // Iligan Numeric IDs
+  "32": "EDGARDO CAINGLES JR.",
+  "35": "FREXYNIES BACALSO",
+  "36": "HECTOR CANDOLE",
+  "40": "JOEL ORDONA",
+  "41": "JUNRIE MORALES",
+  "45": "EDMOND GONZAGA",
+  "46": "STEVE RODRIGUEZ",
+  "58": "NAVE XYRIL HOTILLA",
 
   // Iligan Set A Supervisors (Official from API id=5 and id=8)
   "steverodriguez@gfldn": "STEVE RODRIGUEZ",
