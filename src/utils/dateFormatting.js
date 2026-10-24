@@ -65,12 +65,15 @@ export const formatDrawTime = (timeStr, drawDate) => {
     } else {
       rawTime = '';
     }
-  } else if (/^\d{1,2}$/.test(rawTime)) {
-    const hourNum = parseInt(rawTime, 10);
-    if (hourNum === 0) rawTime = '12AM';
-    else if (hourNum === 12) rawTime = '12PM';
-    else if (hourNum > 12) rawTime = `${hourNum - 12}PM`;
-    else rawTime = `${hourNum}AM`;
+  } else if (/^\d{1,2}(:\d{2}(:\d{2})?)?$/.test(rawTime)) {
+    const parts = rawTime.split(':');
+    const hourNum = parseInt(parts[0], 10);
+    const minNum = parts[1] ? parseInt(parts[1], 10) : 0;
+    const minStr = minNum > 0 ? `:${parts[1]}` : '';
+    if (hourNum === 0) rawTime = `12${minStr}AM`;
+    else if (hourNum === 12) rawTime = `12${minStr}PM`;
+    else if (hourNum > 12) rawTime = `${hourNum - 12}${minStr}PM`;
+    else rawTime = `${hourNum}${minStr}AM`;
   }
 
   // If rawTime is redundant or equal to formattedDate
