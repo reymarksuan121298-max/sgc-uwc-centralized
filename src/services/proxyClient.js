@@ -78,128 +78,174 @@ export async function proxyFetch(targetUrl, options = {}) {
     (typeof headers?.get === 'function' ? headers.get('authorization') : '') ||
     '';
 
-  // In browser environments, route through the serverless proxy
+  // In browser environments, route through the serverless proxy using clean POST URLs (zero query params)
   if (typeof window !== 'undefined') {
-    let proxyUrl;
+    let payload = null;
 
-    // Check if targetUrl is already an /api/proxy endpoint
-    if (typeof targetUrl === 'string' && targetUrl.startsWith('/api/proxy')) {
-      proxyUrl = targetUrl;
-    } else {
-      try {
-        // Parse the target URL to extract parameters
-        const urlStr = typeof targetUrl === 'string' ? targetUrl : (targetUrl?.url || '');
-        const urlObj = urlStr.startsWith('http')
-          ? new URL(urlStr)
-          : new URL(urlStr, window.location.origin);
+    try {
+      // Parse target URL and parameters
+      const urlStr = typeof targetUrl === 'string' ? targetUrl : (targetUrl?.url || '');
+      const urlObj = urlStr.startsWith('http')
+        ? new URL(urlStr)
+        : new URL(urlStr, window.location.origin);
 
-        const pathname = urlObj.pathname.toLowerCase();
-        const searchParams = urlObj.searchParams;
-        const host = urlObj.hostname.toLowerCase();
-        const isLdn = host.includes('stl-ldn') || pathname.includes('stl-ldn') || searchParams.get('endpoint') === 'ldn';
-        const endpoint = isLdn ? 'ldn' : 'mandaue';
+      const pathname = urlObj.pathname.toLowerCase();
+      const searchParams = urlObj.searchParams;
+      const host = urlObj.hostname.toLowerCase();
+      const isLdn = host.includes('stl-ldn') || pathname.includes('stl-ldn') || searchParams.get('endpoint') === 'ldn';
+      const endpoint = isLdn ? 'ldn' : 'mandaue';
 
-        // 1. Unclaimed Receipts
-        if (pathname.includes('unclaimedreceipts') || searchParams.has('isClaim')) {
-          const isClaim = searchParams.get('isClaim') || '0';
-          const from = searchParams.get('from') || new Date().toISOString().slice(0, 10);
-          const to = searchParams.get('to') || from;
-          proxyUrl = `/api/proxy?action=unclaimed_receipts&isClaim=${isClaim}&from=${from}&to=${to}&endpoint=${endpoint}`;
-        }
-        // 2. Supervisor Mappings
-        else if (pathname.includes('supervisor') || searchParams.has('type') && searchParams.get('type') === 'supervisor') {
-          const id = searchParams.get('id') || '7';
-          const from = searchParams.get('from') || '';
-          const to = searchParams.get('to') || '';
-          const datePart = from ? `&from=${from}&to=${to || from}` : '';
-          proxyUrl = `/api/proxy?type=supervisor&id=${id}${datePart}${isLdn ? '&endpoint=ldn' : ''}`;
-        }
-        // 3. Save Commissions
-        else if (searchParams.get('action') === 'save_commissions' || pathname.includes('save_commissions')) {
-          proxyUrl = `/api/proxy?action=save_commissions`;
-        }
-        // 4. Overall / Draw
-        else if (searchParams.get('type') === 'overall') {
-          const from = searchParams.get('from') || '';
-          const to = searchParams.get('to') || '';
-          proxyUrl = `/api/proxy?type=overall&from=${from}&to=${to}`;
-        }
-        else if (searchParams.get('type') === 'draw') {
-          const drawId = searchParams.get('drawId') || '';
-          const from = searchParams.get('from') || '';
-          const to = searchParams.get('to') || '';
-          proxyUrl = `/api/proxy?type=draw&drawId=${drawId}&from=${from}&to=${to}`;
-        }
-        // 5. Supabase Database & Storage Proxy (All tables across all pages)
-        else if (host.includes('supabase.co') || pathname.includes('/rest/v1/') || pathname.includes('/storage/v1/') || pathname.includes('/auth/v1/')) {
-          const cleanParams = new URLSearchParams(searchParams);
-          cleanParams.set('action', 'supabase');
-
-          if (pathname.includes('/rest/v1/')) {
-            const rawSegments = urlObj.pathname.split('/').filter(Boolean);
-            const v1Index = rawSegments.indexOf('v1');
-            const table = v1Index !== -1 && rawSegments[v1Index + 1] ? rawSegments[v1Index + 1] : '';
-            if (table) {
-              cleanParams.set('table', table);
-            } else {
-              cleanParams.set('path', urlObj.pathname);
-            }
-          } else {
-            cleanParams.set('path', urlObj.pathname);
-          }
-
-          proxyUrl = `/api/proxy?${cleanParams.toString()}`;
-        }
-        // 6. Generic Gateway Target
-        else {
-          let normalizedUrl = urlStr;
-          if (normalizedUrl.startsWith('/api-proxy/stl-mandaue')) {
-            normalizedUrl = normalizedUrl.replace(/^\/api-proxy\/stl-mandaue/, 'https://stl-mandaue-api.com');
-          } else if (normalizedUrl.startsWith('/api-proxy/stl-ldn')) {
-            normalizedUrl = normalizedUrl.replace(/^\/api-proxy\/stl-ldn/, 'https://stl-ldn-api.com');
-          }
-
-          if (method === 'GET') {
-            proxyUrl = `/api/proxy?url=${encodeURIComponent(normalizedUrl)}`;
-          } else {
-            proxyUrl = '/api/proxy';
-          }
-        }
-      } catch {
-        proxyUrl = '/api/proxy';
+      // 1. Unclaimed Receipts
+      if (pathname.includes('unclaimedreceipts') || searchParams.has('isClaim') || searchParams.get('action') === 'unclaimed_receipts') {
+        payload = {
+          action: 'unclaimed_receipts',
+          isClaim: searchParams.get('isClaim') || '0',
+          from: searchParams.get('from') || new Date().toISOString().slice(0, 10),
+          to: searchParams.get('to') || searchParams.get('from') || new Date().toISOString().slice(0, 10),
+          endpoint
+        };
       }
+      // 2. Supervisor Mappings
+      else if (pathname.includes('supervisor') || (searchParams.has('type') && searchParams.get('type') === 'supervisor')) {
+        payload = {
+          type: 'supervisor',
+          id: searchParams.get('id') || '7',
+          from: searchParams.get('from') || '',
+          to: searchParams.get('to') || '',
+          endpoint: isLdn ? 'ldn' : 'mandaue'
+        };
+      }
+      // 3. Save Commissions
+      else if (searchParams.get('action') === 'save_commissions' || pathname.includes('save_commissions')) {
+        let commissionsData = body;
+        if (typeof body === 'string') {
+          try { commissionsData = JSON.parse(body); } catch {}
+        }
+        payload = {
+          action: 'save_commissions',
+          commissions: (commissionsData && commissionsData.commissions) ? commissionsData.commissions : commissionsData
+        };
+      }
+      // 4. Time Sync
+      else if (searchParams.get('action') === 'time' || pathname.includes('action=time')) {
+        payload = { action: 'time' };
+      }
+      // 5. Overall / Draw
+      else if (searchParams.get('type') === 'overall') {
+        payload = {
+          type: 'overall',
+          from: searchParams.get('from') || '',
+          to: searchParams.get('to') || ''
+        };
+      }
+      else if (searchParams.get('type') === 'draw') {
+        payload = {
+          type: 'draw',
+          drawId: searchParams.get('drawId') || '',
+          from: searchParams.get('from') || '',
+          to: searchParams.get('to') || ''
+        };
+      }
+      // 6. Supabase Database & Storage Proxy (All tables across all pages)
+      else if (host.includes('supabase.co') || pathname.includes('/rest/v1/') || pathname.includes('/storage/v1/') || pathname.includes('/auth/v1/') || searchParams.get('action') === 'supabase') {
+        const queryParams = {};
+        for (const [k, v] of searchParams.entries()) {
+          if (!['action', 'table', 'path', 'url', 'apikey', 'Apikey', 'authHeader', 'token'].includes(k)) {
+            queryParams[k] = v;
+          }
+        }
+
+        let table = searchParams.get('table') || '';
+        let path = searchParams.get('path') || urlObj.pathname;
+        if (!table && urlObj.pathname.includes('/rest/v1/')) {
+          const rawSegments = urlObj.pathname.split('/').filter(Boolean);
+          const v1Index = rawSegments.indexOf('v1');
+          table = v1Index !== -1 && rawSegments[v1Index + 1] ? rawSegments[v1Index + 1] : '';
+        }
+
+        let parsedBody = body;
+        if (typeof body === 'string') {
+          try {
+            parsedBody = JSON.parse(body);
+          } catch {
+            parsedBody = body;
+          }
+        }
+
+        payload = {
+          action: 'supabase',
+          table,
+          path,
+          targetMethod: method,
+          params: queryParams,
+          data: parsedBody
+        };
+      }
+      // 7. Generic Target
+      else {
+        let normalizedUrl = urlStr;
+        if (normalizedUrl.startsWith('/api-proxy/stl-mandaue')) {
+          normalizedUrl = normalizedUrl.replace(/^\/api-proxy\/stl-mandaue/, 'https://stl-mandaue-api.com');
+        } else if (normalizedUrl.startsWith('/api-proxy/stl-ldn')) {
+          normalizedUrl = normalizedUrl.replace(/^\/api-proxy\/stl-ldn/, 'https://stl-ldn-api.com');
+        }
+
+        let parsedBody = body;
+        if (typeof body === 'string') {
+          try { parsedBody = JSON.parse(body); } catch {}
+        }
+
+        payload = {
+          url: normalizedUrl,
+          targetMethod: method,
+          data: parsedBody
+        };
+      }
+    } catch {
+      payload = {
+        url: typeof targetUrl === 'string' ? targetUrl : targetUrl?.url,
+        targetMethod: method,
+        data: body
+      };
     }
 
     try {
       const fetchHeaders = {
         'accept': 'application/json, text/plain, */*',
+        'content-type': 'application/json',
         ...inputHeaders
       };
-      if (resolvedAuth) {
-        fetchHeaders['authorization'] = resolvedAuth;
+
+      // Completely remove apikey and Authorization headers so they NEVER appear in DevTools Network tab
+      delete fetchHeaders['apikey'];
+      delete fetchHeaders['Apikey'];
+      delete fetchHeaders['authorization'];
+      delete fetchHeaders['Authorization'];
+
+      // If an explicit external gateway token was provided (and it is not the Supabase token),
+      // forward via internal header so it is not displayed as standard Authorization in inspection tools
+      if (resolvedAuth && !resolvedAuth.includes('eyJ') && !resolvedAuth.includes('sb-proxied')) {
+        fetchHeaders['x-gateway-token'] = resolvedAuth;
       }
 
-      let fetchBody = undefined;
-      if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
-        if (!fetchHeaders['content-type'] && body) {
-          fetchHeaders['content-type'] = 'application/json';
+      // Safe base64 encoding with UTF-8 support
+      const safeEncode = (obj) => {
+        try {
+          const jsonStr = JSON.stringify(obj);
+          if (typeof btoa === 'function') {
+            return btoa(unescape(encodeURIComponent(jsonStr)));
+          }
+          return Buffer.from(jsonStr).toString('base64');
+        } catch {
+          return '';
         }
-        if (proxyUrl === '/api/proxy') {
-          fetchBody = JSON.stringify({
-            url: typeof targetUrl === 'string' ? targetUrl : targetUrl?.url,
-            method,
-            authHeader: resolvedAuth,
-            data: body
-          });
-        } else if (body !== undefined && body !== null) {
-          fetchBody = typeof body === 'string' ? body : JSON.stringify(body);
-        }
-      }
+      };
 
-      const res = await fetch(proxyUrl, {
-        method,
+      // Clean POST to /api/proxy (Zero query string parameters in DevTools Request URL)
+      const res = await fetch('/api/proxy', {
+        method: 'POST',
         headers: fetchHeaders,
-        body: fetchBody,
+        body: JSON.stringify({ p: safeEncode(payload) }),
         signal
       });
 

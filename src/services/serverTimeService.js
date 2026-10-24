@@ -12,18 +12,16 @@ class ServerTimeManager {
   }
 
   async fetchServerTime() {
-    // 1. Try Supabase REST API HEAD request to read HTTP Date header
+    // 1. Try Proxied Server Time endpoint to read HTTP Date header (0 credentials, clean URL)
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iatvnqefuzxvaotaibeu.supabase.co';
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhdHZucWVmdXp4dmFvdGFpYmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0Mjc0NTYsImV4cCI6MjEwNTAwMzQ1Nn0.R51uCfddbc60lnlI1xY-LVQNnVQPZpTrl2rpWyb-qgw';
-      
       const tStart = performance.now();
-      const res = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseAnonKey}`, {
-        method: 'HEAD',
-        cache: 'no-store',
+      const res = await fetch('/api/proxy', {
+        method: 'POST',
         headers: {
-          'apikey': supabaseAnonKey
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'time' }),
+        cache: 'no-store'
       });
       const tEnd = performance.now();
       const rtt = tEnd - tStart;
@@ -38,7 +36,7 @@ class ServerTimeManager {
         return serverMs;
       }
     } catch (err) {
-      console.warn('Supabase server time fetch error:', err);
+      console.warn('Proxy server time fetch error:', err);
     }
 
     // 2. Try WorldTimeAPI for Asia/Manila

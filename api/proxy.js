@@ -4,7 +4,9 @@
 
 const DEFAULT_MANDAUE_BASE = 'https://stl-mandaue-api.com';
 const DEFAULT_LDN_BASE = 'https://stl-ldn-api.com';
-const DEFAULT_TOKEN = 'Bearer 2860|OCyU72t1DzxdBeSjj3izVKCIcCwHkqNbwjRlxHp5';
+const DEFAULT_MANDAUE_TOKEN = process.env.MANDAUE_API_TOKEN || 'Bearer 4815|WiRvneX7taOznymk2LfjGEnEe7uflvfllOVJnrQx';
+const DEFAULT_LDN_TOKEN = process.env.LDN_API_TOKEN || 'Bearer 68621|OXjOetP6suz1RL1mF28pm1nkpATng9wEMSbyJXzA';
+const DEFAULT_TOKEN = DEFAULT_MANDAUE_TOKEN;
 const DEFAULT_SUPABASE_BASE = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://iatvnqefuzxvaotaibeu.supabase.co';
 const DEFAULT_SUPABASE_ANON = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhdHZucWVmdXp4dmFvdGFpYmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0Mjc0NTYsImV4cCI6MjEwNTAwMzQ1Nn0.R51uCfddbc60lnlI1xY-LVQNnVQPZpTrl2rpWyb-qgw';
 
@@ -12,7 +14,7 @@ export default async function handler(req, res) {
   // Response headers supporting REST and PostgREST protocol
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With, apikey, Prefer, Range, Range-Unit, Content-Profile, Accept-Profile');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With, apikey, Prefer, Range, Range-Unit, Content-Profile, Accept-Profile, x-gateway-token');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Range-Unit, Preference-Applied, Content-Length');
   res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
 
@@ -36,20 +38,46 @@ export default async function handler(req, res) {
       }
     }
 
+    // Unpack obfuscated payload if present (hides table names & actions from Request URL and Payload)
+    if (body.p) {
+      try {
+        const decoded = JSON.parse(Buffer.from(body.p, 'base64').toString('utf8'));
+        body = { ...decoded, ...body };
+        if (decoded.params && typeof decoded.params === 'object') {
+          for (const [k, v] of Object.entries(decoded.params)) {
+            query[k] = v;
+          }
+        }
+      } catch (decodeErr) {
+        console.warn('[Proxy] Payload decode warning:', decodeErr.message);
+      }
+    } else if (body.params && typeof body.params === 'object') {
+      for (const [k, v] of Object.entries(body.params)) {
+        query[k] = v;
+      }
+    }
+
     const action = (query.action || body.action || '').toLowerCase();
     const type = (query.type || body.type || '').toLowerCase();
-    let authHeader = req.headers['authorization'] || query.authHeader || body.authHeader || '';
+    let authHeader = req.headers['authorization'] || req.headers['x-gateway-token'] || query.authHeader || body.authHeader || '';
     if (!authHeader && (query.token || body.token)) {
       const rawTok = query.token || body.token;
       authHeader = rawTok.startsWith('Bearer ') ? rawTok : `Bearer ${rawTok}`;
     }
 
     let targetUrl = '';
-    let targetMethod = req.method;
+    let targetMethod = body.targetMethod || req.method;
     let reqBody = undefined;
 
+    // ─── 0. Action: Fast Time Sync (0 network credentials exposed) ─────────────
+    if (action === 'time') {
+      res.setHeader('Date', new Date().toUTCString());
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).json({ time: Date.now() });
+    }
+
     // ─── 1. Action: Save Commissions ──────────────────────────────────────────
-    if (action === 'save_commissions') {
+    else if (action === 'save_commissions') {
       res.setHeader('Content-Type', 'application/json');
       return res.status(200).json({
         success: true,
@@ -67,13 +95,11 @@ export default async function handler(req, res) {
       const to = query.to || body.to || from;
 
       const isLdn = endpoint.includes('ldn') || endpoint.includes('iligan');
-      if (isLdn && !authHeader) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(200).json({ success: true, data: [] });
-      }
       const baseUrl = isLdn ? DEFAULT_LDN_BASE : DEFAULT_MANDAUE_BASE;
       targetUrl = `${baseUrl}/api/accountant/UnclaimedReceipts?isClaim=${isClaim}&from=${from}&to=${to}`;
-      if (!authHeader) authHeader = DEFAULT_TOKEN;
+      if (!authHeader) {
+        authHeader = isLdn ? DEFAULT_LDN_TOKEN : DEFAULT_MANDAUE_TOKEN;
+      }
       targetMethod = 'GET';
     }
 
@@ -84,14 +110,12 @@ export default async function handler(req, res) {
       const from = query.from || body.from || '';
       const to = query.to || body.to || '';
       const isLdn = endpoint.includes('ldn') || endpoint.includes('iligan');
-      if (isLdn && !authHeader) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(200).json({ success: true, data: [] });
-      }
       const baseUrl = isLdn ? DEFAULT_LDN_BASE : DEFAULT_MANDAUE_BASE;
       const dateParams = from ? `&from=${from}&to=${to || from}` : '';
       targetUrl = `${baseUrl}/api/accountant/supervisor?id=${id}${dateParams}`;
-      if (!authHeader) authHeader = DEFAULT_TOKEN;
+      if (!authHeader) {
+        authHeader = isLdn ? DEFAULT_LDN_TOKEN : DEFAULT_MANDAUE_TOKEN;
+      }
       targetMethod = 'GET';
     }
 
@@ -100,26 +124,26 @@ export default async function handler(req, res) {
       const from = query.from || body.from || new Date().toISOString().slice(0, 10);
       const to = query.to || body.to || from;
       targetUrl = `${DEFAULT_MANDAUE_BASE}/api/accountant/UnclaimedReceipts?isClaim=0&from=${from}&to=${to}`;
-      if (!authHeader) authHeader = DEFAULT_TOKEN;
+      if (!authHeader) authHeader = DEFAULT_MANDAUE_TOKEN;
       targetMethod = 'GET';
     } else if (type === 'draw') {
       const drawId = query.drawId || body.drawId || '';
       const from = query.from || body.from || new Date().toISOString().slice(0, 10);
       const to = query.to || body.to || from;
       targetUrl = `${DEFAULT_MANDAUE_BASE}/api/accountant/UnclaimedReceipts?isClaim=0&from=${from}&to=${to}${drawId ? `&drawId=${drawId}` : ''}`;
-      if (!authHeader) authHeader = DEFAULT_TOKEN;
+      if (!authHeader) authHeader = DEFAULT_MANDAUE_TOKEN;
       targetMethod = 'GET';
     }
 
     // ─── 5. Action: Supabase PostgREST & Database Proxy ───────────────────────
-    else if (action === 'supabase' || (query.url && query.url.includes('supabase.co'))) {
-      const table = query.table || '';
-      let path = query.path || (table ? `/rest/v1/${table}` : '/rest/v1/');
+    else if (action === 'supabase' || (query.url && query.url.includes('supabase.co')) || (body.url && body.url.includes('supabase.co'))) {
+      const table = query.table || body.table || '';
+      let path = query.path || body.path || (table ? `/rest/v1/${table}` : '/rest/v1/');
       if (!path.startsWith('/')) path = `/${path}`;
 
       const searchParams = new URLSearchParams();
       for (const [k, v] of Object.entries(query)) {
-        if (!['action', 'table', 'path', 'url'].includes(k)) {
+        if (!['action', 'table', 'path', 'url', 'targetMethod', 'data', 'p', 'params'].includes(k)) {
           searchParams.append(k, v);
         }
       }
@@ -192,6 +216,9 @@ export default async function handler(req, res) {
     const apikey = req.headers['apikey'] || req.headers['Apikey'] || query.apikey || DEFAULT_SUPABASE_ANON;
     if (targetUrl.includes('supabase.co')) {
       headers['apikey'] = DEFAULT_SUPABASE_ANON;
+      if (!headers['Authorization']) {
+        headers['Authorization'] = `Bearer ${DEFAULT_SUPABASE_ANON}`;
+      }
     } else if (apikey) {
       headers['apikey'] = apikey;
     }
@@ -210,10 +237,11 @@ export default async function handler(req, res) {
 
     // Prepare request body for mutating methods
     if (['POST', 'PATCH', 'PUT'].includes(targetMethod)) {
-      if (typeof body === 'string') {
-        reqBody = body;
-      } else if (body && (typeof body === 'object') && Object.keys(body).length > 0) {
-        reqBody = JSON.stringify(body);
+      const dataPayload = body.data !== undefined ? body.data : body;
+      if (typeof dataPayload === 'string') {
+        reqBody = dataPayload;
+      } else if (dataPayload && (typeof dataPayload === 'object') && Object.keys(dataPayload).length > 0) {
+        reqBody = JSON.stringify(dataPayload);
       }
     }
 

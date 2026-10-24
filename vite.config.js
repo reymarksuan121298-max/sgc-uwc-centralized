@@ -124,6 +124,11 @@ export default defineConfig(({ mode }) => {
         allow: ['..'] // Allow serving files from one level up to the project root
       },
       proxy: {
+        '/realtime': {
+          target: 'https://iatvnqefuzxvaotaibeu.supabase.co',
+          changeOrigin: true,
+          ws: true
+        },
         '/api-proxy/stl-ldn': {
           target: 'https://stl-ldn-api.com',
           changeOrigin: true,
