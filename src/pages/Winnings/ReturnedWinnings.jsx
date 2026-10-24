@@ -324,22 +324,26 @@ export default function ReturnedWinnings({
         const transId = getTicketTransId(item).toLowerCase();
         const betCode = String(item.betCode || '').toLowerCase();
         const username = String(item.username || '').toLowerCase();
+        const supervisor = String(item.supervisor || '').toLowerCase();
         const claimant = String(item.fullName || item.outlet || '').toLowerCase();
         const betNo = String(item.betNo || '').toLowerCase();
         const action = String(item.action || '').toLowerCase();
         const reason = String(item.reason || '').toLowerCase();
-        return transId.includes(q) || betCode.includes(q) || username.includes(q) || claimant.includes(q) || betNo.includes(q) || action.includes(q) || reason.includes(q);
+        return transId.includes(q) || betCode.includes(q) || username.includes(q) || supervisor.includes(q) || claimant.includes(q) || betNo.includes(q) || action.includes(q) || reason.includes(q);
       });
     }
 
     return list;
   }, [scopedReturnedData, activeFilterTab, unremittedDepositItems, inactiveTellerItems, searchQuery]);
 
-  // Grouped active items by Username for table rendering
+  // Grouped active items by Supervisor/Username for table rendering
   const activeGroupedData = useMemo(() => {
     if (!displayItems.length) return {};
     return displayItems.reduce((acc, item) => {
-      const userKey = (item.username || 'UNASSIGNED-USER').trim().toUpperCase();
+      const rawSpvr = (item.supervisor || '').trim();
+      const rawUser = (item.username || '').trim();
+      const isGenericUser = !rawUser || rawUser.toLowerCase().startsWith('ssr-');
+      const userKey = ((isGenericUser && rawSpvr) ? rawSpvr : (rawSpvr || rawUser || 'UNASSIGNED-USER')).toUpperCase();
       (acc[userKey] = acc[userKey] || []).push(item);
       return acc;
     }, {});
@@ -897,7 +901,7 @@ export default function ReturnedWinnings({
                   <div className="bg-slate-200 border border-slate-300 px-3 py-2 rounded-lg flex items-center justify-between text-xs font-bold text-[#003366] uppercase">
                     <div className="flex items-center gap-1.5 truncate">
                       <UserCheck size={14} className={activeFilterTab === 'AUDIT_DELETED' ? "text-blue-600 shrink-0" : "text-emerald-600 shrink-0"} />
-                      <span className="truncate">{activeFilterTab === 'AUDIT_DELETED' ? `@${username} (Audit)` : `@${username}`}</span>
+                      <span className="truncate">{activeFilterTab === 'AUDIT_DELETED' ? `@${username} (Audit)` : (SUPERVISOR_NAMES[username?.toLowerCase()] ? `SUPERVISOR: ${SUPERVISOR_NAMES[username?.toLowerCase()]}` : `SUPERVISOR: @${username}`)}</span>
                     </div>
                     <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-slate-300 shrink-0">
                       {items.length} items

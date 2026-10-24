@@ -103,6 +103,26 @@ export const DEFAULT_SUPERVISOR_NAMES = {
   "25": "JOEL ESTORCO",
   "26": "HARRY EYA",
   "27": "CARL MANGRUBAN",
+
+  // Iligan Set A Supervisors
+  "steverodriguez@gfldn": "STEVE RODRIGUEZ",
+  "steverodriguez": "STEVE RODRIGUEZ",
+  "joelordona@gfldn": "JOEL ORDONA",
+  "joelordona": "JOEL ORDONA",
+  "hectorcandole@gfldn": "HECTOR CANDOLE",
+  "hectorcandole": "HECTOR CANDOLE",
+  "navexyrilhotilla@gfldn": "NAVEXYRIL HOTILLA",
+  "navexyrilhotilla": "NAVEXYRIL HOTILLA",
+  "frexyniesbacalso@gfldn": "FREXYNIES BACALSO",
+  "frexyniesbacalso": "FREXYNIES BACALSO",
+  "junriemorales@gfldn": "JUNRIE MORALES",
+  "junriemorales": "JUNRIE MORALES",
+  "cristianagaton@gfldn": "CRISTIAN AGATON",
+  "cristianagaton": "CRISTIAN AGATON",
+  "edmondgonzaga@gfldn": "EDMOND GONZAGA",
+  "edmondgonzaga": "EDMOND GONZAGA",
+  "camilojayminoza@gfldn": "CAMILO JAY MINOZA",
+  "camilojayminoza": "CAMILO JAY MINOZA"
 };
 /**
  * Checks if a supervisor username/key belongs to the allowed ILIGAN SET B supervisors
