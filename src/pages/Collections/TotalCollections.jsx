@@ -792,17 +792,27 @@ export default function TotalCollections({
                 />
               </div>
 
-              {/* Sub-Office Filter */}
-              <select
-                value={subOfficeFilter}
-                onChange={(e) => setSubOfficeFilter(e.target.value)}
-                className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 focus:border-[#002B66] outline-none"
-              >
-                <option value="ALL">All Branches ({uniqueSubOffices.length})</option>
-                {uniqueSubOffices.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
+              {/* Sub-Office Filter: Interactive for Admins; Locked badge for branch users */}
+              {isAdmin ? (
+                <select
+                  value={subOfficeFilter}
+                  onChange={(e) => setSubOfficeFilter(e.target.value)}
+                  className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 focus:border-[#002B66] outline-none"
+                >
+                  <option value="ALL">All Branches ({uniqueSubOffices.length})</option>
+                  {uniqueSubOffices.map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              ) : (
+                !isAdmin && currentUser?.sub_office && currentUser.sub_office !== 'All' && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black text-[#002B66]">
+                    <Building2 size={13} className="text-[#002B66]" />
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">BRANCH:</span>
+                    <span>{currentUser.sub_office}</span>
+                  </div>
+                )
+              )}
             </div>
 
             <div className="flex items-center gap-2 shrink-0">

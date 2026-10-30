@@ -14,7 +14,7 @@ import { isIncidentReportEligible, getTicketAgeInDays } from '../../utils/ticket
 import { getTicketTransId } from '../../utils/formatters';
 import CustomDatePicker from '../../components/common/CustomDatePicker';
 import ModernDropdown from '../../components/common/ModernDropdown';
-import { isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
+import { isSSRRole, isUnclaimedSpecialistRole, isAdminRole } from '../../utils/permissions';
 import { fetchAllIliganSupervisors, resolveSupervisorDisplayName, DEFAULT_SUPERVISOR_NAMES } from '../../services/supervisorService';
 
 const SUPERVISOR_NAMES = DEFAULT_SUPERVISOR_NAMES;
@@ -57,6 +57,8 @@ export default function UnclaimedRegistry({
   const [remarks, setRemarks] = useState(() => unclaimedRemarksService.getCachedRemarks());
   const [remarkModalData, setRemarkModalData] = useState(null);
   const [hoveredRemark, setHoveredRemark] = useState(null);
+
+  const isAdmin = isAdminRole(currentUser?.role) || isSuperAdmin;
 
   // Sync remarks from Supabase and listen for real-time updates
   useEffect(() => {
@@ -226,8 +228,8 @@ export default function UnclaimedRegistry({
               />
             </div>
 
-            {/* Sub-Office Selector (Visible for Unclaimed Specialists, Superadmin, and Centralized Admins to handle all SSRs) */}
-            {(!isSSRRole(currentUser?.role) || isUnclaimedSpecialistRole(currentUser?.role)) && subOfficeOptions.length > 0 && (
+            {/* Sub-Office Selector: Interactive dropdown for Administrators; Locked Branch badge for branch users */}
+            {isAdmin && subOfficeOptions.length > 0 ? (
               <ModernDropdown
                 icon={Building2}
                 label="SUB-OFFICE"
@@ -242,6 +244,14 @@ export default function UnclaimedRegistry({
                 ]}
                 searchable={subOfficeOptions.length > 5}
               />
+            ) : (
+              !isAdmin && currentUser?.sub_office && currentUser.sub_office !== 'All' && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200/90 rounded-xl shadow-xs">
+                  <Building2 size={15} className="text-[#002B66] shrink-0" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">SUB-OFFICE</span>
+                  <span className="text-xs font-black text-[#002B66]">{currentUser.sub_office}</span>
+                </div>
+              )
             )}
           </div>
 

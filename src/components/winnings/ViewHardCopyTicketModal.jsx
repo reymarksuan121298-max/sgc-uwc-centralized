@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { getTicketTransId, formatDrawTime } from '../../utils/formatters';
 import { canApproveDeletionRequests, isAdminRole, isSuperAdminRole } from '../../utils/permissions';
+import { supabase } from '../../config/supabaseClient';
 
 export default function ViewHardCopyTicketModal({
   isOpen,
@@ -22,6 +23,8 @@ export default function ViewHardCopyTicketModal({
   const [activeTab, setActiveTab] = useState('DETAILS');
   const [isImageLoading, setIsImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [resolvedImage, setResolvedImage] = useState(null);
+  const [fetchedDetails, setFetchedDetails] = useState(null);
 
   useEffect(() => {
     if (isOpen && ticket) {
@@ -29,26 +32,97 @@ export default function ViewHardCopyTicketModal({
       setImageError(false);
       setZoom(1);
       setRotation(0);
+
+      const directImg = ticket.attachment_url || 
+                        ticket.deletion_request_attachment || 
+                        ticket.hard_copy_ticket_url || 
+                        ticket.deletion_attachment_url || 
+                        ticket.receipt_url || 
+                        ticket.proof_url ||
+                        ticket.proof_photo ||
+                        ticket.ocr_data?.hard_copy_image || 
+                        ticket.ocr_data?.ticket_image ||
+                        ticket.image_url || null;
+
+      setResolvedImage(directImg);
+      setFetchedDetails(null);
+
+      // If direct image or full details are missing, fetch from returned_winnings / deletion requests
+      const transId = getTicketTransId(ticket, '');
+      const refId = ticket.returned_winnings_id || ticket.id;
+
+      if (!directImg || (!ticket.winAmount && !ticket.win_amount)) {
+        let isCancelled = false;
+        const fetchTicketProof = async () => {
+          try {
+            // 1. Try returned_winnings
+            let rwQuery = supabase.from('returned_winnings').select('*');
+            if (refId && typeof refId === 'string' && refId.length > 20) {
+              rwQuery = rwQuery.or(`id.eq.${refId},transactionId.eq.${transId}`);
+            } else if (transId) {
+              rwQuery = rwQuery.eq('transactionId', transId);
+            }
+            const { data: rwData } = await rwQuery.limit(1);
+
+            if (!isCancelled && rwData && rwData.length > 0) {
+              const rwItem = rwData[0];
+              setFetchedDetails(rwItem);
+              const imgFromRw = rwItem.deletion_request_attachment || 
+                                rwItem.hard_copy_ticket_url || 
+                                rwItem.ocr_data?.hard_copy_image || 
+                                rwItem.ocr_data?.ticket_image || 
+                                rwItem.receipt_url;
+              if (imgFromRw && !directImg) {
+                setResolvedImage(imgFromRw);
+              }
+            } else if (!isCancelled && !directImg && transId) {
+              // 2. Try returned_winnings_deletion_requests table
+              const { data: delData } = await supabase
+                .from('returned_winnings_deletion_requests')
+                .select('*')
+                .eq('transaction_id', transId)
+                .limit(1);
+
+              if (!isCancelled && delData && delData.length > 0) {
+                const delItem = delData[0];
+                if (delItem.attachment_url) {
+                  setResolvedImage(delItem.attachment_url);
+                }
+                setFetchedDetails(delItem);
+              }
+            }
+          } catch (fetchErr) {
+            console.warn('Async ticket proof fetch warning:', fetchErr);
+          }
+        };
+        fetchTicketProof();
+        return () => { isCancelled = true; };
+      }
     }
   }, [isOpen, ticket]);
 
   if (!isOpen || !ticket) return null;
 
   const transId = getTicketTransId(ticket, 'N/A');
-  const winAmount = parseFloat(ticket.winAmount ?? 0);
-  const betAmount = parseFloat(ticket.betAmount ?? 0);
-  const displayAccount = ticket.fullName || ticket.outlet || ticket.username || 'Accountable Teller';
-  const drawFormatted = formatDrawTime(ticket.drawTime || ticket.draw, ticket.drawDate || ticket.date || ticket.created_at);
-  const reason = ticket.deletion_request_reason || ticket.reason || 'Requested deletion for verified claimed winning ticket.';
-  const requestedBy = ticket.deletion_request_by || ticket.username || 'SSR / Specialist';
-  const requestDate = ticket.updated_at || ticket.created_at;
+  const winAmount = parseFloat(ticket.winAmount ?? ticket.win_amount ?? fetchedDetails?.winAmount ?? fetchedDetails?.win_amount ?? 0);
+  const betAmount = parseFloat(ticket.betAmount ?? ticket.bet_amount ?? fetchedDetails?.betAmount ?? fetchedDetails?.bet_amount ?? 0);
+  const displayAccount = ticket.fullName || ticket.teller_outlet || ticket.outlet || ticket.username || fetchedDetails?.fullName || fetchedDetails?.teller_outlet || 'Accountable Teller';
+  const drawTimeVal = ticket.drawTime || ticket.draw_time || ticket.draw || fetchedDetails?.drawTime || fetchedDetails?.draw_time;
+  const drawDateVal = ticket.drawDate || ticket.draw_date || ticket.date || ticket.created_at || fetchedDetails?.drawDate || fetchedDetails?.draw_date;
+  const drawFormatted = formatDrawTime(drawTimeVal, drawDateVal);
+  const reason = ticket.deletion_request_reason || ticket.reason || fetchedDetails?.reason || fetchedDetails?.deletion_request_reason || 'Requested deletion for verified claimed winning ticket.';
+  const requestedBy = ticket.deletion_request_by || ticket.requested_by || ticket.username || fetchedDetails?.requested_by || fetchedDetails?.deletion_request_by || 'SSR / Specialist';
+  const requestDate = ticket.requested_at || ticket.updated_at || ticket.created_at || fetchedDetails?.requested_at || fetchedDetails?.created_at;
 
-  // Extract ticket attachment image
-  const ticketImage = ticket.deletion_request_attachment || 
+  // Extract ticket attachment image (supports attachment_url from deletion requests)
+  const ticketImage = resolvedImage || 
+                      ticket.attachment_url || 
+                      ticket.deletion_request_attachment || 
                       ticket.hard_copy_ticket_url || 
                       ticket.deletion_attachment_url || 
                       ticket.receipt_url || 
                       ticket.proof_url ||
+                      ticket.proof_photo ||
                       ticket.ocr_data?.hard_copy_image || 
                       ticket.ocr_data?.ticket_image ||
                       ticket.image_url;
@@ -311,13 +385,13 @@ export default function ViewHardCopyTicketModal({
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                   <span className="font-sans text-slate-500 font-bold">Bet / Combination:</span>
                   <span className="font-extrabold text-[#002B66] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {ticket.betNo || ticket.combination || 'N/A'}
+                    {ticket.betNo || ticket.bet_no || ticket.combination || ticket.CombiNo || fetchedDetails?.betNo || fetchedDetails?.bet_no || 'N/A'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                   <span className="font-sans text-slate-500 font-bold">Sub-Office:</span>
                   <span className="font-bold text-slate-800 uppercase">
-                    {ticket.sub_office || currentUser?.sub_office || 'All'}
+                    {ticket.sub_office || ticket.subOffice || fetchedDetails?.sub_office || currentUser?.sub_office || 'All'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">

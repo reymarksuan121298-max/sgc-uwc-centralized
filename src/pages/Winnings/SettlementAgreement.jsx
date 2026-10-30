@@ -18,10 +18,17 @@ import {
 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
+import { systemService } from '../../services/systemService';
+import {
+  DEFAULT_SUPERVISOR_NAMES as SUPERVISORS,
+  resolveSupervisorDisplayName,
+  fetchAllIliganSupervisors
+} from '../../services/supervisorService';
 import ModernDropdown from '../../components/common/ModernDropdown';
 import TransactionSelectSearch from '../../components/winnings/TransactionSelectSearch';
 import InstallmentDatePicker from '../../components/winnings/InstallmentDatePicker';
 import { getLocalDateString } from '../../utils/dateFormatting';
+import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
 
 const FREQUENCY_OPTIONS = [
   {
@@ -42,51 +49,6 @@ const FREQUENCY_OPTIONS = [
   }
 ];
 
-const SUPERVISORS = {
-  // Numeric IDs from backend database
-  "21": "ARLFRED SABERON",
-  "22": "RAFFY BAGUIO",
-  "23": "ROEL CATALAN",
-  "24": "MICHAEL DE GUZMAN",
-  "25": "JOEL ESTORCO",
-  "26": "HARRY EYA",
-  "27": "CARL MANGRUBAN",
-  "28": "JED MELENDREZ",
-  "29": "NYOR SESALDO",
-  "30": "NARCISO TAGUD JR.",
-  "31": "MOLLY BATUBALANOS",
-  "32": "COORDINATOR - APPLEGROUP",
-
-  // Username and handle keys
-  "spvr-arlfred": "ARLFRED SABERON",
-  "spvr-raffy": "RAFFY BAGUIO",
-  "spvr-roel": "ROEL CATALAN",
-  "spvr-michael": "MICHAEL DE GUZMAN",
-  "spvr-joel": "JOEL ESTORCO",
-  "spvr-eya": "HARRY EYA",
-  "spvr-carl": "CARL MANGRUBAN",
-  "spvr-jed": "JED MELENDREZ",
-  "spvr-nyor": "NYOR SESALDO",
-  "spvr-jason": "NARCISO TAGUD JR.",
-  "spvr-molly": "MOLLY BATUBALANOS",
-  "spvr-apple": "COORDINATOR - APPLEGROUP",
-
-  // ILIGAN SET B Supervisors
-  "jasonmabini@gfldn": "JASON F. MABINI",
-  "jasonmabini": "JASON F. MABINI",
-  "jessentpizon@gfldn": "JESSENT M. PIZON",
-  "jessentpizon": "JESSENT M. PIZON",
-  "jacksonslimpangog@gfldn": "JACKSON S. LIMPANGOG",
-  "jacksonslimpangog": "JACKSON S. LIMPANGOG",
-  "rielmpizon@gfldn": "RIEL M. PIZON",
-  "rielmpizon": "RIEL M. PIZON",
-  "ianjohnmbalala@gfldn": "IAN JOHN M. BALALA",
-  "ianjohnmbalala": "IAN JOHN M. BALALA",
-  "ivankennethg.agcopra@gfldn": "IVAN KENNETH G. AGCOPRA",
-  "ivankennethg.agcopra": "IVAN KENNETH G. AGCOPRA",
-  "coor@gfldn": "AGENTS UNDER COORDINATOR",
-  "coor": "AGENTS UNDER COORDINATOR"
-};
 
 const getSemiMonthlyDueDate = (startDateStr, installmentIndex) => {
   const date = new Date(`${startDateStr}T00:00:00`);
@@ -342,10 +304,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const [activeSubTab, setActiveSubTab] = useState('create');
   const [currentStep, setCurrentStep] = useState(1);
 
+  const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
+
   // Sub-Office Scoping State
   const [dbSubOffices, setDbSubOffices] = useState([]);
   const [selectedSubOfficeFilter, setSelectedSubOfficeFilter] = useState(() => {
-    return currentUser?.sub_office && currentUser.sub_office !== 'All' ? currentUser.sub_office : 'ALL';
+    return (!isAdmin && currentUser?.sub_office && currentUser.sub_office !== 'All') ? currentUser.sub_office : 'ALL';
   });
 
   useEffect(() => {
@@ -470,12 +434,113 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const [customAmount, setCustomAmount] = useState('500');
   const [frequency, setFrequency] = useState('weekly');
 
+  // Dynamic Supervisors from Supervisor Service
+  const [dynamicSupervisors, setDynamicSupervisors] = useState({});
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadSupervisors = async () => {
+      try {
+        const settings = await systemService.fetchSettings();
+        let endpoints = [];
+        if (settings && Array.isArray(settings)) {
+          settings.forEach(row => {
+            if (row.key === 'api_endpoints' || row.key === 'gateway_endpoints') {
+              try {
+                const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                if (Array.isArray(parsed)) endpoints = parsed;
+              } catch {}
+            }
+          });
+        }
+        const supervisors = await fetchAllIliganSupervisors(endpoints);
+        if (isMounted && supervisors && Object.keys(supervisors).length > 0) {
+          setDynamicSupervisors(supervisors);
+        }
+      } catch (err) {
+        console.warn('Failed to load dynamic supervisors in SettlementAgreement:', err);
+      }
+    };
+    loadSupervisors();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Robust resolution of Sales Supervisor using supervisorService
+  const resolveSupervisorForTicket = (ticket) => {
+    if (!ticket) return null;
+
+    const matchSupervisorKey = (val) => {
+      if (!val) return null;
+      const str = String(val).trim();
+      if (!str || str.toLowerCase() === 'sales supervisor' || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'null') {
+        return null;
+      }
+
+      const lower = str.toLowerCase();
+      const prefix = lower.split('@')[0];
+      const withoutSpvr = lower.replace(/^spvr-/, '');
+      const withSpvr = `spvr-${withoutSpvr}`;
+
+      // 1. Dynamic Map check (from live gateway API endpoints)
+      if (dynamicSupervisors) {
+        if (dynamicSupervisors[lower]) return dynamicSupervisors[lower];
+        if (dynamicSupervisors[prefix]) return dynamicSupervisors[prefix];
+        if (dynamicSupervisors[withoutSpvr]) return dynamicSupervisors[withoutSpvr];
+        if (dynamicSupervisors[withSpvr]) return dynamicSupervisors[withSpvr];
+      }
+
+      // 2. Static Map check (from DEFAULT_SUPERVISOR_NAMES / SUPERVISORS)
+      if (SUPERVISORS[lower]) return SUPERVISORS[lower];
+      if (SUPERVISORS[prefix]) return SUPERVISORS[prefix];
+      if (SUPERVISORS[withoutSpvr]) return SUPERVISORS[withoutSpvr];
+      if (SUPERVISORS[withSpvr]) return SUPERVISORS[withSpvr];
+
+      // 3. Fallback resolution via resolveSupervisorDisplayName
+      const resolved = resolveSupervisorDisplayName(lower, dynamicSupervisors);
+      if (resolved && resolved !== 'N/A' && resolved.toLowerCase() !== lower && !/^\d+$/.test(resolved)) {
+        return resolved;
+      }
+
+      // 4. If str is already an explicit name (not numeric ID, not email, not spvr- handle)
+      if (!/^\d+$/.test(str) && !str.includes('@') && !str.toLowerCase().startsWith('spvr-')) {
+        return str.toUpperCase();
+      }
+
+      return null;
+    };
+
+    // Candidate 1: ticket.supervisor (numeric ID e.g. 7, 21, 35, 46, or email)
+    const supMatch = matchSupervisorKey(ticket.supervisor);
+    if (supMatch) return supMatch;
+
+    // Candidate 2: ticket.supervisor_name or ticket.supervisorName
+    const nameMatch = matchSupervisorKey(ticket.supervisor_name || ticket.supervisorName);
+    if (nameMatch) return nameMatch;
+
+    // Candidate 3: ticket.username (in STL LDN / Mandaue, username is often the supervisor account)
+    const usernameMatch = matchSupervisorKey(ticket.username);
+    if (usernameMatch) return usernameMatch;
+
+    // Candidate 4: ticket.user
+    const userMatch = matchSupervisorKey(typeof ticket.user === 'object' ? (ticket.user?.supervisor || ticket.user?.username || ticket.user?.name) : ticket.user);
+    if (userMatch) return userMatch;
+
+    // Candidate 5: ticket.signatories?.supervisor
+    const signatoriesMatch = matchSupervisorKey(ticket.signatories?.supervisor);
+    if (signatoriesMatch) return signatoriesMatch;
+
+    return null;
+  };
+
   // States for Editable Signatories
   const [hrManagerName, setHrManagerName] = useState('QUENNIE CAPUYAN');
   const [supervisorName, setSupervisorName] = useState(() => {
-    if (!currentUser) return 'Sales Supervisor';
-    const name = currentUser.full_name || currentUser.fullName || currentUser.name || currentUser.username;
-    return name ? name.toUpperCase() : 'SALES SUPERVISOR';
+    const isSpvr = currentUser?.role?.toLowerCase().includes('supervisor');
+    if (isSpvr) {
+      const cName = currentUser?.full_name || currentUser?.fullName || currentUser?.name || currentUser?.username;
+      return cName ? cName.toUpperCase() : 'SALES SUPERVISOR';
+    }
+    return 'SALES SUPERVISOR';
   });
 
   const [installments, setInstallments] = useState(() =>
@@ -495,55 +560,140 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       ) || null
     : null;
 
-  // Auto-update supervisorName based on selectedTicket's supervisor ID
+  // Auto-select first available ticket if selectedTicketId is not set
+  useEffect(() => {
+    if (!selectedTicketId && availableTickets.length > 0) {
+      const firstId = getSelectedTicketId(availableTickets[0]);
+      if (firstId) setSelectedTicketId(firstId);
+    }
+  }, [availableTickets, selectedTicketId]);
+
+  // Auto-update supervisorName based on selectedTicket's supervisor resolution
   useEffect(() => {
     if (selectedTicket) {
-      if (selectedTicket.supervisor && SUPERVISORS[selectedTicket.supervisor]) {
-        setSupervisorName(SUPERVISORS[selectedTicket.supervisor]);
+      const resolved = resolveSupervisorForTicket(selectedTicket);
+      if (resolved) {
+        setSupervisorName(resolved);
       } else {
-        const name = currentUser?.full_name || currentUser?.fullName || currentUser?.name || currentUser?.username;
-        setSupervisorName(name ? name.toUpperCase() : 'SALES SUPERVISOR');
+        const isSpvr = currentUser?.role?.toLowerCase().includes('supervisor');
+        if (isSpvr) {
+          const cName = currentUser?.full_name || currentUser?.fullName || currentUser?.name || currentUser?.username;
+          setSupervisorName(cName ? cName.toUpperCase() : 'SALES SUPERVISOR');
+        } else {
+          setSupervisorName('SALES SUPERVISOR');
+        }
       }
     }
-  }, [selectedTicket, currentUser]);
+  }, [selectedTicket, dynamicSupervisors, currentUser]);
+
+  const availableSupervisorNames = useMemo(() => {
+    const namesSet = new Set();
+    Object.values(dynamicSupervisors || {}).forEach(name => {
+      if (name && typeof name === 'string' && name.length > 2 && !/^\d+$/.test(name)) {
+        namesSet.add(name.trim().toUpperCase());
+      }
+    });
+    Object.values(SUPERVISORS || {}).forEach(name => {
+      if (name && typeof name === 'string' && name.length > 2 && !/^\d+$/.test(name)) {
+        namesSet.add(name.trim().toUpperCase());
+      }
+    });
+    return Array.from(namesSet).sort();
+  }, [dynamicSupervisors]);
 
   const ticketSubOffice = selectedTicket?.sub_office || selectedTicket?.subOffice || selectedTicket?.branch || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Central Office'));
 
-  // Helper: resolve physical address from dbSubOffices by name
-  const getSubOfficeAddress = (name) => {
+  // Reactive sub-office metadata resolution via centralized systemService
+  const [resolvedOfficeMeta, setResolvedOfficeMeta] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const resolveMeta = async () => {
+      try {
+        const meta = await systemService.resolveSubOfficeDetails(ticketSubOffice);
+        if (isMounted) {
+          setResolvedOfficeMeta(meta);
+        }
+      } catch (err) {
+        console.warn('Failed to resolve sub-office metadata:', err);
+      }
+    };
+    resolveMeta();
+    return () => {
+      isMounted = false;
+    };
+  }, [ticketSubOffice, dbSubOffices]);
+
+  // Helper: resolve matching sub-office record from dbSubOffices
+  const findSubOfficeMatch = (name) => {
+    if (!name || !dbSubOffices.length) return null;
+    const search = String(name).trim();
     const cleanStr = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanSearch = cleanStr(name);
-    const defaultAddress = 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City';
+    const cleanSearch = cleanStr(search);
 
-    if (!name || !dbSubOffices.length) {
-      return (!name || name.toLowerCase().includes('mandaue'))
-        ? defaultAddress
-        : 'Address not listed – please update sub-office configuration';
-    }
+    // 1. Exact match
+    let match = dbSubOffices.find((so) => (so.name || '').toLowerCase().trim() === search.toLowerCase());
+    if (match) return match;
 
-    let match = dbSubOffices.find(
-      (so) => (so.name || '').toLowerCase().trim() === (name || '').toLowerCase().trim()
+    // 2. Contains match
+    match = dbSubOffices.find(
+      (so) =>
+        (so.name && so.name.toLowerCase().includes(search.toLowerCase())) ||
+        (search && search.toLowerCase().includes((so.name || '').toLowerCase().trim()))
     );
-    if (!match && name) {
-      match = dbSubOffices.find(
-        (so) =>
-          (so.name && so.name.toLowerCase().includes(name.toLowerCase().trim())) ||
-          (name && name.toLowerCase().includes((so.name || '').toLowerCase().trim()))
-      );
-    }
-    if (!match && cleanSearch) {
+    if (match) return match;
+
+    // 3. Cleaned alphanumeric match
+    if (cleanSearch) {
       match = dbSubOffices.find((so) => {
         const cName = cleanStr(so.name);
-        return (cName && cleanSearch) && (cName.includes(cleanSearch) || cleanSearch.includes(cName));
+        return cName && (cName.includes(cleanSearch) || cleanSearch.includes(cName));
       });
+      if (match) return match;
+
+      // 4. Franchise match
+      match = dbSubOffices.find((so) => {
+        const cFran = cleanStr(so.franchise_name);
+        return cFran && (cFran.includes(cleanSearch) || cleanSearch.includes(cFran));
+      });
+      if (match) return match;
+
+      // 5. Special aliases
+      if (cleanSearch.includes('mandaue')) {
+        match = dbSubOffices.find(so => cleanStr(so.name).includes('mandaue'));
+      } else if (cleanSearch.includes('iligan') && (cleanSearch.includes('b') || cleanSearch.endsWith('b'))) {
+        match = dbSubOffices.find(so => cleanStr(so.name).includes('iligan') && cleanStr(so.name).includes('b'));
+      } else if (cleanSearch.includes('iligan')) {
+        match = dbSubOffices.find(so => cleanStr(so.name).includes('iligan') && (cleanStr(so.name).includes('a') || !cleanStr(so.name).includes('b'))) || dbSubOffices.find(so => cleanStr(so.name).includes('iligan'));
+      } else if (cleanSearch.includes('baloi')) {
+        match = dbSubOffices.find(so => cleanStr(so.name).includes('baloi'));
+      } else if (cleanSearch.includes('lala')) {
+        match = dbSubOffices.find(so => cleanStr(so.name).includes('lala'));
+      }
     }
-    if (!match && (cleanSearch.includes('mandaue') || !cleanSearch)) {
-      match = dbSubOffices.find((so) => (so.name || '').toLowerCase().includes('mandaue')) || dbSubOffices[0];
-    }
-    return match?.location || match?.address || (name.toLowerCase().includes('mandaue') ? defaultAddress : 'Address not listed – please update sub-office configuration');
+    return match || null;
   };
 
-  const ticketSubOfficeAddress = getSubOfficeAddress(ticketSubOffice);
+  const getSubOfficeAddress = (name) => {
+    if (resolvedOfficeMeta && String(ticketSubOffice).toLowerCase() === String(name).toLowerCase()) {
+      return resolvedOfficeMeta.address || resolvedOfficeMeta.location || '';
+    }
+    const match = findSubOfficeMatch(name);
+    return match?.location || match?.address || '';
+  };
+
+  const getSubOfficeLogo = (name) => {
+    if (resolvedOfficeMeta && String(ticketSubOffice).toLowerCase() === String(name).toLowerCase()) {
+      return resolvedOfficeMeta.logo_url || '';
+    }
+    const match = findSubOfficeMatch(name);
+    if (!match) return (name && name.toLowerCase().includes('mandaue')) ? '/lbp.png' : '';
+    const isMandaue = (match.name || '').toLowerCase().includes('mandaue') || (match.franchise_name || '').toLowerCase().includes('lucky betplay');
+    return match.logo_url || (isMandaue ? '/lbp.png' : '');
+  };
+
+  const ticketSubOfficeAddress = resolvedOfficeMeta?.address || getSubOfficeAddress(ticketSubOffice);
+  const ticketSubOfficeLogo = resolvedOfficeMeta?.logo_url || getSubOfficeLogo(ticketSubOffice);
 
   const getSelectedTicketId = (ticket) => ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
   const getWinAmount = (ticket) => parseFloat(ticket?.winAmount || 5000);
@@ -627,6 +777,18 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const handleTicketChange = (ticketId) => {
     const nextTicket = availableTickets.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
     setSelectedTicketId(ticketId);
+    if (nextTicket) {
+      const targetOffice = nextTicket.sub_office || nextTicket.subOffice || nextTicket.branch;
+      if (targetOffice) {
+        systemService.resolveSubOfficeDetails(targetOffice).then((meta) => {
+          if (meta) setResolvedOfficeMeta(meta);
+        });
+      }
+      const resolved = resolveSupervisorForTicket(nextTicket);
+      if (resolved) {
+        setSupervisorName(resolved);
+      }
+    }
     const winAmt = getWinAmount(nextTicket);
     const perInst = (winAmt / installmentsCount).toFixed(2);
     setCustomAmount(perInst);
@@ -968,8 +1130,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           </button>
         </div>
 
-        {/* Sub-Office Filter Dropdown */}
-        {(!currentUser?.sub_office || currentUser.sub_office === 'All') && dbSubOffices.length > 0 && (
+        {/* Sub-Office Scope: Interactive dropdown for Administrators; Locked Branch badge for branch users */}
+        {isAdmin && dbSubOffices.length > 0 ? (
           <ModernDropdown
             icon={Building2}
             label="Sub-Office Scope"
@@ -984,6 +1146,14 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
             ]}
             searchable={dbSubOffices.length > 5}
           />
+        ) : (
+          !isAdmin && currentUser?.sub_office && currentUser.sub_office !== 'All' && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200/90 rounded-xl shadow-xs">
+              <Building2 size={15} className="text-[#002B66] shrink-0" />
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">SUB-OFFICE</span>
+              <span className="text-xs font-black text-[#002B66]">{currentUser.sub_office}</span>
+            </div>
+          )
         )}
       </div>
 
@@ -1071,8 +1241,15 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                         <span className="bg-blue-50 text-[#002B66] border border-blue-200 font-mono font-bold px-2.5 py-1 rounded-lg text-xs">
                           {item.transactionId}
                         </span>
-                        <span className="bg-amber-50 text-amber-900 border border-amber-200 font-sans font-bold px-2.5 py-1 rounded-lg text-[10px] uppercase flex items-center gap-1">
-                          <Building2 size={11} className="text-amber-700" />
+                        <span className="bg-amber-50 text-amber-900 border border-amber-200 font-sans font-bold px-2.5 py-1 rounded-lg text-[10px] uppercase flex items-center gap-1.5">
+                          {(() => {
+                            const officeLogo = getSubOfficeLogo(item.sub_office);
+                            return officeLogo ? (
+                              <img src={officeLogo} alt="" className="w-3.5 h-3.5 object-contain rounded shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                            ) : (
+                              <Building2 size={11} className="text-amber-700" />
+                            );
+                          })()}
                           {item.sub_office || 'Mandaue Central'}
                         </span>
                         <span className="text-xs font-bold text-slate-700">
@@ -1218,6 +1395,31 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 <p className="text-[11px] text-slate-500 font-semibold">Complete each section in order before saving or printing.</p>
               </div>
             </div>
+
+            {/* Branch Identity Badge with Uploaded Logo */}
+            <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center p-0.5 shrink-0 overflow-hidden shadow-2xs">
+                {ticketSubOfficeLogo ? (
+                  <img
+                    src={ticketSubOfficeLogo}
+                    alt={`${ticketSubOffice} Logo`}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    className="w-full h-full object-contain rounded"
+                  />
+                ) : (
+                  <Building2 size={16} className="text-[#002B66]" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Sub-Office:</span>
+                  <span className="text-xs font-black text-[#002B66]">{ticketSubOffice}</span>
+                </div>
+                {ticketSubOfficeAddress && (
+                  <span className="text-[10px] text-slate-500 font-medium block truncate max-w-xs">{ticketSubOfficeAddress}</span>
+                )}
+              </div>
+            </div>
             {currentStep === 4 && (
               <div className="flex items-center gap-2">
                 <button onClick={handleSave} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm transition-all cursor-pointer active:scale-95">
@@ -1252,17 +1454,26 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           <div id="settlement-agreement-print-area" className={`${currentStep === 4 ? 'bg-white border border-slate-300 rounded-xl shadow-md p-6 sm:p-8 max-w-4xl mx-auto' : 'bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs'} space-y-6 text-slate-900 font-sans w-full print:w-full print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0`}>
 
             {/* HEADER WITH LOGOS */}
-            <div className={`${currentStep === 4 ? '' : 'hidden'} flex justify-between items-center border-b-2 border-[#002B66] pb-1`}>
+            <div className={`${currentStep === 2 || currentStep === 4 ? '' : 'hidden'} print:flex flex justify-between items-center border-b-2 border-[#002B66] pb-1`}>
               <div className="flex items-center gap-3">
-                <img
-                  src="/lbp.png"
-                  alt="Centralized Logo"
-                  className="w-12 h-12 object-contain rounded"
-                />
+                {ticketSubOfficeLogo ? (
+                  <img
+                    src={ticketSubOfficeLogo}
+                    alt={`${ticketSubOffice} Logo`}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    className="w-12 h-12 object-contain rounded"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-slate-100 flex items-center justify-center text-[#002B66] border border-slate-200 shrink-0">
+                    <Building2 size={24} />
+                  </div>
+                )}
                 <div>
                   <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
                   <p className="text-[9.5px] text-slate-700 font-bold uppercase tracking-wider">SUB-OFFICE: {ticketSubOffice}</p>
-                  <p className="text-[8.5px] text-slate-400 font-semibold">{ticketSubOfficeAddress}</p>
+                  {ticketSubOfficeAddress && (
+                    <p className="text-[8.5px] text-slate-400 font-semibold">{ticketSubOfficeAddress}</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1274,7 +1485,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               </div>
             </div>
 
-            <div className={`${currentStep === 4 ? '' : 'hidden'} text-center space-y-1`}>
+            <div className={`${currentStep === 2 || currentStep === 4 ? '' : 'hidden'} text-center space-y-1`}>
               <h2 className="text-sm font-black text-[#002B66] tracking-wider uppercase">SETTLEMENT AGREEMENT</h2>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">UNCLAIMED WINNING & PAYMENT SCHEDULE</p>
             </div>
@@ -1555,8 +1766,14 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                     value={supervisorName}
                     onChange={(e) => setSupervisorName(e.target.value)}
                     className="w-full border-b border-slate-900 pb-0.5 leading-none font-bold uppercase text-slate-900 text-center bg-transparent outline-none"
+                    list="sales-supervisors-datalist"
                     placeholder="Enter Supervisor Name"
                   />
+                  <datalist id="sales-supervisors-datalist">
+                    {availableSupervisorNames.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
                   <div className="text-[10px] font-extrabold uppercase text-slate-600 leading-tight space-y-0.5 pt-1">
                     <div>SALES SUPERVISOR</div>
                     <div className="font-normal normal-case text-slate-500">Witness / Signature over Printed Name</div>

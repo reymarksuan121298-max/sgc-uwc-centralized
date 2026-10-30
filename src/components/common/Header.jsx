@@ -13,6 +13,7 @@ import { formatRoleName, isSSRRole, isUnclaimedSpecialistRole, isAdminRole, isOp
 import { notificationService } from '../../services/notificationService';
 import { presenceService } from '../../services/presenceService';
 import { userService } from '../../services/userService';
+import { systemService } from '../../services/systemService';
 import CreateGroupChatModal from '../chat/CreateGroupChatModal';
 import AgentMascotAvatar from '../chat/AgentMascotAvatar';
 
@@ -149,6 +150,45 @@ export default function Header({
   const [chatCategory, setChatCategory] = useState('all'); // 'all' | 'groups' | 'direct'
   const [latestMessages, setLatestMessages] = useState({});
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+
+  // Load and listen to full sub-offices to resolve dynamic franchise branding for currentUser
+  const [subOfficesList, setSubOfficesList] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadSubOffices = async () => {
+      try {
+        const data = await systemService.fetchFullSubOffices();
+        if (isMounted && data) {
+          setSubOfficesList(data);
+        }
+      } catch (err) {
+        console.warn('Header: Failed to load sub-offices for franchise branding:', err);
+      }
+    };
+
+    loadSubOffices();
+
+    const channel = supabase
+      .channel('header_sub_offices_branding_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_offices' }, () => {
+        systemService.invalidateCache();
+        loadSubOffices();
+      })
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const portalBrandTitle = useMemo(() => {
+    if (isAdminRole(currentUser?.role)) {
+      return 'CENTRALIZED PORTAL';
+    }
+    return systemService.getPortalBrandName(currentUser?.sub_office, subOfficesList);
+  }, [currentUser?.role, currentUser?.sub_office, subOfficesList]);
 
   const isCallNotification = (n) => {
     if (!n) return false;
@@ -641,10 +681,11 @@ export default function Header({
 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md hidden sm:inline">
-              MANDAUE STL PORTAL
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-[#001D47] via-[#002B66] to-[#003B80] text-[#FFD700] border border-[#FFD700]/30 shadow-xs hidden sm:inline-flex">
+              <Shield size={10} className="text-[#FFD700]" />
+              {portalBrandTitle}
             </span>
-            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               Live Gateway Active
             </span>

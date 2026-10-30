@@ -1,6 +1,6 @@
 import { supabase } from '../config/supabaseClient';
 import { getLocalDateString } from '../utils/dateFormatting';
-import { isSSRRole } from '../utils/permissions';
+import { isSSRRole, isAdminRole } from '../utils/permissions';
 import { notificationService } from './notificationService';
 
 /**
@@ -31,8 +31,8 @@ export const evaluateSettlementDueDates = async ({ currentUser = null, todayOver
       .not('settlementTerms', 'is', null)
       .neq('settlementStatus', 'FULLY PAID');
 
-    // Scoping for branch SSR users
-    if (currentUser && isSSRRole(currentUser?.role) && currentUser?.sub_office && currentUser.sub_office !== 'All') {
+    // Scoping for non-admin branch users (Unclaimed Specialists & SSR)
+    if (currentUser && !isAdminRole(currentUser?.role) && currentUser?.sub_office && currentUser.sub_office !== 'All') {
       query = query.ilike('sub_office', currentUser.sub_office);
     }
 

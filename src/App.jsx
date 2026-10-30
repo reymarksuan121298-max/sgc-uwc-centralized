@@ -548,9 +548,9 @@ export default function App() {
         .from('returned_winnings')
         .select('*');
 
-      // If user is a restricted SSR, filter returned winnings by their assigned sub-office
-      const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
-      if (isRestrictedBranchSSR) {
+      // If user is a branch user (Unclaimed Specialist or SSR), filter returned winnings by their assigned sub-office
+      const isRestrictedBranchUser = !isAdminRole(currentUser?.role) && currentUser?.sub_office && currentUser.sub_office !== 'All';
+      if (isRestrictedBranchUser) {
         query = query.ilike('sub_office', currentUser.sub_office);
       }
 
@@ -560,7 +560,7 @@ export default function App() {
     } catch (err) {
       console.warn("Returned winnings fetch:", err.message);
     }
-  }, [currentUser, isSSR]);
+  }, [currentUser]);
 
   const handleTicketVerifiedFromChat = useCallback(async (transId) => {
     if (transId) {
@@ -608,11 +608,11 @@ export default function App() {
       let targetEndpoints = [];
 
       if (epsToUse && epsToUse.length > 0) {
-        // Sales Service Representatives (SSR) are restricted to their assigned sub-office
-        // Unclaimed Specialists & Admins have full access to handle all SSR / Sub-Office records
-        const isRestrictedBranchSSR = isSSR && currentUser?.sub_office && currentUser.sub_office !== 'All';
+        // Branch personnel (Unclaimed Specialists & SSR) are strictly restricted to their assigned sub-office
+        // Only Centralized Admins have full access to switch between all sub-offices
+        const isRestrictedBranchUser = !isAdminRole(currentUser?.role) && currentUser?.sub_office && currentUser.sub_office !== 'All';
 
-        if (isRestrictedBranchSSR) {
+        if (isRestrictedBranchUser) {
           const userSub = String(currentUser.sub_office).toLowerCase().trim();
           const match = activeEndpoints.find(e => {
             if (!e.sub_office) return false;
@@ -1215,8 +1215,19 @@ export default function App() {
   const returnedTransIds = useMemo(() => new Set(returnedData.map(i => String(i.transactionId || '').trim().toLowerCase())), [returnedData]);
 
   const pendingFilteredData = useMemo(() => {
+    const isRestrictedBranchUser = !isAdminRole(currentUser?.role) && currentUser?.sub_office && currentUser.sub_office !== 'All';
+    const userSub = isRestrictedBranchUser ? String(currentUser.sub_office).toLowerCase().trim() : null;
+
     return data.filter(i => {
       if (i.isClaim == 1 || i.isClaim === '1' || i.isClaim === true || i.isClaim === 'true') return false;
+
+      // Non-admin branch scoping safeguard: strictly reject tickets outside assigned branch
+      if (userSub) {
+        const itemSub = String(i.sub_office || '').toLowerCase().trim();
+        if (itemSub && itemSub !== 'all' && !itemSub.includes(userSub) && !userSub.includes(itemSub)) {
+          return false;
+        }
+      }
 
       // Exclude usernames or supervisors with '-SK' (e.g. SPVR-PERYA-SK)
       const uName = String(i.username || '').trim().toUpperCase();
@@ -1250,7 +1261,7 @@ export default function App() {
       if (toDate && itemDateStr > toDate) return false;
       return true;
     });
-  }, [data, returnedTransIds, fromDate, toDate]);
+  }, [data, returnedTransIds, fromDate, toDate, currentUser]);
 
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) return pendingFilteredData;

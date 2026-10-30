@@ -1,13 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building2, Plus, Search, Edit2, Trash2, CheckCircle2,
   AlertCircle, Globe, Shield, RefreshCw, Power, Phone,
-  MapPin, UserCheck, Server, ArrowRight
+  MapPin, UserCheck, Server, ArrowRight, Upload, Camera, Image as ImageIcon, RotateCcw
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { systemService } from '../../services/systemService';
 import { userService } from '../../services/userService';
 import ConfirmPopover from '../../components/common/ConfirmPopover';
+import { compressImageFile } from '../../utils/imageCompressor';
 
 export default function SubOfficeManagement({ currentUser }) {
   const [subOffices, setSubOffices] = useState([]);
@@ -24,9 +25,14 @@ export default function SubOfficeManagement({ currentUser }) {
 
   // Form fields
   const [name, setName] = useState('');
+  const [franchiseName, setFranchiseName] = useState('MANDAUE');
   const [location, setLocation] = useState('');
   const [headName, setHeadName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [logoUrl, setLogoUrl] = useState('/lbp.png');
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [logoUploadError, setLogoUploadError] = useState('');
+  const logoInputRef = useRef(null);
   const [status, setStatus] = useState('ACTIVE');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -98,9 +104,13 @@ export default function SubOfficeManagement({ currentUser }) {
   const openCreateModal = () => {
     setEditingOffice(null);
     setName('');
+    setFranchiseName('MANDAUE');
     setLocation('');
     setHeadName('');
     setContactNumber('');
+    setLogoUrl('');
+    setIsUploadingLogo(false);
+    setLogoUploadError('');
     setStatus('ACTIVE');
     setErrorMessage('');
     setIsModalOpen(true);
@@ -109,12 +119,85 @@ export default function SubOfficeManagement({ currentUser }) {
   const openEditModal = (office) => {
     setEditingOffice(office);
     setName(office.name);
+    setFranchiseName(office.franchise_name || 'MANDAUE');
     setLocation(office.location || '');
     setHeadName(office.head_name || '');
     setContactNumber(office.contact_number || '');
+    setLogoUrl(office.logo_url || '');
+    setIsUploadingLogo(false);
+    setLogoUploadError('');
     setStatus(office.status || 'ACTIVE');
     setErrorMessage('');
     setIsModalOpen(true);
+  };
+
+  const handleLogoFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setLogoUploadError('Please choose a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoUploadError('Image size exceeds 5MB limit. Please choose a smaller file.');
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    setLogoUploadError('');
+
+    try {
+      // 1. Client-side image compression (<100KB)
+      const compressedDataUrl = await compressImageFile(file, 400, 400, 0.85);
+
+      // Instant local preview in modal so user gets immediate visual confirmation
+      setLogoUrl(compressedDataUrl);
+
+      // 2. Convert to binary Blob for direct Supabase Storage upload
+      try {
+        let uploadBlob = file;
+        if (compressedDataUrl && compressedDataUrl.startsWith('data:')) {
+          const parts = compressedDataUrl.split(',');
+          const mimeMatch = parts[0].match(/:(.*?);/);
+          const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const bstr = atob(parts[1]);
+          const u8arr = new Uint8Array(bstr.length);
+          for (let i = 0; i < bstr.length; i++) {
+            u8arr[i] = bstr.charCodeAt(i);
+          }
+          uploadBlob = new Blob([u8arr], { type: mime });
+        }
+
+        const ext = uploadBlob.type === 'image/png' ? 'png' : (uploadBlob.type === 'image/webp' ? 'webp' : 'jpg');
+        const cleanName = (name || franchiseName || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const fileName = `branch-logos/${cleanName}_${Date.now()}.${ext}`;
+
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, uploadBlob, { upsert: true, contentType: uploadBlob.type });
+
+        if (!uploadErr && uploadData) {
+          const { data: publicUrlData } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(fileName);
+          if (publicUrlData?.publicUrl) {
+            setLogoUrl(`${publicUrlData.publicUrl}?t=${Date.now()}`);
+          }
+        } else if (uploadErr) {
+          console.warn('Supabase storage upload notice (using compressed data URL fallback):', uploadErr.message);
+        }
+      } catch (storageErr) {
+        console.warn('Storage upload network notice:', storageErr);
+      }
+    } catch (err) {
+      console.error('Failed to process branch logo image:', err);
+      setLogoUploadError('Failed to process image. Please try another file.');
+    } finally {
+      setIsUploadingLogo(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -128,11 +211,14 @@ export default function SubOfficeManagement({ currentUser }) {
     setErrorMessage('');
 
     try {
+      const isMandaueOffice = (name || '').toLowerCase().includes('mandaue') || (franchiseName || '').toUpperCase().includes('MANDAUE');
       const payload = {
         name: name.trim(),
+        franchise_name: (franchiseName.trim() || 'MANDAUE').toUpperCase(),
         location: location.trim(),
         head_name: headName.trim(),
         contact_number: contactNumber.trim(),
+        logo_url: logoUrl.trim() || (isMandaueOffice ? '/lbp.png' : null),
         status: status,
         updated_at: new Date().toISOString()
       };
@@ -151,6 +237,9 @@ export default function SubOfficeManagement({ currentUser }) {
           .insert([payload]);
         if (error) throw error;
       }
+
+      // Invalidate systemService cache so all views update immediately
+      systemService.invalidateCache();
 
       // Audit Log
       await supabase.from('audit_logs').insert([{
@@ -220,6 +309,7 @@ export default function SubOfficeManagement({ currentUser }) {
       const q = searchQuery.toLowerCase().trim();
       return (
         (so.name || '').toLowerCase().includes(q) ||
+        (so.franchise_name || '').toLowerCase().includes(q) ||
         (so.head_name || '').toLowerCase().includes(q) ||
         (so.location || '').toLowerCase().includes(q) ||
         (so.contact_number || '').toLowerCase().includes(q)
@@ -306,6 +396,7 @@ export default function SubOfficeManagement({ currentUser }) {
           <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
               <tr className="bg-[#002B66] text-white text-[11px] font-black uppercase tracking-wider border-b border-blue-950">
+                <th className="px-3.5 py-3 border-r border-blue-950">Franchise</th>
                 <th className="px-3.5 py-3 border-r border-blue-950">Branch Details</th>
                 <th className="px-3.5 py-3 border-r border-blue-950">Location / Address</th>
                 <th className="px-3.5 py-3 border-r border-blue-950">Branch HR</th>
@@ -322,9 +413,25 @@ export default function SubOfficeManagement({ currentUser }) {
                   return (
                     <tr key={office.id || office.name || idx} className="hover:bg-slate-50 transition-colors odd:bg-white even:bg-slate-50/40">
                       <td className="px-3.5 py-3 border-r border-slate-200">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase bg-blue-50 text-[#002B66] border border-blue-200">
+                          <Shield size={11} className="text-[#FFD700]" />
+                          {office.franchise_name || 'MANDAUE'}
+                        </span>
+                      </td>
+
+                      <td className="px-3.5 py-3 border-r border-slate-200">
                         <div className="flex items-center gap-2.5">
-                          <div className="p-2 rounded-lg bg-blue-50 text-[#002B66] border border-blue-100 shrink-0">
-                            <Building2 size={16} />
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center p-0.5 shrink-0 overflow-hidden shadow-2xs">
+                            {office.logo_url ? (
+                              <img
+                                src={office.logo_url}
+                                alt={office.name}
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                className="w-full h-full object-contain rounded"
+                              />
+                            ) : (
+                              <Building2 size={16} className="text-[#002B66]" />
+                            )}
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 block text-xs">{office.name}</span>
@@ -398,7 +505,7 @@ export default function SubOfficeManagement({ currentUser }) {
                 })
               ) : (
                 <tr>
-                  <td colSpan="5" className="px-4 py-12 text-center text-slate-400 font-bold uppercase text-xs">
+                  <td colSpan="6" className="px-4 py-12 text-center text-slate-400 font-bold uppercase text-xs">
                     No sub-office branches found matching your search.
                   </td>
                 </tr>
@@ -416,12 +523,14 @@ export default function SubOfficeManagement({ currentUser }) {
               return (
                 <div key={office.id || office.name || idx} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs space-y-3">
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <Building2 size={16} className="text-[#002B66]" />
-                      <div>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-slate-900 text-xs block">{office.name}</span>
-                        <span className="text-[10px] text-slate-500 font-mono">{office.location || 'Branch Office'}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-blue-50 text-[#002B66] border border-blue-200">
+                          {office.franchise_name || 'MANDAUE'}
+                        </span>
                       </div>
+                      <span className="text-[10px] text-slate-500 font-mono">{office.location || 'Branch Office'}</span>
                     </div>
 
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${isActive
@@ -499,6 +608,24 @@ export default function SubOfficeManagement({ currentUser }) {
                 </div>
               )}
 
+              {/* Franchise Name */}
+              <div>
+                <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  Franchise Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. MANDAUE, ILIGAN, SGC"
+                  value={franchiseName}
+                  onChange={(e) => setFranchiseName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg font-black text-slate-800 uppercase focus:bg-white focus:border-[#002B66] outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Specifies the parent franchise organization (e.g. MANDAUE, ILIGAN).
+                </span>
+              </div>
+
               {/* Branch Name */}
               <div>
                 <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
@@ -558,6 +685,104 @@ export default function SubOfficeManagement({ currentUser }) {
               </div>
 
 
+
+              {/* Branch Logo / Image Upload Section */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <ImageIcon size={12} className="text-[#002B66]" />
+                    <span>Upload Branch Logo / Image</span>
+                  </label>
+                  {logoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLogoUrl('')}
+                      className="text-[10px] font-bold text-slate-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Clear branch logo"
+                    >
+                      <RotateCcw size={10} />
+                      <span>Clear Logo</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="bg-slate-50 border border-slate-300 rounded-xl p-3 flex items-center gap-3">
+                  {/* Thumbnail Preview */}
+                  <div className="w-14 h-14 rounded-lg border border-slate-300 bg-white flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-xs relative">
+                    {logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt="Branch Logo"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        className="w-full h-full object-contain rounded"
+                      />
+                    ) : (
+                      <Building2 size={24} className="text-[#002B66]" />
+                    )}
+                    {isUploadingLogo && (
+                      <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded">
+                        <RefreshCw size={15} className="animate-spin text-[#002B66]" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload Trigger & Details */}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={handleLogoFileChange}
+                      className="hidden"
+                    />
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        disabled={isUploadingLogo}
+                        className="px-3 py-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] text-xs font-black rounded-lg cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                      >
+                        {isUploadingLogo ? (
+                          <>
+                            <RefreshCw size={12} className="animate-spin" />
+                            <span>Processing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={12} />
+                            <span>Upload Logo Image</span>
+                          </>
+                        )}
+                      </button>
+
+                      <span className="text-[10px] text-slate-400">
+                        PNG, JPG, or WEBP (Max 5MB)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                        Path / URL:
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="e.g. /lbp.png or https://..."
+                        value={logoUrl}
+                        onChange={(e) => setLogoUrl(e.target.value)}
+                        className="w-full bg-white border border-slate-200 px-2 py-0.5 rounded text-[10px] font-mono text-slate-700 outline-none focus:border-[#002B66]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {logoUploadError && (
+                  <p className="text-[10px] font-bold text-rose-600 flex items-center gap-1 mt-1">
+                    <AlertCircle size={11} />
+                    <span>{logoUploadError}</span>
+                  </p>
+                )}
+              </div>
 
               {/* Status Toggle & Submit */}
               <div className="pt-2 flex items-center justify-between border-t border-slate-200">

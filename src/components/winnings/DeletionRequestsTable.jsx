@@ -222,7 +222,7 @@ export default function DeletionRequestsTable({
                   const isPending = st === 'PENDING_APPROVAL' || st === 'PENDING';
                   const isApproved = st === 'APPROVED';
                   const isRejected = st === 'REJECTED';
-                  const proofImg = item.attachment_url || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image;
+                  const proofImg = item.attachment_url || item.deletion_request_attachment || item.hard_copy_ticket_url || item.receipt_url || item.proof_url || item.proof_photo || item.ocr_data?.hard_copy_image;
                   const reason = item.reason || item.deletion_request_reason || 'Claimed ticket deletion';
                   const requester = item.requested_by || item.deletion_request_by || item.username || 'SSR';
                   const reqDate = item.requested_at || item.created_at;
@@ -263,7 +263,7 @@ export default function DeletionRequestsTable({
 
                       {/* Deposited Status */}
                       <td className="px-3 py-2.5 border-r border-slate-100 text-center whitespace-nowrap">
-                        {item.is_already_deposited ? (
+                        {item.is_already_deposited !== false ? (
                           <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[9.5px] px-2 py-0.5 rounded-full" title="Already deposited in previous collections">
                             <CheckCircle2 size={10} className="text-emerald-700" /> DEPOSITED
                           </span>
@@ -279,7 +279,7 @@ export default function DeletionRequestsTable({
                         {proofImg ? (
                           <button
                             type="button"
-                            onClick={() => onViewTicket?.({ ...item, computedTransId: transId })}
+                            onClick={() => onViewTicket?.({ ...item, computedTransId: transId, winAmount: winAmt, betAmount: betAmt, betNo: betNo, fullName: teller, drawTime: draw, attachment_url: proofImg })}
                             className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md text-[10px] font-bold text-[#002B66] cursor-pointer transition-all shadow-2xs"
                             title="Click to zoom hard copy photo"
                           >
@@ -360,7 +360,7 @@ export default function DeletionRequestsTable({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => onViewTicket?.({ ...item, computedTransId: transId })}
+                              onClick={() => onViewTicket?.({ ...item, computedTransId: transId, winAmount: winAmt, betAmount: betAmt, betNo: betNo, fullName: teller, drawTime: draw, attachment_url: proofImg })}
                               className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold cursor-pointer transition-all"
                             >
                               <Eye size={11} /> Details
@@ -399,7 +399,7 @@ export default function DeletionRequestsTable({
             const reason = item.reason || item.deletion_request_reason || 'Claimed ticket deletion';
             const requester = item.requested_by || item.deletion_request_by || item.username || 'SSR';
             const reqDate = item.requested_at || item.created_at;
-            const proofImg = item.attachment_url || item.deletion_request_attachment || item.hard_copy_ticket_url || item.ocr_data?.hard_copy_image;
+            const proofImg = item.attachment_url || item.deletion_request_attachment || item.hard_copy_ticket_url || item.receipt_url || item.proof_url || item.proof_photo || item.ocr_data?.hard_copy_image;
 
             return (
               <div
@@ -423,7 +423,7 @@ export default function DeletionRequestsTable({
                   <div>
                     <span>{betNo} ({betCode})</span> • <span>{formatDrawTime ? formatDrawTime(draw) : draw}</span>
                   </div>
-                  {item.is_already_deposited ? (
+                  {item.is_already_deposited !== false ? (
                     <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded-full">
                       DEPOSITED
                     </span>
@@ -477,7 +477,7 @@ export default function DeletionRequestsTable({
                     )}
                     <button
                       type="button"
-                      onClick={() => onViewTicket?.({ ...item, computedTransId: transId })}
+                      onClick={() => onViewTicket?.({ ...item, computedTransId: transId, winAmount: winAmt, betAmount: betAmt, betNo: betNo, fullName: teller, drawTime: draw, attachment_url: proofImg })}
                       className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-[10px] font-bold"
                     >
                       View

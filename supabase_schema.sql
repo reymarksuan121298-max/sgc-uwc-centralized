@@ -21,6 +21,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE public.sub_offices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL UNIQUE,
+    franchise_name TEXT DEFAULT 'MANDAUE',
+    logo_url TEXT DEFAULT '/lbp.png',
     location TEXT,
     head_name TEXT,
     contact_number TEXT,
@@ -227,17 +229,18 @@ CREATE POLICY "Allow all access to audit_logs for anon/authenticated" ON public.
 -- ==============================================================================
 -- 9. SEED DATA: DEFAULT SUB-OFFICES (`sub_offices`)
 -- ==============================================================================
-INSERT INTO public.sub_offices (id, name, location, head_name, contact_number, assigned_endpoint_id, status)
+INSERT INTO public.sub_offices (id, name, franchise_name, location, head_name, contact_number, assigned_endpoint_id, status)
 VALUES
-    ('so-default-0', 'All', 'Global Central Operations HQ', 'Central Admin', '0917-000-0000', 'cfg-default-1', 'ACTIVE'),
-    ('so-default-1', 'Mandaue Central', 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City', 'Main HQ Supervisor', '0917-123-4567', 'cfg-default-1', 'ACTIVE'),
-    ('so-default-2', 'Tipolo', 'Tipolo Branch, Mandaue City', 'Tipolo Operations Head', '0917-234-5678', NULL, 'ACTIVE'),
-    ('so-default-3', 'Canduman', 'Canduman Branch, Mandaue City', 'Canduman Operations Head', '0917-345-6789', NULL, 'ACTIVE'),
-    ('so-default-4', 'Ibabao-Estancia', 'Ibabao-Estancia Branch, Mandaue City', 'Ibabao Operations Head', '0917-456-7890', NULL, 'ACTIVE'),
-    ('so-default-5', 'Pagsabungan', 'Pagsabungan Branch, Mandaue City', 'Pagsabungan Operations Head', '0917-567-8901', NULL, 'ACTIVE'),
-    ('so-default-6', 'Centro', 'Centro Branch, Mandaue City', 'Centro Operations Head', '0917-678-9012', NULL, 'ACTIVE')
+    ('so-default-0', 'All', 'MANDAUE', 'Global Central Operations HQ', 'Central Admin', '0917-000-0000', 'cfg-default-1', 'ACTIVE'),
+    ('so-default-1', 'Mandaue Central', 'MANDAUE', 'Barlaps, A.S. Fortuna St., Bakilid, Mandaue City', 'Main HQ Supervisor', '0917-123-4567', 'cfg-default-1', 'ACTIVE'),
+    ('so-default-2', 'Tipolo', 'MANDAUE', 'Tipolo Branch, Mandaue City', 'Tipolo Operations Head', '0917-234-5678', NULL, 'ACTIVE'),
+    ('so-default-3', 'Canduman', 'MANDAUE', 'Canduman Branch, Mandaue City', 'Canduman Operations Head', '0917-345-6789', NULL, 'ACTIVE'),
+    ('so-default-4', 'Ibabao-Estancia', 'MANDAUE', 'Ibabao-Estancia Branch, Mandaue City', 'Ibabao Operations Head', '0917-456-7890', NULL, 'ACTIVE'),
+    ('so-default-5', 'Pagsabungan', 'MANDAUE', 'Pagsabungan Branch, Mandaue City', 'Pagsabungan Operations Head', '0917-567-8901', NULL, 'ACTIVE'),
+    ('so-default-6', 'Centro', 'MANDAUE', 'Centro Branch, Mandaue City', 'Centro Operations Head', '0917-678-9012', NULL, 'ACTIVE')
 ON CONFLICT (name) DO UPDATE 
 SET 
+    franchise_name = EXCLUDED.franchise_name,
     location = EXCLUDED.location,
     head_name = EXCLUDED.head_name,
     contact_number = EXCLUDED.contact_number,

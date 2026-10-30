@@ -8,6 +8,7 @@ import { ROLES, formatRoleName } from '../../utils/permissions';
 import { useGlobalPresence } from '../../hooks/useGlobalPresence';
 import { userService } from '../../services/userService';
 import { systemService } from '../../services/systemService';
+import SubOfficeSelectPicker from '../../components/common/SubOfficeSelectPicker';
 
 export default function UserManagement({ currentUser }) {
   const { isUserOnline } = useGlobalPresence(currentUser);
@@ -18,6 +19,7 @@ export default function UserManagement({ currentUser }) {
   const [officeFilter, setOfficeFilter] = useState('ALL');
   const [gatewayEndpoints, setGatewayEndpoints] = useState([]);
   const [dynamicSubOfficesList, setDynamicSubOfficesList] = useState(['All']);
+  const [fullSubOffices, setFullSubOffices] = useState([]);
 
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,18 +48,20 @@ export default function UserManagement({ currentUser }) {
   const fetchUsers = async (force = false) => {
     setLoading(true);
     try {
-      const [usersData, subOfficesData, allSettingsData] = await Promise.all([
+      const [usersData, fullSubOfficesData, allSettingsData] = await Promise.all([
         userService.fetchUsers(force),
-        systemService.fetchSubOffices(force),
+        systemService.fetchFullSubOffices(force),
         systemService.fetchSettings(force)
       ]);
 
       setUsers(usersData || []);
+      setFullSubOffices(fullSubOfficesData || []);
 
       // Load ONLY from dedicated sub_offices database table
       const branchSet = new Set(['All']);
-      if (subOfficesData && subOfficesData.length) {
-        subOfficesData.forEach(soName => {
+      if (fullSubOfficesData && fullSubOfficesData.length) {
+        fullSubOfficesData.forEach(so => {
+          const soName = typeof so === 'string' ? so : so?.name;
           if (soName && soName.trim()) {
             branchSet.add(soName.trim());
           }
@@ -439,10 +443,29 @@ export default function UserManagement({ currentUser }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 font-bold text-slate-700">
-                      <span className="flex items-center gap-1">
-                        <Building2 size={13} className="text-slate-400" />
-                        {u.sub_office || 'All'}
-                      </span>
+                      {(() => {
+                        const officeObj = fullSubOffices.find(so => (so.name || '').toLowerCase() === (u.sub_office || '').toLowerCase());
+                        const franchise = officeObj?.franchise_name;
+                        const isAll = !u.sub_office || u.sub_office === 'All';
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="flex items-center gap-1 font-bold text-slate-800">
+                              <Building2 size={13} className="text-[#002B66]" />
+                              {u.sub_office || 'All'}
+                            </span>
+                            {franchise && (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-blue-50 to-indigo-50 text-[#002B66] border border-blue-200 shadow-2xs">
+                                {franchise}
+                              </span>
+                            )}
+                            {isAll && (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-900 border border-amber-200">
+                                Global
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 border-r border-slate-100 text-center">
                       <button
@@ -494,8 +517,8 @@ export default function UserManagement({ currentUser }) {
       {/* User Create / Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-[#002B66] text-white px-5 py-4 flex items-center justify-between border-b-2 border-[#FFD700]">
+          <div className="bg-white border-2 border-[#002B66] rounded-2xl shadow-2xl max-w-lg w-full animate-in fade-in zoom-in-95 duration-150 flex flex-col">
+            <div className="bg-[#002B66] text-white px-5 py-4 flex items-center justify-between border-b-2 border-[#FFD700] rounded-t-2xl">
               <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-white">
                 <Users size={18} className="text-[#FFD700]" />
                 <span>{editingUser ? `Edit User: ${editingUser.username}` : 'Create New User Account'}</span>
@@ -503,7 +526,7 @@ export default function UserManagement({ currentUser }) {
               <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-white cursor-pointer font-bold">✕</button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-3.5 text-xs">
+            <form onSubmit={handleSubmit} className="p-5 space-y-3.5 text-xs rounded-b-2xl">
               {errorMessage && (
                 <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-lg font-bold">
                   {errorMessage}
@@ -572,15 +595,12 @@ export default function UserManagement({ currentUser }) {
                   <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
                     Sub-Office Scope *
                   </label>
-                  <select
+                  <SubOfficeSelectPicker
                     value={subOffice}
-                    onChange={(e) => setSubOffice(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 px-3 py-2 rounded-lg text-xs font-bold text-slate-800 focus:border-[#002B66] outline-none cursor-pointer"
-                  >
-                    {subOffices.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSubOffice(val)}
+                    fullSubOffices={fullSubOffices}
+                    fallbackList={subOffices}
+                  />
                 </div>
               </div>
 

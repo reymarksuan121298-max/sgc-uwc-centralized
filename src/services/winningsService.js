@@ -257,7 +257,7 @@ export const winningsService = {
     return true;
   },
 
-  // Fetch all deletion requests from the dedicated table, with fallback to audit logs
+  // Fetch all deletion requests from the dedicated table, cross-referencing returned_winnings for missing proofs
   async fetchDeletionRequests(subOffice) {
     try {
       let query = supabase
@@ -271,6 +271,37 @@ export const winningsService = {
 
       const { data, error } = await query;
       if (!error && data) {
+        // Cross-reference returned_winnings for records missing attachment_url
+        const missingTransIds = data
+          .filter(r => !r.attachment_url && r.transaction_id)
+          .map(r => r.transaction_id);
+
+        if (missingTransIds.length > 0) {
+          try {
+            const { data: rwMatches } = await supabase
+              .from('returned_winnings')
+              .select('id, transactionId, deletion_request_attachment, hard_copy_ticket_url, ocr_data, receipt_url')
+              .in('transactionId', missingTransIds);
+
+            if (rwMatches && rwMatches.length > 0) {
+              const rwMap = new Map();
+              rwMatches.forEach(rw => {
+                const img = rw.deletion_request_attachment || rw.hard_copy_ticket_url || rw.ocr_data?.hard_copy_image || rw.receipt_url;
+                if (img) rwMap.set(rw.transactionId, img);
+              });
+
+              return data.map(r => {
+                if (!r.attachment_url && rwMap.has(r.transaction_id)) {
+                  return { ...r, attachment_url: rwMap.get(r.transaction_id) };
+                }
+                return r;
+              });
+            }
+          } catch (rwErr) {
+            console.warn('Cross-referencing returned_winnings proof notice:', rwErr);
+          }
+        }
+
         return data;
       }
     } catch (err) {
@@ -280,7 +311,7 @@ export const winningsService = {
   },
 
   // Create a new deletion request in returned_winnings_deletion_requests & update returned_winnings
-  async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = false) {
+  async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = true) {
     const transId = String(ticket.transactionId || ticket.transId || ticket.transaction_id || ticket.computedTransId || '').trim();
     const isClaimValue = Boolean(
       ticket.isClaim == 1 || ticket.isClaim === true || ticket.isClaim === '1' ||
@@ -303,11 +334,11 @@ export const winningsService = {
       win_amount: parseFloat(ticket.winAmount ?? ticket.win_amount ?? 0),
       status: 'PENDING_APPROVAL',
       reason: reason ? reason.trim() : 'Hard copy ticket claimed (previous deposit deduction)',
-      attachment_url: attachmentUrl || null,
+      attachment_url: attachmentUrl || ticket.deletion_request_attachment || ticket.hard_copy_ticket_url || ticket.receipt_url || ticket.proof_url || ticket.attachment_url || ticket.ocr_data?.hard_copy_image || null,
       requested_by: user?.full_name || user?.username || 'SSR',
       requested_by_role: user?.role || 'SSR',
       requested_at: new Date().toISOString(),
-      is_already_deposited: Boolean(isAlreadyDeposited),
+      is_already_deposited: isAlreadyDeposited !== undefined ? Boolean(isAlreadyDeposited) : true,
       is_claim: isClaimValue,
       deducted_from_collections: false
     };

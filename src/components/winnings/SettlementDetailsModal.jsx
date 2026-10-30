@@ -1,57 +1,79 @@
+import {
+  DEFAULT_SUPERVISOR_NAMES,
+  resolveSupervisorDisplayName,
+  fetchAllIliganSupervisors
+} from '../../services/supervisorService';
 import { useEffect, useState } from 'react';
-import { X, Printer, CheckCircle, CheckCircle2 } from 'lucide-react';
+import { X, Printer, CheckCircle, CheckCircle2, Building2 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
+import { systemService } from '../../services/systemService';
 
-const SUPERVISOR_NAMES = {
-  // Numeric IDs from backend database
-  "21": "ARLFRED SABERON",
-  "22": "RAFFY BAGUIO",
-  "23": "ROEL CATALAN",
-  "24": "MICHAEL DE GUZMAN",
-  "25": "JOEL ESTORCO",
-  "26": "HARRY EYA",
-  "27": "CARL MANGRUBAN",
-  "28": "JED MELENDREZ",
-  "29": "NYOR SESALDO",
-  "30": "NARCISO TAGUD JR.",
-  "31": "MOLLY BATUBALANOS",
-  "32": "COORDINATOR - APPLEGROUP",
-
-  // Username and handle keys
-  "spvr-arlfred": "ARLFRED SABERON",
-  "spvr-raffy": "RAFFY BAGUIO",
-  "spvr-roel": "ROEL CATALAN",
-  "spvr-michael": "MICHAEL DE GUZMAN",
-  "spvr-joel": "JOEL ESTORCO",
-  "spvr-eya": "HARRY EYA",
-  "spvr-carl": "CARL MANGRUBAN",
-  "spvr-jed": "JED MELENDREZ",
-  "spvr-nyor": "NYOR SESALDO",
-  "spvr-jason": "NARCISO TAGUD JR.",
-  "spvr-molly": "MOLLY BATUBALANOS",
-  "spvr-apple": "COORDINATOR - APPLEGROUP",
-
-  // ILIGAN SET B Supervisors
-  "jasonmabini@gfldn": "JASON F. MABINI",
-  "jasonmabini": "JASON F. MABINI",
-  "jessentpizon@gfldn": "JESSENT M. PIZON",
-  "jessentpizon": "JESSENT M. PIZON",
-  "jacksonslimpangog@gfldn": "JACKSON S. LIMPANGOG",
-  "jacksonslimpangog": "JACKSON S. LIMPANGOG",
-  "rielmpizon@gfldn": "RIEL M. PIZON",
-  "rielmpizon": "RIEL M. PIZON",
-  "ianjohnmbalala@gfldn": "IAN JOHN M. BALALA",
-  "ianjohnmbalala": "IAN JOHN M. BALALA",
-  "ivankennethg.agcopra@gfldn": "IVAN KENNETH G. AGCOPRA",
-  "ivankennethg.agcopra": "IVAN KENNETH G. AGCOPRA",
-  "coor@gfldn": "AGENTS UNDER COORDINATOR",
-  "coor": "AGENTS UNDER COORDINATOR"
-};
 
 export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUpdated }) {
+  // --- 1. Top-Level State Hooks ---
   const [payments, setPayments] = useState([]);
+  const [dynamicSupervisors, setDynamicSupervisors] = useState({});
 
+  // Parse settlement terms early so targetSubOffice is available
+  const parseSettlementTermsEarly = (terms) => {
+    if (!terms) return null;
+    try {
+      return typeof terms === 'string' ? JSON.parse(terms) : terms;
+    } catch {
+      return null;
+    }
+  };
+  const earlyParsedTerms = parseSettlementTermsEarly(item?.settlementTerms || item?.settlement_terms);
+  const targetSubOffice = item?.sub_office || item?.subOffice || earlyParsedTerms?.sub_office || item?.branch || '';
+
+  const [subOfficeMeta, setSubOfficeMeta] = useState(() => systemService.resolveSubOfficeSync(targetSubOffice));
+
+  // --- 2. Safe Parsing of Settlement Terms ---
+  const parseSettlementTerms = (terms) => {
+    if (!terms) return null;
+    try {
+      return typeof terms === 'string' ? JSON.parse(terms) : terms;
+    } catch {
+      return null;
+    }
+  };
+
+  const parsedTerms = parseSettlementTerms(item?.settlementTerms || item?.settlement_terms);
+
+  // --- 3. Top-Level Effect Hooks (Run unconditionally on every render) ---
+  // Load live dynamic supervisors from gateway endpoints
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSupervisors = async () => {
+      if (!isOpen) return;
+      try {
+        const settings = await systemService.fetchSettings();
+        let endpoints = [];
+        if (settings && Array.isArray(settings)) {
+          settings.forEach(row => {
+            if (row.key === 'api_endpoints' || row.key === 'gateway_endpoints') {
+              try {
+                const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                if (Array.isArray(parsed)) endpoints = parsed;
+              } catch {}
+            }
+          });
+        }
+        const supervisors = await fetchAllIliganSupervisors(endpoints);
+        if (isMounted && supervisors && Object.keys(supervisors).length > 0) {
+          setDynamicSupervisors(supervisors);
+        }
+      } catch (err) {
+        console.warn('Failed to load dynamic supervisors in SettlementDetailsModal:', err);
+      }
+    };
+    fetchSupervisors();
+
+    return () => { isMounted = false; };
+  }, [isOpen]);
+
+  // Load settlement payments for this returned winning
   useEffect(() => {
     let isMounted = true;
     const fetchPayments = async () => {
@@ -71,22 +93,35 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
       }
     };
     fetchPayments();
+
     return () => { isMounted = false; };
-  }, [isOpen, item]);
+  }, [isOpen, item?.id]);
 
-  if (!isOpen || !item) return null;
+  // Load sub-office details (address, franchise, and logo) directly from DB with no fallback
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSubOfficeInfo = async () => {
+      if (!isOpen || !item) return;
+      const office = targetSubOffice;
+      const syncMatch = systemService.resolveSubOfficeSync(office);
+      if (syncMatch?.address || syncMatch?.logo_url) {
+        setSubOfficeMeta(syncMatch);
+      }
+      try {
+        const details = await systemService.resolveSubOfficeDetails(office);
+        if (isMounted && details) {
+          setSubOfficeMeta(details);
+        }
+      } catch (err) {
+        console.warn('Failed to resolve sub-office metadata in SettlementDetailsModal:', err);
+      }
+    };
+    fetchSubOfficeInfo();
 
-  const parseSettlementTerms = (terms) => {
-    if (!terms) return null;
-    try {
-      return typeof terms === 'string' ? JSON.parse(terms) : terms;
-    } catch {
-      return null;
-    }
-  };
+    return () => { isMounted = false; };
+  }, [isOpen, targetSubOffice]);
 
-  const parsedTerms = parseSettlementTerms(item.settlementTerms || item.settlement_terms);
-  
+  // --- 4. Helper Calculations & Date Formatters ---
   const paidAmount = payments.reduce((sum, payment) => sum + parseFloat(payment.paymentAmount || 0), 0);
 
   const getFrequencyLabel = (freq) => {
@@ -107,7 +142,6 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
     let year = date.getFullYear();
     let month = date.getMonth();
     let day = date.getDate();
-
     let isTarget15 = day <= 15;
 
     for (let i = 0; i < installmentIndex; i++) {
@@ -158,40 +192,68 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
     return `${year}-${month}-${day}`;
   };
 
-  // Robust resolution of Supervisor Full Name (guarantees no raw numbers/IDs)
+  // Robust resolution of Sales Supervisor using supervisorService
   const resolveSupervisorFullName = () => {
-    // 1. Check if parsedTerms.signatories.supervisor has an explicit name
-    const rawSignatory = String(parsedTerms?.signatories?.supervisor ?? '').trim();
-    if (rawSignatory && rawSignatory !== 'Sales Supervisor' && rawSignatory !== 'undefined' && rawSignatory !== 'null') {
-      const lowerSignatory = rawSignatory.toLowerCase();
-      if (SUPERVISOR_NAMES[lowerSignatory]) {
-        return SUPERVISOR_NAMES[lowerSignatory];
+    const matchSupervisor = (val) => {
+      if (!val) return null;
+      const str = String(val).trim();
+      if (!str || str.toLowerCase() === 'sales supervisor' || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'null') {
+        return null;
       }
-      // If rawSignatory is pure digits (e.g. "27" or "28"), do not print raw digits
-      if (!/^\d+$/.test(rawSignatory)) {
-        return rawSignatory.toUpperCase();
+
+      const lower = str.toLowerCase();
+      const prefix = lower.split('@')[0];
+      const withoutSpvr = lower.replace(/^spvr-/, '');
+      const withSpvr = `spvr-${withoutSpvr}`;
+
+      // 1. Dynamic Map check (from live gateway API endpoints)
+      if (dynamicSupervisors) {
+        if (dynamicSupervisors[lower]) return dynamicSupervisors[lower];
+        if (dynamicSupervisors[prefix]) return dynamicSupervisors[prefix];
+        if (dynamicSupervisors[withoutSpvr]) return dynamicSupervisors[withoutSpvr];
+        if (dynamicSupervisors[withSpvr]) return dynamicSupervisors[withSpvr];
       }
-    }
 
-    // 2. Check item.username (e.g. 'spvr-carl', 'spvr-eya')
-    const userKey = String(item?.username || '').trim().toLowerCase();
-    if (SUPERVISOR_NAMES[userKey]) {
-      return SUPERVISOR_NAMES[userKey];
-    }
+      // 2. Static Map check (from DEFAULT_SUPERVISOR_NAMES)
+      if (DEFAULT_SUPERVISOR_NAMES[lower]) return DEFAULT_SUPERVISOR_NAMES[lower];
+      if (DEFAULT_SUPERVISOR_NAMES[prefix]) return DEFAULT_SUPERVISOR_NAMES[prefix];
+      if (DEFAULT_SUPERVISOR_NAMES[withoutSpvr]) return DEFAULT_SUPERVISOR_NAMES[withoutSpvr];
+      if (DEFAULT_SUPERVISOR_NAMES[withSpvr]) return DEFAULT_SUPERVISOR_NAMES[withSpvr];
 
-    // 3. Check item.supervisor (e.g. 27, "27", "spvr-carl")
-    const spvrKey = String(item?.supervisor ?? '').trim().toLowerCase();
-    if (SUPERVISOR_NAMES[spvrKey]) {
-      return SUPERVISOR_NAMES[spvrKey];
-    }
-
-    // 4. Check if username has 'spvr-' prefix
-    if (userKey.startsWith('spvr-')) {
-      const cleanKey = userKey.replace('spvr-', '');
-      if (SUPERVISOR_NAMES[`spvr-${cleanKey}`]) {
-        return SUPERVISOR_NAMES[`spvr-${cleanKey}`];
+      // 3. Fallback resolution via resolveSupervisorDisplayName
+      const resolved = resolveSupervisorDisplayName(lower, dynamicSupervisors);
+      if (resolved && resolved !== 'N/A' && resolved.toLowerCase() !== lower && !/^\d+$/.test(resolved)) {
+        return resolved;
       }
-    }
+
+      // 4. If str is already an explicit name (not numeric ID, not email, not spvr- handle)
+      if (!/^\d+$/.test(str) && !str.includes('@') && !str.toLowerCase().startsWith('spvr-')) {
+        return str.toUpperCase();
+      }
+
+      return null;
+    };
+
+    // Priority order for supervisor resolution:
+    // 1. Explicit signatory supervisor in settlement terms
+    const signatoryMatch = matchSupervisor(parsedTerms?.signatories?.supervisor);
+    if (signatoryMatch) return signatoryMatch;
+
+    // 2. Supervisor field on item (numeric ID or email/handle)
+    const itemSupervisorMatch = matchSupervisor(item?.supervisor);
+    if (itemSupervisorMatch) return itemSupervisorMatch;
+
+    // 3. Named supervisor on item
+    const supervisorNameMatch = matchSupervisor(item?.supervisor_name || item?.supervisorName);
+    if (supervisorNameMatch) return supervisorNameMatch;
+
+    // 4. Accountable username / supervisor handle
+    const usernameMatch = matchSupervisor(item?.username);
+    if (usernameMatch) return usernameMatch;
+
+    // 5. Nested signatories on item
+    const itemSignatoriesMatch = matchSupervisor(item?.signatories?.supervisor);
+    if (itemSignatoriesMatch) return itemSignatoriesMatch;
 
     return 'SALES SUPERVISOR';
   };
@@ -201,9 +263,9 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
   const hrManagerName = parsedTerms?.signatories?.hrManager && parsedTerms.signatories.hrManager !== 'Authorized HR / Management'
     ? parsedTerms.signatories.hrManager
     : 'QUENNIE CAPUYAN';
-  const claimantName = item.fullName || item.username || parsedTerms?.signatories?.claimant || 'Accountable Payer';
-  const agreementDate = parsedTerms?.agreementDate || item.agreementDate || item.updated_at || item.created_at;
-  const reason = parsedTerms?.reason || item.reason || 'No reason provided';
+  const claimantName = item?.fullName || item?.username || parsedTerms?.signatories?.claimant || 'Accountable Payer';
+  const agreementDate = parsedTerms?.agreementDate || item?.agreementDate || item?.updated_at || item?.created_at;
+  const reason = parsedTerms?.reason || item?.reason || 'No reason provided';
   const frequency = parsedTerms?.frequency || 'weekly';
   const installments = parsedTerms?.installments || [];
 
@@ -222,10 +284,18 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
     }
   };
 
-
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (!subOfficeMeta?.address && !subOfficeMeta?.logo_url && targetSubOffice) {
+      try {
+        const details = await systemService.resolveSubOfficeDetails(targetSubOffice);
+        if (details) setSubOfficeMeta(details);
+      } catch {}
+    }
     openSettlementAgreementPrint();
   };
+
+  // --- 5. Conditional Rendering Guard (Placed strictly AFTER all hooks) ---
+  if (!isOpen || !item) return null;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -259,10 +329,30 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
             {/* HEADER WITH LOGOS */}
             <div className="flex justify-between items-center border-b-2 border-[#002B66] pb-1">
               <div className="flex items-center gap-3">
-                <img src="/lbp.png" alt="Lucky Betplay Logo" className="w-12 h-12 object-contain rounded" />
+                {subOfficeMeta?.logo_url ? (
+                  <img
+                    src={subOfficeMeta.logo_url}
+                    alt={`${subOfficeMeta?.name || targetSubOffice || 'Sub-Office'} Logo`}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    className="w-12 h-12 object-contain rounded"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-slate-100 flex items-center justify-center text-[#002B66] border border-slate-200 shrink-0">
+                    <Building2 size={24} />
+                  </div>
+                )}
                 <div>
                   <h1 className="text-xs font-black text-[#002B66] tracking-wide">CENTRALIZED UNCLAIMED WINNINGS</h1>
-                  <p className="text-[9px] text-slate-500 font-semibold">#257 BARLAPS, A.S. FORTUNA STREET, BAKILID, MANDAUE CITY, CEBU 6014</p>
+                  {(subOfficeMeta?.name || targetSubOffice) && (
+                    <p className="text-[9.5px] text-slate-700 font-bold uppercase tracking-wider">
+                      SUB-OFFICE: {subOfficeMeta?.name || targetSubOffice}
+                    </p>
+                  )}
+                  {subOfficeMeta?.address ? (
+                    <p className="text-[8.5px] text-slate-500 font-semibold uppercase">
+                      {subOfficeMeta.address}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -360,7 +450,7 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
                       }
                       
                       const computedDueDate = inst.dueDate || getCalculatedDueDate(agreementDate, frequency, index);
-                      
+
                       return (
                         <tr key={inst.id || index} className="odd:bg-white even:bg-slate-50">
                           <td className="border border-slate-300 p-2 font-bold font-mono">{inst.id || index + 1}</td>

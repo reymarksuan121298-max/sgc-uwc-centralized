@@ -77,6 +77,12 @@ export async function proxyFetch(targetUrl, options = {}) {
     inputHeaders['authorization'] ||
     (typeof headers?.get === 'function' ? headers.get('authorization') : '') ||
     '';
+  // If request is targeting Supabase Storage, bypass proxy and use native fetch directly.
+  // Supabase Storage natively supports CORS and requires direct binary streaming for File/Blob/FormData payloads.
+  const targetUrlStr = typeof targetUrl === 'string' ? targetUrl : (targetUrl?.url || '');
+  if (targetUrlStr.includes('/storage/v1/')) {
+    return fetch(targetUrl, options);
+  }
 
   // In browser environments, route through the serverless proxy using clean POST URLs (zero query params)
   if (typeof window !== 'undefined') {
@@ -147,7 +153,7 @@ export async function proxyFetch(targetUrl, options = {}) {
         };
       }
       // 6. Supabase Database & Storage Proxy (All tables across all pages)
-      else if (host.includes('supabase.co') || pathname.includes('/rest/v1/') || pathname.includes('/storage/v1/') || pathname.includes('/auth/v1/') || searchParams.get('action') === 'supabase') {
+      else if (host.includes('supabase.co') || pathname.includes('/rest/v1/') || pathname.includes('/auth/v1/') || searchParams.get('action') === 'supabase') {
         const queryParams = {};
         for (const [k, v] of searchParams.entries()) {
           if (!['action', 'table', 'path', 'url', 'apikey', 'Apikey', 'authHeader', 'token'].includes(k)) {

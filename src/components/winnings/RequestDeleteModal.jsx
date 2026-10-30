@@ -20,7 +20,7 @@ export default function RequestDeleteModal({
 }) {
   const [reason, setReason] = useState('Winning ticket has been claimed in the system. Requesting deletion and deduction from collections.');
   const [ticketImage, setTicketImage] = useState(null);
-  const [isAlreadyDeposited, setIsAlreadyDeposited] = useState(false);
+  const [isAlreadyDeposited, setIsAlreadyDeposited] = useState(true);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -29,8 +29,20 @@ export default function RequestDeleteModal({
 
   useEffect(() => {
     if (ticket) {
-      const isRemitted = Boolean(ticket.receipt_status && ticket.receipt_status !== 'NO_RECEIPT');
-      setIsAlreadyDeposited(isRemitted);
+      // Default deposited status to true (DEPOSITED) for claimed deletion requests
+      setIsAlreadyDeposited(true);
+
+      // Pre-populate existing receipt image from ticket if available
+      const existingProof = ticket.deletion_request_attachment || 
+                            ticket.hard_copy_ticket_url || 
+                            ticket.receipt_url || 
+                            ticket.proof_url || 
+                            ticket.attachment_url || 
+                            ticket.ocr_data?.hard_copy_image || 
+                            null;
+      if (existingProof) {
+        setTicketImage(existingProof);
+      }
     }
   }, [ticket]);
 
