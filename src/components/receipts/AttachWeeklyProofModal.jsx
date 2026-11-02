@@ -317,35 +317,42 @@ function AttachWeeklyProofModal({
 
   const selectedCount = selectedItems.length;
 
-  // Claimed deductions calculation
+    // Filter only DEPOSITED claimed deletion tickets (defense-in-depth safeguard)
+  const eligibleClaimedItems = useMemo(() => {
+    return (claimedAdjustmentItems || []).filter(i => {
+      return i.is_already_deposited === true || i.is_already_deposited === 'true' || i.is_already_deposited === 1;
+    });
+  }, [claimedAdjustmentItems]);
+
+  // Claimed deductions calculation (Strictly from DEPOSITED tickets)
   const selectedDeductionTotal = useMemo(() => {
-    return (claimedAdjustmentItems || [])
+    return (eligibleClaimedItems || [])
       .filter(i => {
         const k = String(i.transactionId || i.transId || i.id).trim();
         return selectedClaimedKeys.has(k);
       })
       .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-  }, [claimedAdjustmentItems, selectedClaimedKeys]);
+  }, [eligibleClaimedItems, selectedClaimedKeys]);
 
   const selectedClaimedCount = useMemo(() => {
-    return (claimedAdjustmentItems || []).filter(i => {
+    return (eligibleClaimedItems || []).filter(i => {
       const k = String(i.transactionId || i.transId || i.id).trim();
       return selectedClaimedKeys.has(k);
     }).length;
-  }, [claimedAdjustmentItems, selectedClaimedKeys]);
+  }, [eligibleClaimedItems, selectedClaimedKeys]);
 
   const totalClaimedWinAmount = useMemo(() => {
-    return (claimedAdjustmentItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-  }, [claimedAdjustmentItems]);
+    return (eligibleClaimedItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  }, [eligibleClaimedItems]);
 
   const selectedClaimedItems = useMemo(() => {
-    return (claimedAdjustmentItems || []).filter(i => {
+    return (eligibleClaimedItems || []).filter(i => {
       const k = String(i.transactionId || i.transId || i.id).trim();
       return selectedClaimedKeys.has(k);
     });
-  }, [claimedAdjustmentItems, selectedClaimedKeys]);
+  }, [eligibleClaimedItems, selectedClaimedKeys]);
 
-  const hasUnselectedClaimed = (claimedAdjustmentItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
+  const hasUnselectedClaimed = (eligibleClaimedItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
 
   const netPayableTotal = useMemo(() => {
     const gross = parseFloat(selectedWinTotal || 0) || 0;
@@ -376,7 +383,7 @@ function AttachWeeklyProofModal({
       const initialDeducted = Math.max(0, targetAmount - totalClaimedWinAmount);
       setCustomRemittanceAmount(initialDeducted.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser, claimedAdjustmentItems, totalClaimedWinAmount]);
+  }, [isOpen, filteredData, currentUser, eligibleClaimedItems, totalClaimedWinAmount]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
@@ -424,7 +431,7 @@ function AttachWeeklyProofModal({
       } else {
         next.add(key);
       }
-      const newAdditions = (claimedAdjustmentItems || [])
+      const newAdditions = (eligibleClaimedItems || [])
         .filter(i => next.has(String(i.transactionId || i.transId || i.id).trim()))
         .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
       const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalClaimedWinAmount);
@@ -432,12 +439,12 @@ function AttachWeeklyProofModal({
       setCustomRemittanceAmount(newTotal.toFixed(2));
       return next;
     });
-  }, [claimedAdjustmentItems, selectedWinTotal, totalClaimedWinAmount]);
+  }, [eligibleClaimedItems, selectedWinTotal, totalClaimedWinAmount]);
 
   const handleToggleAllClaimed = useCallback(() => {
-    if (!claimedAdjustmentItems || !claimedAdjustmentItems.length) return;
+    if (!eligibleClaimedItems || !eligibleClaimedItems.length) return;
     setSelectedClaimedKeys(prev => {
-      const allKeys = claimedAdjustmentItems.map(i => String(i.transactionId || i.transId || i.id).trim());
+      const allKeys = eligibleClaimedItems.map(i => String(i.transactionId || i.transId || i.id).trim());
       const isAll = allKeys.length > 0 && allKeys.every(k => prev.has(k));
       const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalClaimedWinAmount);
       if (isAll) {
@@ -794,7 +801,7 @@ function AttachWeeklyProofModal({
                     <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
                       {selectedClaimedCount > 0
                         ? `Approved Deletion Ticket Included (+${selectedClaimedCount} Selected)`
-                        : `Action Required: Approved Deletion Ticket Reconciliation (${claimedAdjustmentItems.length} Available)`}
+                        : `Action Required: Approved Deletion Ticket Reconciliation (${eligibleClaimedItems.length} Available)`}
                     </span>
                     <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
                       selectedClaimedCount > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
@@ -1373,7 +1380,7 @@ function AttachWeeklyProofModal({
         <SelectClaimedDeductionsModal
           isOpen={isClaimedModalOpen}
           onClose={() => setIsClaimedModalOpen(false)}
-          items={claimedAdjustmentItems}
+          items={eligibleClaimedItems}
           selectedKeys={selectedClaimedKeys}
           onToggleSelect={handleToggleClaimedSelect}
           onToggleSelectAll={handleToggleAllClaimed}

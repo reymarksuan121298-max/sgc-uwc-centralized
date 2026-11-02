@@ -288,9 +288,14 @@ export default function ReturnedWinnings({
     return (scopedDeletionRequests || [])
       .filter(r => {
         // STRICT RULE: Only include deletion requests that have been explicitly APPROVED by Unclaimed Specialist / Admin
-        const isApproved = r.status === 'APPROVED';
+        const isApproved = String(r.status || '').toUpperCase() === 'APPROVED';
         if (!isApproved) return false;
-        // Strictly exclude tickets already added to a previous remittance batch
+
+        // STRICT RULE 2: Only include tickets that were already DEPOSITED in collections
+        const isDeposited = r.is_already_deposited === true || r.is_already_deposited === 'true' || r.is_already_deposited === 1;
+        if (!isDeposited) return false;
+
+        // STRICT RULE 3: Strictly exclude tickets already added to a previous remittance batch
         if (r.deducted_from_collections) return false;
         return true;
       })

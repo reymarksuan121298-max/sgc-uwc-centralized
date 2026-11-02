@@ -18,12 +18,13 @@ export default function SelectClaimedDeductionsModal({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Search filter
+    // Search filter (Strictly DEPOSITED tickets only)
   const filteredItems = useMemo(() => {
     if (!items || !items.length) return [];
-    if (!searchTerm.trim()) return items;
+    const depositedOnly = items.filter(i => i.is_already_deposited === true || i.is_already_deposited === 'true' || i.is_already_deposited === 1);
+    if (!searchTerm.trim()) return depositedOnly;
     const q = searchTerm.toLowerCase().trim();
-    return items.filter(item => {
+    return depositedOnly.filter(item => {
       const transId = String(item.transactionId || item.transId || item.transaction_id || '').toLowerCase();
       const teller = String(item.fullName || item.teller_outlet || item.outlet || item.username || '').toLowerCase();
       const betNo = String(item.betNo || item.bet_no || '').toLowerCase();
@@ -128,7 +129,7 @@ export default function SelectClaimedDeductionsModal({
         <div className="flex-1 overflow-y-auto p-3.5 space-y-2">
           {filteredItems.length === 0 ? (
             <div className="p-8 text-center text-slate-400 font-bold uppercase text-xs border border-dashed border-slate-200 rounded-xl">
-              No claimed deletion tickets found.
+              No deposited approved deletion tickets found.
             </div>
           ) : (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">

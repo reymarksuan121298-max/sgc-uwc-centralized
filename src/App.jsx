@@ -216,13 +216,13 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('stl_copied_trans_ids', JSON.stringify(Array.from(copiedTransIds)));
-    } catch {}
+    } catch { }
   }, [copiedTransIds]);
 
   useEffect(() => {
     try {
       localStorage.setItem('stl_copied_supervisor_keys', JSON.stringify(Array.from(copiedSupervisorKeys)));
-    } catch {}
+    } catch { }
   }, [copiedSupervisorKeys]);
 
   const [selectedSettlementTicketId, setSelectedSettlementTicketId] = useState('');
@@ -704,13 +704,13 @@ export default function App() {
 
         const endpointLabel = (cfg.sub_office || cfg.name || '').toLowerCase();
         const isIliganEndpoint = endpointLabel.includes('iligan') ||
-                                 (cfg.baseUrl || '').toLowerCase().includes('stl-ldn-api');
+          (cfg.baseUrl || '').toLowerCase().includes('stl-ldn-api');
 
         let fallbackSubOffice = cfg.requestedSubOffice || (cfg.sub_office && cfg.sub_office !== 'All' ? cfg.sub_office : 'Mandaue Central');
         let isSetA = false;
         let isLala = false;
         let isBaloi = false;
-        
+
         if (isIliganEndpoint) {
           if (cfg.requestedSubOffice) {
             const req = cfg.requestedSubOffice.toLowerCase();
@@ -1067,15 +1067,15 @@ export default function App() {
 
             if (!isMe) {
               const sender = payload.new?.sender_name || 'SSR Agent';
-              const msgSnippet = payload.new?.image_url 
-                ? '📷 Sent a ticket photo' 
+              const msgSnippet = payload.new?.image_url
+                ? '📷 Sent a ticket photo'
                 : (payload.new?.message_text || payload.new?.message || payload.new?.text || 'Sent a new message');
               const roomId = payload.new?.room_id || null;
               const subOffice = payload.new?.sub_office || '';
               const senderId = payload.new?.sender_id || null;
 
               // Check if window is already open in active docked multi-chats
-              const isOpenInDock = openChats.some(c => 
+              const isOpenInDock = openChats.some(c =>
                 (c.id && (c.id === roomId || String(c.id).toLowerCase() === String(senderId).toLowerCase())) ||
                 (c.username && String(c.username).toLowerCase() === String(senderUsername).toLowerCase())
               );
@@ -1289,12 +1289,12 @@ export default function App() {
         if (isUserMandaue) {
           // If current user is ANY Mandaue SSR, accept if ticket is from Mandaue via sub_office, location, outlet, or supervisor Molly/31
           const isTicketMandaue = isMandaueOffice(itemSub) ||
-                                  isMandaueOffice(itemLoc) ||
-                                  itemOutlet.includes('mandaue') ||
-                                  u === 'spvr-molly' ||
-                                  u.includes('molly') ||
-                                  String(i.supervisor) === '31' ||
-                                  String(i.supervisor).toLowerCase().includes('molly');
+            isMandaueOffice(itemLoc) ||
+            itemOutlet.includes('mandaue') ||
+            u === 'spvr-molly' ||
+            u.includes('molly') ||
+            String(i.supervisor) === '31' ||
+            String(i.supervisor).toLowerCase().includes('molly');
           if (!isTicketMandaue) return false;
         } else {
           // For other branches (Iligan, Lala, Baloi), enforce strict string match
@@ -1395,7 +1395,7 @@ export default function App() {
   const handleConfirmReturn = async (payloadObj) => {
     if (!selectedTicket) return;
     setIsSaving(true);
-    
+
     // Support legacy string or new object format
     const tellerStatus = typeof payloadObj === 'object' ? payloadObj.tellerStatus : (payloadObj || 'ACTIVE');
     const hrValidEmail = typeof payloadObj === 'object' ? payloadObj.hrValidEmail : null;
@@ -1497,8 +1497,8 @@ export default function App() {
         target_type: 'returned_winnings',
         target_id: targetTransId,
         sub_office: targetSubOffice,
-        details: { 
-          winAmount: totalWin, 
+        details: {
+          winAmount: totalWin,
           admin_commission: totalAdminComm,
           betsCount: payloads.length,
           betCodes: payloads.map(p => p.betCode)
@@ -1532,7 +1532,7 @@ export default function App() {
                 },
               }),
             });
-            
+
             if (!emailRes.ok) {
               const errTxt = await emailRes.text();
               console.error("EmailJS Error Response:", errTxt);
@@ -1541,7 +1541,7 @@ export default function App() {
               console.log("EmailJS successfully sent HR notification with direct approval link.");
             }
           } else {
-             console.warn("EmailJS configuration is missing, aborting send.");
+            console.warn("EmailJS configuration is missing, aborting send.");
           }
         } catch (emailErr) {
           console.warn('Failed to send HR notification email:', emailErr);
@@ -1651,10 +1651,10 @@ export default function App() {
   const userFeaturePermissions = useMemo(() => {
     // Non-SSR roles (Superadmin, Admin, Unclaimed Specialist) retain full access
     if (!isSSRRole(currentUser?.role)) {
-      return { 
-        canCopyTransaction: true, 
-        canOpenQrModal: true, 
-        hideTransIdColumn: false 
+      return {
+        canCopyTransaction: true,
+        canOpenQrModal: true,
+        hideTransIdColumn: false
       };
     }
     // Sales Service Representative (SSR) accounts:
@@ -1882,7 +1882,7 @@ export default function App() {
               url.searchParams.delete('hr_token');
               url.searchParams.delete('hr_email');
               window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
-            } catch {}
+            } catch { }
           }}
         />
       </>
