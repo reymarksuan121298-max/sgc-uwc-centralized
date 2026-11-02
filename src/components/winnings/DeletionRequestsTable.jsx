@@ -263,7 +263,7 @@ export default function DeletionRequestsTable({
 
                       {/* Deposited Status */}
                       <td className="px-3 py-2.5 border-r border-slate-100 text-center whitespace-nowrap">
-                        {item.is_already_deposited !== false ? (
+                        {Boolean(item.is_already_deposited === true || item.is_already_deposited === 'true' || item.is_already_deposited === 1) ? (
                           <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[9.5px] px-2 py-0.5 rounded-full" title="Already deposited in previous collections">
                             <CheckCircle2 size={10} className="text-emerald-700" /> DEPOSITED
                           </span>
@@ -423,7 +423,7 @@ export default function DeletionRequestsTable({
                   <div>
                     <span>{betNo} ({betCode})</span> • <span>{formatDrawTime ? formatDrawTime(draw) : draw}</span>
                   </div>
-                  {item.is_already_deposited !== false ? (
+                  {Boolean(item.is_already_deposited === true || item.is_already_deposited === 'true' || item.is_already_deposited === 1) ? (
                     <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded-full">
                       DEPOSITED
                     </span>

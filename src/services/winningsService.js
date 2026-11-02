@@ -128,7 +128,7 @@ export const winningsService = {
           reviewed_by: reviewer,
           reviewed_at: nowIso,
           deducted_from_collections: false,
-          is_already_deposited: Boolean(record.is_already_deposited || (record.receipt_status && record.receipt_status !== 'NO_RECEIPT')),
+          is_already_deposited: Boolean(record.is_already_deposited),
           is_claim: Boolean(record.isClaim ?? record.is_claim ?? record.isClaimed ?? record.is_claimed ?? false),
           created_at: record.created_at || nowIso,
           updated_at: nowIso
@@ -311,7 +311,7 @@ export const winningsService = {
   },
 
   // Create a new deletion request in returned_winnings_deletion_requests & update returned_winnings
-  async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = true) {
+  async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = false) {
     const transId = String(ticket.transactionId || ticket.transId || ticket.transaction_id || ticket.computedTransId || '').trim();
     const isClaimValue = Boolean(
       ticket.isClaim == 1 || ticket.isClaim === true || ticket.isClaim === '1' ||
@@ -338,7 +338,7 @@ export const winningsService = {
       requested_by: user?.full_name || user?.username || 'SSR',
       requested_by_role: user?.role || 'SSR',
       requested_at: new Date().toISOString(),
-      is_already_deposited: isAlreadyDeposited !== undefined ? Boolean(isAlreadyDeposited) : true,
+      is_already_deposited: Boolean(isAlreadyDeposited),
       is_claim: isClaimValue,
       deducted_from_collections: false
     };
