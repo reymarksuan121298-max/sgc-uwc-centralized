@@ -34,6 +34,38 @@ const DEFAULT_COMMISSIONS = {
   collectorPercent: 10
 };
 
+const isMandaueOffice = (str) => {
+  const clean = String(str || '').toLowerCase().trim();
+  return (
+    clean.includes('mandaue') ||
+    clean.includes('lucky betplay') ||
+    clean.includes('tipolo') ||
+    clean.includes('banilad') ||
+    clean.includes('guizo') ||
+    clean.includes('opao') ||
+    clean.includes('canduman') ||
+    clean.includes('paknaan') ||
+    clean.includes('pakna-an') ||
+    clean.includes('subangdaku') ||
+    clean.includes('centro') ||
+    clean.includes('alang-alang') ||
+    clean.includes('looc') ||
+    clean.includes('tabok') ||
+    clean.includes('tingub') ||
+    clean.includes('maguikay') ||
+    clean.includes('ibabao') ||
+    clean.includes('bakilid') ||
+    clean.includes('cabancalan') ||
+    clean.includes('casuntingan') ||
+    clean.includes('basak') ||
+    clean.includes('jagobiao') ||
+    clean.includes('labogon') ||
+    clean.includes('pagsabungan') ||
+    clean.includes('tawason') ||
+    clean.includes('ubao')
+  );
+};
+
 export default function App() {
   // Silent Anti-Inspect Lockdown Activation (Blocks contextmenu, F12, DevTools shortcuts without any UI overlay)
   useEffect(() => {
@@ -614,9 +646,14 @@ export default function App() {
 
         if (isRestrictedBranchUser) {
           const userSub = String(currentUser.sub_office).toLowerCase().trim();
+          const isUserMandaue = isMandaueOffice(userSub);
           const match = activeEndpoints.find(e => {
-            if (!e.sub_office) return false;
-            const epOffices = e.sub_office.split(',').map(s => s.trim().toLowerCase());
+            if (!e.sub_office && !e.name) return false;
+            const epLabel = (e.sub_office || e.name || '').toLowerCase();
+            if (isUserMandaue && (epLabel.includes('mandaue') || (e.baseUrl || '').toLowerCase().includes('stl-mandaue'))) {
+              return true;
+            }
+            const epOffices = (e.sub_office || '').split(',').map(s => s.trim().toLowerCase());
             return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')));
           });
           const fallbackEp = activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0];
@@ -738,11 +775,21 @@ export default function App() {
           let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
           arr = filterIligan(arr, epMeta);
 
-          return arr.map(item => ({
-            ...item,
-            isClaim: 0,
-            sub_office: epMeta.isIliganEndpoint ? epMeta.fallbackSubOffice : (item.sub_office || item.location || epMeta.fallbackSubOffice)
-          }));
+          const endpointLabel = (epMeta.cfg?.sub_office || epMeta.cfg?.name || '').toLowerCase();
+          const isMandaueEp = endpointLabel.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue');
+          return arr.map(item => {
+            const resolvedSubOffice = epMeta.isIliganEndpoint
+              ? epMeta.fallbackSubOffice
+              : isMandaueEp
+                ? 'Mandaue City'
+                : (item.sub_office || epMeta.fallbackSubOffice || 'Mandaue City');
+
+            return {
+              ...item,
+              isClaim: 0,
+              sub_office: resolvedSubOffice
+            };
+          });
         } catch (err) {
           clearTimeout(timeoutId);
           throw err;
@@ -833,11 +880,21 @@ export default function App() {
               }
 
               const filtered = filterIligan(rawArr, epMeta);
-              return filtered.map(item => ({
-                ...item,
-                isClaim: 1,
-                sub_office: epMeta.isIliganEndpoint ? epMeta.fallbackSubOffice : (item.sub_office || item.location || epMeta.fallbackSubOffice)
-              }));
+              const endpointLabel = (epMeta.cfg?.sub_office || epMeta.cfg?.name || '').toLowerCase();
+              const isMandaueEp = endpointLabel.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue');
+              return filtered.map(item => {
+                const resolvedSubOffice = epMeta.isIliganEndpoint
+                  ? epMeta.fallbackSubOffice
+                  : isMandaueEp
+                    ? 'Mandaue City'
+                    : (item.sub_office || epMeta.fallbackSubOffice || 'Mandaue City');
+
+                return {
+                  ...item,
+                  isClaim: 1,
+                  sub_office: resolvedSubOffice
+                };
+              });
             });
           });
 
@@ -1223,9 +1280,27 @@ export default function App() {
 
       // Non-admin branch scoping safeguard: strictly reject tickets outside assigned branch
       if (userSub) {
+        const isUserMandaue = isMandaueOffice(userSub);
         const itemSub = String(i.sub_office || '').toLowerCase().trim();
-        if (itemSub && itemSub !== 'all' && !itemSub.includes(userSub) && !userSub.includes(itemSub)) {
-          return false;
+        const itemLoc = String(i.location || '').toLowerCase().trim();
+        const itemOutlet = String(i.fullName || i.outlet || '').toLowerCase().trim();
+        const u = String(i.username || i.supervisor || i.user || '').toLowerCase().trim();
+
+        if (isUserMandaue) {
+          // If current user is ANY Mandaue SSR, accept if ticket is from Mandaue via sub_office, location, outlet, or supervisor Molly/31
+          const isTicketMandaue = isMandaueOffice(itemSub) ||
+                                  isMandaueOffice(itemLoc) ||
+                                  itemOutlet.includes('mandaue') ||
+                                  u === 'spvr-molly' ||
+                                  u.includes('molly') ||
+                                  String(i.supervisor) === '31' ||
+                                  String(i.supervisor).toLowerCase().includes('molly');
+          if (!isTicketMandaue) return false;
+        } else {
+          // For other branches (Iligan, Lala, Baloi), enforce strict string match
+          if (itemSub && itemSub !== 'all' && !itemSub.includes(userSub) && !userSub.includes(itemSub)) {
+            return false;
+          }
         }
       }
 
@@ -1269,7 +1344,8 @@ export default function App() {
     return pendingFilteredData.filter((item, i) =>
       (item.username || '').toLowerCase().includes(q) ||
       (item.fullName || item.outlet || '').toLowerCase().includes(q) ||
-      (item.transactionId || item.transId || item.receipt_no || item.ticket_no || `REC-${i + 1}`).toLowerCase().includes(q) ||
+      (item.transactionId || item.transaction_id || item.transId || item.receipt_no || item.ticket_no || `REC-${i + 1}`).toLowerCase().includes(q) ||
+      (item.location || '').toLowerCase().includes(q) ||
       (item.betNo || item.CombiNo || '').toLowerCase().includes(q) ||
       (item.betCode || '').toLowerCase().includes(q) ||
       (item.sub_office || '').toLowerCase().includes(q)

@@ -64,8 +64,10 @@ export default function ViewHardCopyTicketModal({
             }
             const { data: rwData } = await rwQuery.limit(1);
 
+            let hasRwMatch = false;
             if (!isCancelled && rwData && rwData.length > 0) {
               const rwItem = rwData[0];
+              hasRwMatch = true;
               setFetchedDetails(rwItem);
               const imgFromRw = rwItem.deletion_request_attachment || 
                                 rwItem.hard_copy_ticket_url || 
@@ -75,20 +77,24 @@ export default function ViewHardCopyTicketModal({
               if (imgFromRw && !directImg) {
                 setResolvedImage(imgFromRw);
               }
-            } else if (!isCancelled && !directImg && transId) {
-              // 2. Try returned_winnings_deletion_requests table
-              const { data: delData } = await supabase
-                .from('returned_winnings_deletion_requests')
-                .select('*')
-                .eq('transaction_id', transId)
-                .limit(1);
+            }
+
+            // 2. Try returned_winnings_deletion_requests table if not in returned_winnings or missing direct image
+            if (!isCancelled && (!hasRwMatch || !directImg)) {
+              let delQuery = supabase.from('returned_winnings_deletion_requests').select('*');
+              if (refId && typeof refId === 'string' && refId.length > 20) {
+                delQuery = delQuery.or(`id.eq.${refId},transaction_id.eq.${transId}`);
+              } else if (transId) {
+                delQuery = delQuery.eq('transaction_id', transId);
+              }
+              const { data: delData } = await delQuery.limit(1);
 
               if (!isCancelled && delData && delData.length > 0) {
                 const delItem = delData[0];
-                if (delItem.attachment_url) {
+                if (delItem.attachment_url && !directImg) {
                   setResolvedImage(delItem.attachment_url);
                 }
-                setFetchedDetails(delItem);
+                setFetchedDetails(prev => ({ ...delItem, ...prev }));
               }
             }
           } catch (fetchErr) {
@@ -104,8 +110,8 @@ export default function ViewHardCopyTicketModal({
   if (!isOpen || !ticket) return null;
 
   const transId = getTicketTransId(ticket, 'N/A');
-  const winAmount = parseFloat(ticket.winAmount ?? ticket.win_amount ?? fetchedDetails?.winAmount ?? fetchedDetails?.win_amount ?? 0);
-  const betAmount = parseFloat(ticket.betAmount ?? ticket.bet_amount ?? fetchedDetails?.betAmount ?? fetchedDetails?.bet_amount ?? 0);
+  const winAmount = parseFloat(ticket.winAmount || ticket.win_amount || fetchedDetails?.winAmount || fetchedDetails?.win_amount || 0);
+  const betAmount = parseFloat(ticket.betAmount || ticket.bet_amount || fetchedDetails?.betAmount || fetchedDetails?.bet_amount || 0);
   const displayAccount = ticket.fullName || ticket.teller_outlet || ticket.outlet || ticket.username || fetchedDetails?.fullName || fetchedDetails?.teller_outlet || 'Accountable Teller';
   const drawTimeVal = ticket.drawTime || ticket.draw_time || ticket.draw || fetchedDetails?.drawTime || fetchedDetails?.draw_time;
   const drawDateVal = ticket.drawDate || ticket.draw_date || ticket.date || ticket.created_at || fetchedDetails?.drawDate || fetchedDetails?.draw_date;
@@ -113,6 +119,8 @@ export default function ViewHardCopyTicketModal({
   const reason = ticket.deletion_request_reason || ticket.reason || fetchedDetails?.reason || fetchedDetails?.deletion_request_reason || 'Requested deletion for verified claimed winning ticket.';
   const requestedBy = ticket.deletion_request_by || ticket.requested_by || ticket.username || fetchedDetails?.requested_by || fetchedDetails?.deletion_request_by || 'SSR / Specialist';
   const requestDate = ticket.requested_at || ticket.updated_at || ticket.created_at || fetchedDetails?.requested_at || fetchedDetails?.created_at;
+  const betNoVal = ticket.betNo || ticket.bet_no || ticket.combination || ticket.CombiNo || fetchedDetails?.betNo || fetchedDetails?.bet_no || 'N/A';
+  const betCodeVal = ticket.betCode || ticket.bet_code || fetchedDetails?.betCode || fetchedDetails?.bet_code || '';
 
   // Extract ticket attachment image (supports attachment_url from deletion requests)
   const ticketImage = resolvedImage || 
@@ -385,7 +393,7 @@ export default function ViewHardCopyTicketModal({
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                   <span className="font-sans text-slate-500 font-bold">Bet / Combination:</span>
                   <span className="font-extrabold text-[#002B66] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {ticket.betNo || ticket.bet_no || ticket.combination || ticket.CombiNo || fetchedDetails?.betNo || fetchedDetails?.bet_no || 'N/A'}
+                    {betNoVal}{betCodeVal ? ` (${betCodeVal})` : ''}
                   </span>
                 </div>
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
