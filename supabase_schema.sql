@@ -120,6 +120,15 @@ CREATE TABLE public.returned_winnings (
     CONSTRAINT "returned_winnings_trans_bet_unique" UNIQUE ("transactionId", "betCode")
 );
 
+-- Idempotent Migration: Upgrade legacy single-column unique constraint to composite ("transactionId", "betCode")
+DO $$
+BEGIN
+  ALTER TABLE public.returned_winnings DROP CONSTRAINT IF EXISTS "returned_winnings_transactionId_key";
+  ALTER TABLE public.returned_winnings DROP CONSTRAINT IF EXISTS "returned_winnings_trans_bet_unique";
+  ALTER TABLE public.returned_winnings ADD CONSTRAINT "returned_winnings_trans_bet_unique" UNIQUE ("transactionId", "betCode");
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 -- ==============================================================================
 -- 4.1 CREATE `settlement_payments` TABLE (Settlement Installment Payments)
 -- ==============================================================================

@@ -7,6 +7,7 @@ import ModernDropdown from '../common/ModernDropdown';
 export default function ConfirmReturnModal({
   isOpen,
   ticket,
+  siblingBets = [],
   commissionConfig,
   isSaving = false,
   copiedTransIds = new Set(),
@@ -52,8 +53,15 @@ export default function ConfirmReturnModal({
     setTimeout(() => setInternalCopied(false), 2000);
   };
 
-  const winAmt = parseFloat(ticket.winAmount ?? 0);
-  const betAmt = parseFloat(ticket.betAmount ?? ticket.amount ?? ticket.gross ?? 0);
+  const allBets = (siblingBets && siblingBets.length > 0)
+    ? siblingBets
+    : (ticket?.siblingBets && ticket.siblingBets.length > 0)
+      ? ticket.siblingBets
+      : [ticket];
+  const isMultiBet = allBets.length > 1;
+
+  const winAmt = isMultiBet ? allBets.reduce((sum, b) => sum + parseFloat(b.winAmount ?? 0), 0) : parseFloat(ticket.winAmount ?? 0);
+  const betAmt = isMultiBet ? allBets.reduce((sum, b) => sum + parseFloat(b.betAmount ?? b.amount ?? b.gross ?? 0), 0) : parseFloat(ticket.betAmount ?? ticket.amount ?? ticket.gross ?? 0);
   const betNo = ticket.betNo || ticket.CombiNo || ticket.SoldOutCombiNo || 'N/A';
   const betCode = ticket.betCode || (ticket.rambolito ? 'RS3' : 'TS3');
   const drawFormatted = formatDrawTime(ticket.drawTime || ticket.draw, ticket.drawDate || ticket.created_at);
@@ -253,20 +261,49 @@ export default function ConfirmReturnModal({
               </span>
             </div>
 
+            {/* Multi-Bet Items Breakdown (When physical ticket has multiple winning combinations) */}
+            {isMultiBet && (
+              <div className="bg-blue-50/80 border border-blue-200/90 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#002B66]">
+                    {allBets.length} Winning Combinations on this Physical Ticket
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                    Single Receipt
+                  </span>
+                </div>
+                <div className="divide-y divide-blue-100 rounded-lg border border-blue-200/60 overflow-hidden bg-white text-xs font-mono">
+                  {allBets.map((b, idx) => (
+                    <div key={idx} className="flex items-center justify-between px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-400 font-sans">#{idx + 1}</span>
+                        <span className="font-bold text-slate-900">{b.betNo || b.CombiNo || 'N/A'}</span>
+                        <span className="text-slate-500 font-normal">({b.betCode || (b.rambolito ? 'RS3' : 'TS3')})</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-500 text-[11px] mr-2">Bet: ₱{parseFloat(b.betAmount ?? b.amount ?? 0).toFixed(2)}</span>
+                        <span className="font-black text-emerald-700">Win: ₱{parseFloat(b.winAmount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Row 6: Bet Combination */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
-                BET COMBINATION:
+                {isMultiBet ? `BET COMBINATIONS (${allBets.length}):` : 'BET COMBINATION:'}
               </span>
               <span className="font-mono font-bold text-slate-800">
-                {betNo} ({betCode})
+                {isMultiBet ? allBets.map(b => `${b.betNo || b.CombiNo || 'N/A'} (${b.betCode || (b.rambolito ? 'RS3' : 'TS3')})`).join(' • ') : `${betNo} (${betCode})`}
               </span>
             </div>
 
             {/* Row 7: Bet Amount */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
-                BET AMOUNT:
+                {isMultiBet ? 'TOTAL BET AMOUNT:' : 'BET AMOUNT:'}
               </span>
               <span className="font-mono font-bold text-slate-800">
                 ₱{betAmt.toFixed(2)}
@@ -276,10 +313,10 @@ export default function ConfirmReturnModal({
             {/* Row 8: Win Amount */}
             <div className="flex items-center justify-between pt-1 gap-2">
               <span className="text-slate-500 font-extrabold text-[11px] uppercase tracking-wider">
-                WIN AMOUNT:
+                {isMultiBet ? 'TOTAL WIN AMOUNT:' : 'WIN AMOUNT:'}
               </span>
               <span className="font-mono font-black text-[#047857] text-sm sm:text-base">
-                ₱{winAmt.toFixed(2)}
+                ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
 
@@ -329,11 +366,17 @@ export default function ConfirmReturnModal({
                     }`}>{tellerStatus}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Combination:</span>
-                    <span className="font-bold text-slate-900">{betNo} ({betCode})</span>
+                    <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">
+                      {isMultiBet ? `Combinations (${allBets.length}):` : 'Combination:'}
+                    </span>
+                    <span className="font-bold text-slate-900 truncate max-w-[200px]">
+                      {isMultiBet ? allBets.map(b => `${b.betNo || 'N/A'}(${b.betCode || 'TS3'})`).join(', ') : `${betNo} (${betCode})`}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
-                    <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase">Win Amount:</span>
+                    <span className="text-slate-500 font-sans font-extrabold text-[10px] uppercase">
+                      {isMultiBet ? 'Total Win Amount:' : 'Win Amount:'}
+                    </span>
                     <span className="font-black text-emerald-700 text-sm">
                       ₱{winAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>

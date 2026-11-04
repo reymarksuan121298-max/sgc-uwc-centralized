@@ -639,23 +639,44 @@ function AttachWeeklyProofModal({
       if (receiptError) throw receiptError;
 
       // 4. Update status of all selected returned winning records in database
-      if (transIds.length > 0) {
+      if (itemsToRemit.length > 0) {
         const effectiveRemittanceTimestamp = receiptDate 
           ? new Date(`${receiptDate}T12:00:00`).toISOString() 
           : new Date().toISOString();
 
-        const { error: updateError } = await supabase
-          .from('returned_winnings')
-          .update({
-            receipt_status: 'PENDING_VERIFICATION',
-            sub_office: subOfficeName,
-            batch_serial_no: effectiveBatchSrn || null,
-            updated_at: effectiveRemittanceTimestamp
-          })
-          .in('transactionId', transIds);
+        const itemIds = itemsToRemit.map(t => t.id).filter(Boolean);
+        const transIds = itemsToRemit.map(t => String(t.transactionId || t.transId).trim()).filter(Boolean);
 
-        if (updateError) {
-          console.warn("returned_winnings batch update note:", updateError);
+        if (itemIds.length > 0) {
+          const { error: updateByIdError } = await supabase
+            .from('returned_winnings')
+            .update({
+              receipt_status: 'PENDING_VERIFICATION',
+              sub_office: subOfficeName,
+              batch_serial_no: effectiveBatchSrn || null,
+              updated_at: effectiveRemittanceTimestamp
+            })
+            .in('id', itemIds);
+
+          if (updateByIdError) {
+            console.warn("returned_winnings batch update note (by id):", updateByIdError);
+          }
+        }
+
+        if (transIds.length > 0) {
+          const { error: updateByTransError } = await supabase
+            .from('returned_winnings')
+            .update({
+              receipt_status: 'PENDING_VERIFICATION',
+              sub_office: subOfficeName,
+              batch_serial_no: effectiveBatchSrn || null,
+              updated_at: effectiveRemittanceTimestamp
+            })
+            .in('transactionId', transIds);
+
+          if (updateByTransError) {
+            console.warn("returned_winnings batch update note (by transId):", updateByTransError);
+          }
         }
       }
 

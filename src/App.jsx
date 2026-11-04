@@ -1269,7 +1269,7 @@ export default function App() {
     };
   }, [currentUser, fetchReturnedFromSupabase, fetchPendingChatCount, loadSystemSettings]);
 
-  const returnedTransIds = useMemo(() => new Set(returnedData.map(i => String(i.transactionId || '').trim().toLowerCase())), [returnedData]);
+  const returnedTransIds = useMemo(() => new Set(returnedData.map(i => getTicketTransId(i).toLowerCase()).filter(Boolean)), [returnedData]);
 
   const pendingFilteredData = useMemo(() => {
     const isRestrictedBranchUser = !isAdminRole(currentUser?.role) && currentUser?.sub_office && currentUser.sub_office !== 'All';
@@ -1327,7 +1327,8 @@ export default function App() {
         }
       }
 
-      const isReturned = returnedTransIds.has(String(i.transactionId || i.transId || i.receipt_no || i.ticket_no || '').trim().toLowerCase());
+      const isReturned = returnedTransIds.has(String(i.transactionId || i.transId || i.receipt_no || i.ticket_no || '').trim().toLowerCase()) ||
+                         returnedTransIds.has(getTicketTransId(i).toLowerCase());
       if (isReturned) return false;
       const itemDateVal = i.drawDate || i.drawTime || i.created_at || i.date;
       const itemDateStr = parseToDateString(itemDateVal);
@@ -1388,7 +1389,16 @@ export default function App() {
   }, [fromDate, toDate]);
 
   const handleRowClick = (item, index) => {
-    setSelectedTicket({ ...item, computedTransId: getTicketTransId(item, `REC-${index + 1}`) });
+    const computedTransId = getTicketTransId(item, `REC-${index + 1}`);
+    const siblingBets = (data || []).filter(d => {
+      const dTransId = getTicketTransId(d);
+      return dTransId && dTransId.toLowerCase() === computedTransId.toLowerCase();
+    });
+    setSelectedTicket({
+      ...item,
+      computedTransId,
+      siblingBets: siblingBets.length > 0 ? siblingBets : [item]
+    });
     setIsModalOpen(true);
   };
 
@@ -1408,11 +1418,6 @@ export default function App() {
     const stfP = commissionConfig?.staffPercent ?? 10;
     const colP = commissionConfig?.collectorPercent ?? 10;
 
-    const adminComm = winAmt * (admP / 100);
-    const agentComm = winAmt * (agtP / 100);
-    const staffComm = winAmt * (stfP / 100);
-    const collectorComm = winAmt * (colP / 100);
-
     const targetSubOffice = currentUser?.sub_office && currentUser.sub_office !== 'All'
       ? currentUser.sub_office
       : (selectedTicket.location || selectedTicket.address || 'Mandaue Central');
@@ -1420,12 +1425,18 @@ export default function App() {
     const targetTransId = String(selectedTicket.computedTransId || selectedTicket.transactionId || '').trim();
     // Detect all bets on the same physical ticket (matching transactionId)
     const siblingBets = (data || []).filter(item => {
-      const itemTid = String(item.transactionId || item.transId || '').trim();
+      const itemTid = getTicketTransId(item);
       return itemTid && itemTid.toLowerCase() === targetTransId.toLowerCase();
     });
 
-    const targets = siblingBets.length > 0 ? siblingBets : [selectedTicket];
-    const payloads = targets.map(ticket => {
+    const targets = siblingBets.length > 0
+      ? siblingBets
+      : (selectedTicket.siblingBets && selectedTicket.siblingBets.length > 0
+          ? selectedTicket.siblingBets
+          : [selectedTicket]);
+
+    // Raw payloads (with uniform targetTransId)
+    const rawPayloads = targets.map((ticket, idx) => {
       const itemWinAmt = parseFloat(ticket.winAmount ?? 0);
       const itemAdminComm = itemWinAmt * (admP / 100);
       const itemAgentComm = itemWinAmt * (agtP / 100);
@@ -1463,26 +1474,37 @@ export default function App() {
       };
     });
 
-    try {
-      // Prioritize composite constraint (transactionId,betCode) for both multi-bet and single-bet rows.
-      // Falls back to legacy 'transactionId' if composite constraint is not yet applied in database.
-      const initialConflictTarget = 'transactionId,betCode';
-      let { error } = await supabase.from('returned_winnings').upsert(payloads, { onConflict: initialConflictTarget });
+    // Resilient fallback payloads: if database still has single-column unique constraint on transactionId,
+    // secondary sibling combinations receive a deterministic suffix that getTicketTransId automatically strips
+    const resilientPayloads = targets.map((ticket, idx) => {
+      const p = { ...rawPayloads[idx] };
+      if (targets.length > 1 && idx > 0) {
+        const code = ticket.betCode || (ticket.rambolito ? 'RS3' : 'TS3');
+        p.transactionId = `${targetTransId}__${code}_${idx + 1}`;
+      }
+      return p;
+    });
 
-      if (error && (error.code === '42P10' || String(error.message || '').includes('ON CONFLICT'))) {
-        const alternateTarget = 'transactionId';
-        if (payloads.length === 1) {
-          const fallbackRes = await supabase.from('returned_winnings').upsert(payloads, { onConflict: alternateTarget });
+    const payloads = resilientPayloads;
+
+    try {
+      // 1. First attempt upsert using composite constraint (transactionId,betCode)
+      let { error } = await supabase.from('returned_winnings').upsert(rawPayloads, { onConflict: 'transactionId,betCode' });
+
+      // 2. If composite constraint is not yet added in database (code 42P10) or duplicate key constraint (23505)
+      if (error && (error.code === '42P10' || error.code === '23505' || String(error.message || '').includes('ON CONFLICT') || String(error.message || '').includes('returned_winnings_transactionId_key'))) {
+        if (resilientPayloads.length === 1) {
+          const fallbackRes = await supabase.from('returned_winnings').upsert(resilientPayloads, { onConflict: 'transactionId' });
           error = fallbackRes.error;
         } else {
-          for (const p of payloads) {
-            const fallbackRes = await supabase.from('returned_winnings').upsert([p], { onConflict: alternateTarget });
+          for (const p of resilientPayloads) {
+            const fallbackRes = await supabase.from('returned_winnings').upsert([p], { onConflict: 'transactionId' });
             if (fallbackRes.error) {
               error = fallbackRes.error;
               break;
             }
           }
-          if (!error?.message?.includes('ON CONFLICT')) error = null;
+          if (error && !error.message?.includes('duplicate key')) error = null;
         }
       }
       if (error) throw error;
@@ -2014,6 +2036,7 @@ export default function App() {
           setSelectedTicket(null);
         }}
         ticket={selectedTicket}
+        siblingBets={selectedTicket?.siblingBets || []}
         commissionConfig={commissionConfig}
         isSaving={isSaving}
         copiedTransIds={copiedTransIds}
