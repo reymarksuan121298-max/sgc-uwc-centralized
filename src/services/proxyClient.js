@@ -103,12 +103,17 @@ export async function proxyFetch(targetUrl, options = {}) {
 
       // 1. Unclaimed Receipts
       if (pathname.includes('unclaimedreceipts') || searchParams.has('isClaim') || searchParams.get('action') === 'unclaimed_receipts') {
+        const customTarget = options.targetUrl || searchParams.get('targetUrl') || (urlStr.startsWith('http') && pathname.includes('unclaimedreceipts') ? urlStr : '');
+        const customBase = options.baseUrl || searchParams.get('baseUrl') || (urlStr.startsWith('http') ? urlObj.origin : '');
+
         payload = {
           action: 'unclaimed_receipts',
           isClaim: searchParams.get('isClaim') || '0',
           from: searchParams.get('from') || new Date().toISOString().slice(0, 10),
           to: searchParams.get('to') || searchParams.get('from') || new Date().toISOString().slice(0, 10),
-          endpoint
+          endpoint: options.endpoint || searchParams.get('endpoint') || endpoint,
+          targetUrl: customTarget,
+          baseUrl: customBase
         };
       }
       // 2. Supervisor Mappings
@@ -306,9 +311,19 @@ export async function proxyFetch(targetUrl, options = {}) {
 /**
  * Dedicated helper: Fetch Unclaimed Receipts via Serverless Proxy
  */
-export async function fetchUnclaimedReceiptsViaProxy({ isClaim = 0, from, to, endpoint = 'mandaue', authHeader, signal }) {
-  const url = `/api/proxy?action=unclaimed_receipts&isClaim=${isClaim}&from=${from}&to=${to}&endpoint=${endpoint}`;
-  return proxyFetch(url, { method: 'GET', authHeader, signal });
+export async function fetchUnclaimedReceiptsViaProxy({ isClaim = 0, from, to, endpoint = 'mandaue', targetUrl = '', baseUrl = '', authHeader, signal }) {
+  const params = new URLSearchParams({
+    action: 'unclaimed_receipts',
+    isClaim: String(isClaim),
+    from,
+    to,
+    endpoint
+  });
+  if (targetUrl) params.set('targetUrl', targetUrl);
+  if (baseUrl) params.set('baseUrl', baseUrl);
+
+  const url = `/api/proxy?${params.toString()}`;
+  return proxyFetch(url, { method: 'GET', authHeader, signal, targetUrl, baseUrl, endpoint });
 }
 
 /**

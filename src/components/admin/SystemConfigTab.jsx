@@ -189,10 +189,14 @@ export default function SystemConfigTab({ currentUser, onConfigUpdated }) {
     try {
       const cleanUrl = endpoint.baseUrl.replace(/\/+$/, '');
       const url = `${cleanUrl}/api/accountant/UnclaimedReceipts?isClaim=0&from=${fromStr}&to=${toStr}`;
+      const rawToken = (endpoint.token || '').trim();
+      const authHeader = rawToken ? (rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`) : '';
 
       const res = await proxyFetch(url, {
         method: 'GET',
-        authHeader: endpoint.token.trim()
+        authHeader,
+        targetUrl: url,
+        baseUrl: cleanUrl
       });
 
       const latency = Date.now() - startTime;

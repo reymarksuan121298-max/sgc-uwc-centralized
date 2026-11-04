@@ -94,10 +94,24 @@ export default async function handler(req, res) {
       const from = query.from || body.from || new Date().toISOString().slice(0, 10);
       const to = query.to || body.to || from;
 
-      const isLdn = endpoint.includes('ldn') || endpoint.includes('iligan');
-      const baseUrl = isLdn ? DEFAULT_LDN_BASE : DEFAULT_MANDAUE_BASE;
-      targetUrl = `${baseUrl}/api/accountant/UnclaimedReceipts?isClaim=${isClaim}&from=${from}&to=${to}`;
+      let customTarget = query.targetUrl || body.targetUrl || '';
+      let customBaseUrl = query.baseUrl || body.baseUrl || '';
+
+      if (customTarget) {
+        targetUrl = customTarget.includes('?') 
+          ? `${customTarget}&isClaim=${isClaim}&from=${from}&to=${to}` 
+          : `${customTarget}?isClaim=${isClaim}&from=${from}&to=${to}`;
+      } else if (customBaseUrl) {
+        const cleanBase = customBaseUrl.trim().replace(/\/+$/, '');
+        targetUrl = `${cleanBase}/api/accountant/UnclaimedReceipts?isClaim=${isClaim}&from=${from}&to=${to}`;
+      } else {
+        const isLdn = endpoint.includes('ldn') || endpoint.includes('iligan');
+        const baseUrl = isLdn ? DEFAULT_LDN_BASE : DEFAULT_MANDAUE_BASE;
+        targetUrl = `${baseUrl}/api/accountant/UnclaimedReceipts?isClaim=${isClaim}&from=${from}&to=${to}`;
+      }
+
       if (!authHeader) {
+        const isLdn = endpoint.includes('ldn') || endpoint.includes('iligan') || targetUrl.includes('stl-ldn-api');
         authHeader = isLdn ? DEFAULT_LDN_TOKEN : DEFAULT_MANDAUE_TOKEN;
       }
       targetMethod = 'GET';
@@ -187,11 +201,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing proxy action, type, or target url parameter' });
     }
 
-    // Safety check: ensure target matches permitted hostnames
+    // Safety check: ensure target matches permitted hostnames or valid gateway protocol
     const lower = targetUrl.toLowerCase();
     const isAllowedHost = lower.includes('stl-mandaue-api.com') ||
                           lower.includes('stl-ldn-api.com') ||
-                          lower.includes('supabase.co');
+                          lower.includes('supabase.co') ||
+                          ((lower.startsWith('http://') || lower.startsWith('https://')) && (
+                            lower.includes('/api/accountant/') || 
+                            lower.includes('unclaimedreceipts') || 
+                            Boolean(authHeader)
+                          ));
 
     if (!isAllowedHost) {
       res.setHeader('Content-Type', 'application/json');

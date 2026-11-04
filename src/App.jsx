@@ -757,7 +757,7 @@ export default function App() {
 
       // ─── STAGE 1: Fast Fetch Primary Unclaimed Records (isClaim=0) ────────────
       const fetchUnclaimedPromises = endpointConfigs.map(async (epMeta) => {
-        const endpoint = epMeta.isIliganEndpoint ? 'ldn' : 'mandaue';
+        const endpoint = epMeta.isIliganEndpoint ? 'ldn' : (epMeta.cfg?.name || epMeta.cfg?.sub_office || 'mandaue').toLowerCase();
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 12000);
 
@@ -767,6 +767,8 @@ export default function App() {
             from: apiFromDate,
             to: apiToDate,
             endpoint,
+            targetUrl: epMeta.targetUrl,
+            baseUrl: epMeta.cfg?.baseUrl,
             authHeader: epMeta.authHeader,
             signal: controller.signal
           });
@@ -874,9 +876,10 @@ export default function App() {
           }
 
           const fetchClaimedPromises = endpointConfigs.flatMap((epMeta) => {
-            const endpoint = epMeta.isIliganEndpoint ? 'ldn' : 'mandaue';
+            const endpoint = epMeta.isIliganEndpoint ? 'ldn' : (epMeta.cfg?.name || epMeta.cfg?.sub_office || 'mandaue').toLowerCase();
+            const endpointId = epMeta.cfg?.id || epMeta.cfg?.name || endpoint;
             return dateChunks.map(async (chunk) => {
-              const chunkCacheKey = `${endpoint}_1_${chunk.from}_${chunk.to}`;
+              const chunkCacheKey = `${endpointId}_1_${chunk.from}_${chunk.to}`;
 
               // Check short-TTL in-memory cache to prevent duplicate live hits
               const cacheHit = claimedChunkCacheRef.current.get(chunkCacheKey);
@@ -892,6 +895,8 @@ export default function App() {
                     from: chunk.from,
                     to: chunk.to,
                     endpoint,
+                    targetUrl: epMeta.targetUrl,
+                    baseUrl: epMeta.cfg?.baseUrl,
                     authHeader: epMeta.authHeader,
                     signal: controller.signal
                   });
