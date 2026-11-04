@@ -203,8 +203,7 @@ export default function DeletionRequestsTable({
                 <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Deposited?</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Proof Photo</th>
                 <th className="px-3 py-2.5 border-r border-blue-900/60 whitespace-nowrap">Requester</th>
-                <th className="px-3 py-2.5 border-r border-blue-900/60 text-center whitespace-nowrap">Status</th>
-                <th className="px-3 py-2.5 text-center whitespace-nowrap">Action</th>
+                <th className="px-3 py-2.5 text-center whitespace-nowrap">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-xs text-slate-700">
@@ -298,23 +297,41 @@ export default function DeletionRequestsTable({
                       </td>
 
                       {/* Status */}
-                      <td className="px-3 py-2.5 border-r border-slate-100 text-center whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
                         {isPending ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                            <Clock size={10} className="text-amber-700 animate-spin" /> PENDING APPROVAL
-                          </span>
+                          <div className="space-y-1.5">
+                            <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                              <Clock size={10} className="text-amber-700 animate-spin" /> PENDING APPROVAL
+                            </span>
+                            {canApprove && (
+                              <div className="flex items-center justify-center gap-1 mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => onApprove?.(item)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-black uppercase cursor-pointer transition-all shadow-xs"
+                                  title="Approve deletion and deduct from collections"
+                                >
+                                  <Check size={11} /> Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onReject?.(item)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-[10px] font-black uppercase cursor-pointer transition-all shadow-2xs"
+                                  title="Reject deletion request"
+                                >
+                                  <X size={11} /> Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         ) : isApproved ? (
                           <div className="space-y-1">
                             <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] px-2 py-0.5 rounded-full">
                               <CheckCircle2 size={10} className="text-emerald-700" /> APPROVED
                             </span>
-                            {item.deducted_from_collections ? (
+                            {item.deducted_from_collections && (
                               <span className="inline-flex items-center gap-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded block mx-auto max-w-fit uppercase" title="Already added to remittance batch">
                                 ✓ Added to Remittance
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-700 border border-amber-200 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded block mx-auto max-w-fit uppercase" title="Pending inclusion in next remittance batch">
-                                Pending Remittance
                               </span>
                             )}
                             {item.reviewed_by && (
@@ -334,46 +351,12 @@ export default function DeletionRequestsTable({
                           </div>
                         )}
                       </td>
-
-                      {/* Actions */}
-                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1.5 justify-center">
-                          {isPending && canApprove ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => onApprove?.(item)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-black uppercase cursor-pointer transition-all shadow-xs"
-                                title="Approve deletion and deduct from collections"
-                              >
-                                <Check size={11} /> Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onReject?.(item)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-[10px] font-black uppercase cursor-pointer transition-all shadow-2xs"
-                                title="Reject deletion request"
-                              >
-                                <X size={11} /> Reject
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => onViewTicket?.({ ...item, computedTransId: transId, winAmount: winAmt, betAmount: betAmt, betNo: betNo, fullName: teller, drawTime: draw, attachment_url: proofImg })}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold cursor-pointer transition-all"
-                            >
-                              <Eye size={11} /> Details
-                            </button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan="9" className="px-4 py-12 text-center text-slate-400 font-medium text-xs">
+                  <td colSpan="8" className="px-4 py-12 text-center text-slate-400 font-medium text-xs">
                     No deletion requests match the selected filters.
                   </td>
                 </tr>

@@ -139,12 +139,15 @@ export default function App() {
         r.status === 'CLAIMED' || r.claim_status === 'CLAIMED' || r.is_already_claimed
       );
       if (isClaimedFlag) {
-        const tid = String(r.transactionId || r.transId || r.receipt_no || r.ticket_no || '').trim();
-        if (tid) {
-          ids.add(tid);
-          ids.add(tid.toUpperCase());
-          ids.add(tid.toLowerCase());
-        }
+        const cleanTid = getTicketTransId(r);
+        const rawTid = String(r.transactionId || r.transId || r.receipt_no || r.ticket_no || '').trim();
+        [cleanTid, rawTid].forEach(t => {
+          if (t) {
+            ids.add(t);
+            ids.add(t.toUpperCase());
+            ids.add(t.toLowerCase());
+          }
+        });
       }
     };
 
@@ -827,10 +830,35 @@ export default function App() {
       // (Pre-empts upstream 500 crashes and avoids multi-year background floods)
       (async () => {
         try {
-          const startDate = new Date(apiFromDate);
-          const endDate = new Date(apiToDate);
-          const validEnd = isNaN(endDate.getTime()) ? new Date() : endDate;
-          let currentStart = isNaN(startDate.getTime()) ? new Date(validEnd) : new Date(startDate);
+          if (force) {
+            claimedChunkCacheRef.current.clear();
+          }
+
+          // Direct Claim Sync Range: Automatically covers CURRENT MONTH and PREVIOUS MONTH
+          const nowObj = new Date();
+          const firstDayPrevMonth = new Date(nowObj.getFullYear(), nowObj.getMonth() - 1, 1);
+          
+          const parsedApiStart = new Date(apiFromDate);
+          let effectiveClaimedStart = isNaN(parsedApiStart.getTime()) 
+            ? firstDayPrevMonth 
+            : (parsedApiStart < firstDayPrevMonth ? parsedApiStart : firstDayPrevMonth);
+
+          // Also check returnedData: if any returned ticket has an earlier draw date, cover it
+          if (Array.isArray(returnedData) && returnedData.length > 0) {
+            returnedData.forEach(r => {
+              const dVal = r.drawDate || r.draw_date || r.created_at;
+              if (dVal) {
+                const pDate = new Date(dVal);
+                if (!isNaN(pDate.getTime()) && pDate < effectiveClaimedStart) {
+                  effectiveClaimedStart = pDate;
+                }
+              }
+            });
+          }
+
+          const parsedApiEnd = new Date(apiToDate);
+          const validEnd = isNaN(parsedApiEnd.getTime()) || parsedApiEnd < nowObj ? nowObj : parsedApiEnd;
+          let currentStart = new Date(effectiveClaimedStart);
 
           const dateChunks = [];
           while (currentStart <= validEnd) {
@@ -902,6 +930,47 @@ export default function App() {
           const claimedCombined = stage2Results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
 
           if (claimedCombined.length > 0) {
+            // Auto-persist detected claim dates back into returned_winnings in Supabase & update local state
+            if (Array.isArray(returnedData) && returnedData.length > 0) {
+              const returnedTransMap = new Map();
+              returnedData.forEach(r => {
+                const tid = getTicketTransId(r);
+                if (tid && !r.claimDate) {
+                  returnedTransMap.set(tid.toLowerCase(), r);
+                }
+              });
+
+              const updatedReturnedIds = new Set();
+              claimedCombined.forEach(c => {
+                const cTid = (getTicketTransId(c) || c.transactionId || '').toLowerCase();
+                const matched = returnedTransMap.get(cTid);
+                if (matched && c.claimDate) {
+                  updatedReturnedIds.add(matched.id);
+                  supabase.from('returned_winnings')
+                    .update({ claimDate: c.claimDate, updated_at: new Date().toISOString() })
+                    .eq('id', matched.id)
+                    .then(() => {});
+                }
+              });
+
+              if (updatedReturnedIds.size > 0) {
+                setReturnedData(prev => prev.map(item => {
+                  if (updatedReturnedIds.has(item.id)) {
+                    const cTid = (getTicketTransId(item) || item.transactionId || '').toLowerCase();
+                    const claimMatch = claimedCombined.find(c => (getTicketTransId(c) || c.transactionId || '').toLowerCase() === cTid && c.claimDate);
+                    return {
+                      ...item,
+                      claimDate: claimMatch ? claimMatch.claimDate : item.claimDate,
+                      isClaim: 1,
+                      is_claim: 1,
+                      isClaimed: 1
+                    };
+                  }
+                  return item;
+                }));
+              }
+            }
+
             setData(prev => {
               const combinedAll = [...prev, ...claimedCombined];
               const innerSeen = new Set();
