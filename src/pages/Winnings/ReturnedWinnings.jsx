@@ -52,6 +52,32 @@ export default function ReturnedWinnings({
   const [rejectReason, setRejectReason] = useState('');
   const [approvingItem, setApprovingItem] = useState(null);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
+  const [isSyncingClaims, setIsSyncingClaims] = useState(false);
+
+  const handleManualSyncClaims = async () => {
+    setIsSyncingClaims(true);
+    try {
+      if (onSyncClaimedTickets) {
+        await onSyncClaimedTickets();
+      }
+      if (onDataUpdated) {
+        await onDataUpdated();
+      }
+      showToast('Live claims synchronized! Checked previous month to present.');
+    } catch (err) {
+      console.warn('Sync live claims error:', err);
+      showToast(`Sync error: ${err.message}`);
+    } finally {
+      setIsSyncingClaims(false);
+    }
+  };
+
+  // Background live claims sync on mount (ranges back to previous month)
+  useEffect(() => {
+    if (onSyncClaimedTickets) {
+      onSyncClaimedTickets();
+    }
+  }, []);
 
 
 
@@ -623,6 +649,18 @@ export default function ReturnedWinnings({
               className="bg-slate-50/80 border border-slate-200/90 pl-10 pr-3.5 py-2 text-xs rounded-xl outline-none focus:ring-2 focus:ring-[#002B66]/20 focus:border-[#002B66] font-medium w-48 sm:w-64 transition-all"
             />
           </div>
+
+          {/* Sync Live Claims Button (Ranges previous month to present) */}
+          <button
+            type="button"
+            onClick={handleManualSyncClaims}
+            disabled={isSyncingClaims}
+            className="flex items-center gap-1.5 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs active:scale-95 disabled:opacity-50"
+            title="Sync claimed status from live source (covers previous month to present)"
+          >
+            <RefreshCw size={14} className={isSyncingClaims ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">{isSyncingClaims ? "Syncing Claims..." : "Sync Live Claims"}</span>
+          </button>
 
           <button
             onClick={exportToCSV}
