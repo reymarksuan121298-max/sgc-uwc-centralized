@@ -23,7 +23,16 @@ import {
   isIliganAllowedSupervisor,
   isIliganSetAAllowedSupervisor,
   isLalaOfficeAllowedSupervisor,
-  isBaloiOfficeAllowedSupervisor
+  isBaloiOfficeAllowedSupervisor,
+  isLandasanOfficeAllowedSupervisor,
+  isParangOfficeAllowedSupervisor,
+  isNKabuntalanOfficeAllowedSupervisor,
+  isNorthUpiOfficeAllowedSupervisor,
+  isSouthUpiOfficeAllowedSupervisor,
+  isDosAwangOfficeAllowedSupervisor,
+  isMandaueOfficeAllowedSupervisor,
+  isAnyAllowedSupervisor,
+  isAllowedSupervisorForOffice
 } from './services/supervisorService';
 import { initAntiInspectLockdown, enforceLockdownOnNavigation } from './security/antiInspect';
 
@@ -32,38 +41,6 @@ const DEFAULT_COMMISSIONS = {
   agentPercent: 30,
   staffPercent: 10,
   collectorPercent: 10
-};
-
-const isMandaueOffice = (str) => {
-  const clean = String(str || '').toLowerCase().trim();
-  return (
-    clean.includes('mandaue') ||
-    clean.includes('lucky betplay') ||
-    clean.includes('tipolo') ||
-    clean.includes('banilad') ||
-    clean.includes('guizo') ||
-    clean.includes('opao') ||
-    clean.includes('canduman') ||
-    clean.includes('paknaan') ||
-    clean.includes('pakna-an') ||
-    clean.includes('subangdaku') ||
-    clean.includes('centro') ||
-    clean.includes('alang-alang') ||
-    clean.includes('looc') ||
-    clean.includes('tabok') ||
-    clean.includes('tingub') ||
-    clean.includes('maguikay') ||
-    clean.includes('ibabao') ||
-    clean.includes('bakilid') ||
-    clean.includes('cabancalan') ||
-    clean.includes('casuntingan') ||
-    clean.includes('basak') ||
-    clean.includes('jagobiao') ||
-    clean.includes('labogon') ||
-    clean.includes('pagsabungan') ||
-    clean.includes('tawason') ||
-    clean.includes('ubao')
-  );
 };
 
 export default function App() {
@@ -649,7 +626,7 @@ export default function App() {
 
         if (isRestrictedBranchUser) {
           const userSub = String(currentUser.sub_office).toLowerCase().trim();
-          const isUserMandaue = isMandaueOffice(userSub);
+          const isUserMandaue = userSub.includes('mandaue');
           const match = activeEndpoints.find(e => {
             if (!e.sub_office && !e.name) return false;
             const epLabel = (e.sub_office || e.name || '').toLowerCase();
@@ -657,7 +634,7 @@ export default function App() {
               return true;
             }
             const epOffices = (e.sub_office || '').split(',').map(s => s.trim().toLowerCase());
-            return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')));
+            return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')) || (userSub.includes('landasan') && eo.includes('landasan')) || (userSub.includes('parang') && eo.includes('parang')) || (userSub.includes('kabuntalan') && eo.includes('kabuntalan')) || ((userSub.includes('south') && userSub.includes('upi')) && (eo.includes('south') && eo.includes('upi'))) || (((userSub.includes('north') && userSub.includes('upi')) || (userSub.includes('upi') && !userSub.includes('south'))) && ((eo.includes('north') && eo.includes('upi')) || (eo.includes('upi') && !eo.includes('south')))) || ((userSub.includes('awang') || userSub.includes('dos')) && (eo.includes('awang') || eo.includes('dos'))));
           });
           const fallbackEp = activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0];
           targetEndpoints = match ? [{ ...match, requestedSubOffice: currentUser.sub_office }] : (fallbackEp ? [{ ...fallbackEp, requestedSubOffice: currentUser.sub_office }] : []);
@@ -713,6 +690,71 @@ export default function App() {
         let isSetA = false;
         let isLala = false;
         let isBaloi = false;
+        let isLandasan = false;
+        let isParang = false;
+        let isNKabuntalan = false;
+        let isNorthUpi = false;
+        let isSouthUpi = false;
+        let isDosAwang = false;
+        let isSharedLandasanParang = false;
+
+        const epSubOffice = (cfg.sub_office || '').toLowerCase();
+        const epName = (cfg.name || '').toLowerCase();
+
+        if (cfg.requestedSubOffice) {
+          const req = cfg.requestedSubOffice.toLowerCase();
+          const reqIsSouth = (req.includes('south') && req.includes('upi')) || req.includes('southupi');
+          const reqIsNorth = (req.includes('north') && req.includes('upi')) || (req.includes('upi') && !req.includes('south'));
+
+          if (req.includes('awang') || req.includes('dos')) {
+            isDosAwang = true;
+            fallbackSubOffice = 'DOS/AWANG OFFICE';
+          } else if (reqIsSouth) {
+            isSouthUpi = true;
+            fallbackSubOffice = 'SOUTH UPI';
+          } else if (reqIsNorth) {
+            isNorthUpi = true;
+            fallbackSubOffice = 'NORTH UPI SUB OFFICE';
+          } else if (req.includes('kabuntalan')) {
+            isNKabuntalan = true;
+            fallbackSubOffice = 'N-KABUNTALAN SUB OFFICE';
+          } else if (req.includes('parang')) {
+            isParang = true;
+            fallbackSubOffice = 'PARANG SUB OFFICE';
+          } else if (req.includes('landasan')) {
+            isLandasan = true;
+            fallbackSubOffice = 'LANDASAN OFFICE';
+          }
+        } else {
+          const hasLandasan = epSubOffice.includes('landasan') || epName.includes('landasan');
+          const hasParang = epSubOffice.includes('parang') || epName.includes('parang');
+          const hasKabuntalan = epSubOffice.includes('kabuntalan') || epName.includes('kabuntalan');
+          const hasDosAwang = epSubOffice.includes('awang') || epSubOffice.includes('dos') || epName.includes('awang') || epName.includes('dos');
+          const hasSouthUpi = (epSubOffice.includes('south') && epSubOffice.includes('upi')) || epSubOffice.includes('southupi') || (epName.includes('south') && epName.includes('upi')) || epName.includes('southupi');
+          const hasNorthUpi = !hasSouthUpi && (epSubOffice.includes('upi') || epName.includes('upi'));
+
+          if (hasDosAwang) {
+            isDosAwang = true;
+            fallbackSubOffice = 'DOS/AWANG OFFICE';
+          } else if (hasSouthUpi) {
+            isSouthUpi = true;
+            fallbackSubOffice = 'SOUTH UPI';
+          } else if (hasNorthUpi) {
+            isNorthUpi = true;
+            fallbackSubOffice = 'NORTH UPI SUB OFFICE';
+          } else if (hasKabuntalan) {
+            isNKabuntalan = true;
+            fallbackSubOffice = 'N-KABUNTALAN SUB OFFICE';
+          } else if (hasLandasan && hasParang) {
+            isSharedLandasanParang = true;
+          } else if (hasLandasan) {
+            isLandasan = true;
+            fallbackSubOffice = 'LANDASAN OFFICE';
+          } else if (hasParang) {
+            isParang = true;
+            fallbackSubOffice = 'PARANG SUB OFFICE';
+          }
+        }
 
         if (isIliganEndpoint) {
           if (cfg.requestedSubOffice) {
@@ -740,19 +782,58 @@ export default function App() {
           isSetA,
           isLala,
           isBaloi,
+          isLandasan,
+          isParang,
+          isNKabuntalan,
+          isNorthUpi,
+          isSouthUpi,
+          isDosAwang,
+          isSharedLandasanParang,
           fallbackSubOffice
         };
       });
 
-      // Filter function for Iligan supervisor branches
-      const filterIligan = (arr, epMeta) => {
-        if (!epMeta.isIliganEndpoint) return arr;
-        return arr.filter(item => {
-          const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
-          if (epMeta.isBaloi) return isBaloiOfficeAllowedSupervisor(uName);
-          if (epMeta.isLala) return isLalaOfficeAllowedSupervisor(uName);
-          return epMeta.isSetA ? isIliganSetAAllowedSupervisor(uName) : isIliganAllowedSupervisor(uName);
-        });
+      // Filter function to strictly restrict all not related supervisors
+      const filterOfficeSupervisors = (arr, epMeta) => {
+        if (!arr || !Array.isArray(arr)) return [];
+        const targetOffice = epMeta.requestedSubOffice || epMeta.fallbackSubOffice || epMeta.cfg?.sub_office || '';
+        const offLower = targetOffice.toLowerCase();
+
+        if (epMeta.isDosAwang || offLower.includes('awang') || offLower.includes('dos')) {
+          return arr.filter(item => isDosAwangOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isSouthUpi || ((offLower.includes('south') && offLower.includes('upi')) || offLower.includes('southupi'))) {
+          return arr.filter(item => isSouthUpiOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isNorthUpi || (offLower.includes('north') && offLower.includes('upi')) || (offLower.includes('upi') && !offLower.includes('south'))) {
+          return arr.filter(item => isNorthUpiOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isNKabuntalan || offLower.includes('kabuntalan')) {
+          return arr.filter(item => isNKabuntalanOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isLandasan || (offLower.includes('landasan') && !offLower.includes('parang'))) {
+          return arr.filter(item => isLandasanOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isParang || (offLower.includes('parang') && !offLower.includes('landasan'))) {
+          return arr.filter(item => isParangOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isSharedLandasanParang || (offLower.includes('landasan') && offLower.includes('parang'))) {
+          return arr.filter(item => isLandasanOfficeAllowedSupervisor(item) || isParangOfficeAllowedSupervisor(item));
+        }
+        if (epMeta.isIliganEndpoint) {
+          return arr.filter(item => {
+            const uName = (item.username || item.supervisor || item.user || '').toLowerCase().trim();
+            if (epMeta.isBaloi || offLower.includes('baloi')) return isBaloiOfficeAllowedSupervisor(uName);
+            if (epMeta.isLala || offLower.includes('lala')) return isLalaOfficeAllowedSupervisor(uName);
+            if (epMeta.isSetA || offLower.includes('set a')) return isIliganSetAAllowedSupervisor(uName);
+            return isIliganAllowedSupervisor(uName);
+          });
+        }
+        if (offLower.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue')) {
+          return arr.filter(item => isMandaueOfficeAllowedSupervisor(item));
+        }
+        // Endpoint serves multiple offices or 'All': restrict any item not belonging to ANY allowed supervisor
+        return arr.filter(item => isAnyAllowedSupervisor(item));
       };
 
       // ─── STAGE 1: Fast Fetch Primary Unclaimed Records (isClaim=0) ────────────
@@ -778,16 +859,34 @@ export default function App() {
           const result = await res.json();
           const deepData = result?.data?.data || result?.data || result;
           let arr = Array.isArray(deepData) ? deepData : deepData && typeof deepData === 'object' ? [deepData] : [];
-          arr = filterIligan(arr, epMeta);
+          arr = filterOfficeSupervisors(arr, epMeta);
 
           const endpointLabel = (epMeta.cfg?.sub_office || epMeta.cfg?.name || '').toLowerCase();
           const isMandaueEp = endpointLabel.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue');
           return arr.map(item => {
-            const resolvedSubOffice = epMeta.isIliganEndpoint
-              ? epMeta.fallbackSubOffice
-              : isMandaueEp
-                ? 'Mandaue City'
-                : (item.sub_office || epMeta.fallbackSubOffice || 'Mandaue City');
+            const resolvedSubOffice = isDosAwangOfficeAllowedSupervisor(item) || epMeta.isDosAwang
+              ? 'DOS/AWANG OFFICE'
+              : isSouthUpiOfficeAllowedSupervisor(item) || epMeta.isSouthUpi
+                ? 'SOUTH UPI'
+                : isNorthUpiOfficeAllowedSupervisor(item) || epMeta.isNorthUpi
+                  ? 'NORTH UPI SUB OFFICE'
+                : isNKabuntalanOfficeAllowedSupervisor(item) || epMeta.isNKabuntalan
+                  ? 'N-KABUNTALAN SUB OFFICE'
+                : isLandasanOfficeAllowedSupervisor(item) || epMeta.isLandasan
+                  ? 'LANDASAN OFFICE'
+                  : isParangOfficeAllowedSupervisor(item) || epMeta.isParang
+                    ? 'PARANG SUB OFFICE'
+                    : isBaloiOfficeAllowedSupervisor(item) || epMeta.isBaloi
+                      ? 'BALOI OFFICE'
+                      : isLalaOfficeAllowedSupervisor(item) || epMeta.isLala
+                        ? 'LALA OFFICE'
+                        : isIliganSetAAllowedSupervisor(item) || epMeta.isSetA
+                          ? 'ILIGAN SET A'
+                          : isIliganAllowedSupervisor(item)
+                            ? 'ILIGAN SET B'
+                            : isMandaueOfficeAllowedSupervisor(item) || isMandaueEp
+                              ? 'Mandaue City'
+                              : (item.sub_office || epMeta.fallbackSubOffice || 'Mandaue City');
 
             return {
               ...item,
@@ -912,15 +1011,33 @@ export default function App() {
                 }
               }
 
-              const filtered = filterIligan(rawArr, epMeta);
+              const filtered = filterOfficeSupervisors(rawArr, epMeta);
               const endpointLabel = (epMeta.cfg?.sub_office || epMeta.cfg?.name || '').toLowerCase();
               const isMandaueEp = endpointLabel.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue');
               return filtered.map(item => {
-                const resolvedSubOffice = epMeta.isIliganEndpoint
-                  ? epMeta.fallbackSubOffice
-                  : isMandaueEp
-                    ? 'Mandaue City'
-                    : (item.sub_office || epMeta.fallbackSubOffice || 'Mandaue City');
+                const resolvedSubOffice = isDosAwangOfficeAllowedSupervisor(item) || epMeta.isDosAwang
+                  ? 'DOS/AWANG OFFICE'
+                  : isSouthUpiOfficeAllowedSupervisor(item) || epMeta.isSouthUpi
+                    ? 'SOUTH UPI'
+                    : isNorthUpiOfficeAllowedSupervisor(item) || epMeta.isNorthUpi
+                      ? 'NORTH UPI SUB OFFICE'
+                    : isNKabuntalanOfficeAllowedSupervisor(item) || epMeta.isNKabuntalan
+                      ? 'N-KABUNTALAN SUB OFFICE'
+                    : isLandasanOfficeAllowedSupervisor(item) || epMeta.isLandasan
+                      ? 'LANDASAN OFFICE'
+                      : isParangOfficeAllowedSupervisor(item) || epMeta.isParang
+                        ? 'PARANG SUB OFFICE'
+                        : isBaloiOfficeAllowedSupervisor(item) || epMeta.isBaloi
+                          ? 'BALOI OFFICE'
+                          : isLalaOfficeAllowedSupervisor(item) || epMeta.isLala
+                            ? 'LALA OFFICE'
+                            : isIliganSetAAllowedSupervisor(item) || epMeta.isSetA
+                              ? 'ILIGAN SET A'
+                              : isIliganAllowedSupervisor(item)
+                                ? 'ILIGAN SET B'
+                                : isMandaueOfficeAllowedSupervisor(item) || isMandaueEp
+                                  ? 'Mandaue City'
+                                  : (item.sub_office || epMeta.fallbackSubOffice || 'Mandaue City');
 
                 return {
                   ...item,
@@ -1354,27 +1471,16 @@ export default function App() {
 
       // Non-admin branch scoping safeguard: strictly reject tickets outside assigned branch
       if (userSub) {
-        const isUserMandaue = isMandaueOffice(userSub);
         const itemSub = String(i.sub_office || '').toLowerCase().trim();
-        const itemLoc = String(i.location || '').toLowerCase().trim();
-        const itemOutlet = String(i.fullName || i.outlet || '').toLowerCase().trim();
-        const u = String(i.username || i.supervisor || i.user || '').toLowerCase().trim();
-
-        if (isUserMandaue) {
-          // If current user is ANY Mandaue SSR, accept if ticket is from Mandaue via sub_office, location, outlet, or supervisor Molly/31
-          const isTicketMandaue = isMandaueOffice(itemSub) ||
-            isMandaueOffice(itemLoc) ||
-            itemOutlet.includes('mandaue') ||
-            u === 'spvr-molly' ||
-            u.includes('molly') ||
-            String(i.supervisor) === '31' ||
-            String(i.supervisor).toLowerCase().includes('molly');
-          if (!isTicketMandaue) return false;
-        } else {
-          // For other branches (Iligan, Lala, Baloi), enforce strict string match
-          if (itemSub && itemSub !== 'all' && !itemSub.includes(userSub) && !userSub.includes(itemSub)) {
-            return false;
-          }
+        const matchesSubOffice = (
+          itemSub === 'all' ||
+          !itemSub ||
+          itemSub.includes(userSub) ||
+          userSub.includes(itemSub) ||
+          (userSub.includes('mandaue') && itemSub.includes('mandaue'))
+        );
+        if (!matchesSubOffice) {
+          return false;
         }
       }
 
@@ -1383,23 +1489,11 @@ export default function App() {
       const sName = String(i.supervisor || '').trim().toUpperCase();
       if (uName.includes('-SK') || sName.includes('-SK')) return false;
 
-      // If item belongs to an ILIGAN or LALA sub-office, filter by the correct SET whitelist
-      const subOffice = String(i.sub_office || '').toLowerCase();
-      if (subOffice.includes('iligan') || subOffice.includes('ldn') || subOffice.includes('lala') || subOffice.includes('baloi')) {
-        const u = String(i.username || i.supervisor || i.user || '').toLowerCase().trim();
-        const isSetA = subOffice.includes('set a');
-        const isLala = subOffice.includes('lala');
-        const isBaloi = subOffice.includes('baloi');
-        if (isBaloi) {
-          if (!isBaloiOfficeAllowedSupervisor(u)) return false;
-        } else if (isLala) {
-          if (!isLalaOfficeAllowedSupervisor(u)) return false;
-        } else if (isSetA) {
-          if (!isIliganSetAAllowedSupervisor(u)) return false;
-        } else {
-          if (!isIliganAllowedSupervisor(u)) return false;
-        }
-      }
+      // Restrict all not related supervisors:
+      // Item must belong to an authorized supervisor for its specific sub-office,
+      // and must be recognized in at least one authorized supervisor whitelist across the system.
+      if (!isAnyAllowedSupervisor(i)) return false;
+      if (!isAllowedSupervisorForOffice(i, i.sub_office)) return false;
 
       const isReturned = returnedTransIds.has(String(i.transactionId || i.transId || i.receipt_no || i.ticket_no || '').trim().toLowerCase()) ||
                          returnedTransIds.has(getTicketTransId(i).toLowerCase());
@@ -1430,7 +1524,9 @@ export default function App() {
   const groupedData = useMemo(() => {
     if (!Array.isArray(filteredData) || !filteredData.length) return {};
     return filteredData.reduce((acc, item) => {
-      const userKey = (item.username || 'UNASSIGNED-USER').trim().toUpperCase();
+      if (!isAnyAllowedSupervisor(item)) return acc;
+      const userKey = (item.username || item.supervisor || 'UNASSIGNED-USER').trim().toUpperCase();
+      if (userKey === 'UNASSIGNED-USER') return acc;
       (acc[userKey] = acc[userKey] || []).push(item);
       return acc;
     }, {});
