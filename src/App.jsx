@@ -30,6 +30,7 @@ import {
   isNorthUpiOfficeAllowedSupervisor,
   isSouthUpiOfficeAllowedSupervisor,
   isDosAwangOfficeAllowedSupervisor,
+  isMagsurOfficeAllowedSupervisor,
   isMandaueOfficeAllowedSupervisor,
   isAnyAllowedSupervisor,
   isAllowedSupervisorForOffice
@@ -634,7 +635,7 @@ export default function App() {
               return true;
             }
             const epOffices = (e.sub_office || '').split(',').map(s => s.trim().toLowerCase());
-            return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')) || (userSub.includes('landasan') && eo.includes('landasan')) || (userSub.includes('parang') && eo.includes('parang')) || (userSub.includes('kabuntalan') && eo.includes('kabuntalan')) || ((userSub.includes('south') && userSub.includes('upi')) && (eo.includes('south') && eo.includes('upi'))) || (((userSub.includes('north') && userSub.includes('upi')) || (userSub.includes('upi') && !userSub.includes('south'))) && ((eo.includes('north') && eo.includes('upi')) || (eo.includes('upi') && !eo.includes('south')))) || ((userSub.includes('awang') || userSub.includes('dos')) && (eo.includes('awang') || eo.includes('dos'))));
+            return epOffices.includes(userSub) || epOffices.some(eo => eo.includes(userSub) || userSub.includes(eo) || (userSub.includes('set b') && eo.includes('set b')) || (userSub.includes('set a') && eo.includes('set a')) || (userSub.includes('landasan') && eo.includes('landasan')) || (userSub.includes('parang') && eo.includes('parang')) || (userSub.includes('kabuntalan') && eo.includes('kabuntalan')) || ((userSub.includes('south') && userSub.includes('upi')) && (eo.includes('south') && eo.includes('upi'))) || (((userSub.includes('north') && userSub.includes('upi')) || (userSub.includes('upi') && !userSub.includes('south'))) && ((eo.includes('north') && eo.includes('upi')) || (eo.includes('upi') && !eo.includes('south')))) || ((userSub.includes('awang') || userSub.includes('dos')) && (eo.includes('awang') || eo.includes('dos'))) || ((userSub.includes('magsur') || (userSub.includes('maguindanao') && userSub.includes('sur'))) && (eo.includes('magsur') || (eo.includes('maguindanao') && eo.includes('sur')))));
           });
           const fallbackEp = activeEndpoints.find(e => e.sub_office === 'All') || activeEndpoints[0];
           targetEndpoints = match ? [{ ...match, requestedSubOffice: currentUser.sub_office }] : (fallbackEp ? [{ ...fallbackEp, requestedSubOffice: currentUser.sub_office }] : []);
@@ -696,6 +697,7 @@ export default function App() {
         let isNorthUpi = false;
         let isSouthUpi = false;
         let isDosAwang = false;
+        let isMagsur = false;
         let isSharedLandasanParang = false;
 
         const epSubOffice = (cfg.sub_office || '').toLowerCase();
@@ -706,7 +708,10 @@ export default function App() {
           const reqIsSouth = (req.includes('south') && req.includes('upi')) || req.includes('southupi');
           const reqIsNorth = (req.includes('north') && req.includes('upi')) || (req.includes('upi') && !req.includes('south'));
 
-          if (req.includes('awang') || req.includes('dos')) {
+          if (req.includes('magsur') || (req.includes('maguindanao') && req.includes('sur'))) {
+            isMagsur = true;
+            fallbackSubOffice = 'MAGSUR OFFICE';
+          } else if (req.includes('awang') || req.includes('dos')) {
             isDosAwang = true;
             fallbackSubOffice = 'DOS/AWANG OFFICE';
           } else if (reqIsSouth) {
@@ -729,11 +734,15 @@ export default function App() {
           const hasLandasan = epSubOffice.includes('landasan') || epName.includes('landasan');
           const hasParang = epSubOffice.includes('parang') || epName.includes('parang');
           const hasKabuntalan = epSubOffice.includes('kabuntalan') || epName.includes('kabuntalan');
+          const hasMagsur = epSubOffice.includes('magsur') || (epSubOffice.includes('maguindanao') && epSubOffice.includes('sur')) || epName.includes('magsur') || (epName.includes('maguindanao') && epName.includes('sur'));
           const hasDosAwang = epSubOffice.includes('awang') || epSubOffice.includes('dos') || epName.includes('awang') || epName.includes('dos');
           const hasSouthUpi = (epSubOffice.includes('south') && epSubOffice.includes('upi')) || epSubOffice.includes('southupi') || (epName.includes('south') && epName.includes('upi')) || epName.includes('southupi');
           const hasNorthUpi = !hasSouthUpi && (epSubOffice.includes('upi') || epName.includes('upi'));
 
-          if (hasDosAwang) {
+          if (hasMagsur) {
+            isMagsur = true;
+            fallbackSubOffice = 'MAGSUR OFFICE';
+          } else if (hasDosAwang) {
             isDosAwang = true;
             fallbackSubOffice = 'DOS/AWANG OFFICE';
           } else if (hasSouthUpi) {
@@ -788,6 +797,7 @@ export default function App() {
           isNorthUpi,
           isSouthUpi,
           isDosAwang,
+          isMagsur,
           isSharedLandasanParang,
           fallbackSubOffice
         };
@@ -799,6 +809,9 @@ export default function App() {
         const targetOffice = epMeta.requestedSubOffice || epMeta.fallbackSubOffice || epMeta.cfg?.sub_office || '';
         const offLower = targetOffice.toLowerCase();
 
+        if (epMeta.isMagsur || offLower.includes('magsur') || (offLower.includes('maguindanao') && offLower.includes('sur'))) {
+          return arr.filter(item => isMagsurOfficeAllowedSupervisor(item));
+        }
         if (epMeta.isDosAwang || offLower.includes('awang') || offLower.includes('dos')) {
           return arr.filter(item => isDosAwangOfficeAllowedSupervisor(item));
         }
@@ -864,9 +877,11 @@ export default function App() {
           const endpointLabel = (epMeta.cfg?.sub_office || epMeta.cfg?.name || '').toLowerCase();
           const isMandaueEp = endpointLabel.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue');
           return arr.map(item => {
-            const resolvedSubOffice = isDosAwangOfficeAllowedSupervisor(item) || epMeta.isDosAwang
-              ? 'DOS/AWANG OFFICE'
-              : isSouthUpiOfficeAllowedSupervisor(item) || epMeta.isSouthUpi
+            const resolvedSubOffice = isMagsurOfficeAllowedSupervisor(item) || epMeta.isMagsur
+              ? 'MAGSUR OFFICE'
+              : isDosAwangOfficeAllowedSupervisor(item) || epMeta.isDosAwang
+                ? 'DOS/AWANG OFFICE'
+                : isSouthUpiOfficeAllowedSupervisor(item) || epMeta.isSouthUpi
                 ? 'SOUTH UPI'
                 : isNorthUpiOfficeAllowedSupervisor(item) || epMeta.isNorthUpi
                   ? 'NORTH UPI SUB OFFICE'
@@ -1015,9 +1030,11 @@ export default function App() {
               const endpointLabel = (epMeta.cfg?.sub_office || epMeta.cfg?.name || '').toLowerCase();
               const isMandaueEp = endpointLabel.includes('mandaue') || (epMeta.cfg?.baseUrl || '').toLowerCase().includes('stl-mandaue');
               return filtered.map(item => {
-                const resolvedSubOffice = isDosAwangOfficeAllowedSupervisor(item) || epMeta.isDosAwang
-                  ? 'DOS/AWANG OFFICE'
-                  : isSouthUpiOfficeAllowedSupervisor(item) || epMeta.isSouthUpi
+                const resolvedSubOffice = isMagsurOfficeAllowedSupervisor(item) || epMeta.isMagsur
+                  ? 'MAGSUR OFFICE'
+                  : isDosAwangOfficeAllowedSupervisor(item) || epMeta.isDosAwang
+                    ? 'DOS/AWANG OFFICE'
+                    : isSouthUpiOfficeAllowedSupervisor(item) || epMeta.isSouthUpi
                     ? 'SOUTH UPI'
                     : isNorthUpiOfficeAllowedSupervisor(item) || epMeta.isNorthUpi
                       ? 'NORTH UPI SUB OFFICE'

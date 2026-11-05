@@ -319,8 +319,8 @@ export function isSouthUpiOfficeAllowedSupervisor(itemOrKey) {
 export const DOS_AWANG_ALLOWED_SUPERVISORS = [
   "dos/awang-spvr-ramsie",
   "dos-awang-spvr-ramsie",
-  "dos/awang-spvr-lorenzo",
-  "dos-awang-spvr-lorenzo",
+  "dos/awang-spvr-norodin",
+  "dos-awang-spvr-norodin",
   "dos/awang-spvr-jonny",
   "dos-awang-spvr-jonny",
   "dos/awang-spvr-marlon",
@@ -332,7 +332,7 @@ export const DOS_AWANG_ALLOWED_SUPERVISORS = [
 /**
  * Checks if a supervisor belongs to DOS/AWANG OFFICE.
  * Strictly allows only Dos/Awang supervisors:
- * DOS/AWANG-SPVR-RAMSIE, DOS/AWANG-SPVR-LORENZO, DOS/AWANG-SPVR-JONNY, DOS/AWANG-SPVR-MARLON, DOS/AWANG-SPVR-HARIF.
+ * DOS/AWANG-SPVR-RAMSIE, DOS/AWANG-SPVR-NORODIN, DOS/AWANG-SPVR-JONNY, DOS/AWANG-SPVR-MARLON, DOS/AWANG-SPVR-HARIF.
  * @param {string|Object} itemOrKey
  * @returns {boolean}
  */
@@ -370,6 +370,91 @@ export function isDosAwangOfficeAllowedSupervisor(itemOrKey) {
         (clean.includes(namePart) && (clean.includes('awang') || clean.includes('dos'))) ||
         clean === namePart ||
         (namePart === 'jonny' && (clean === 'johnny' || clean.includes('spvr-johnny')));
+    });
+  });
+}
+
+// ─── MAGSUR OFFICE ───────────────────────────────────────────────────────────
+export const MAGSUR_ALLOWED_SUPERVISORS = [
+  "ampatuan-spvr-bai",
+  "ampatuan-spvr-utto",
+  "ampatuan-spvr-teddy",
+  "datupiang-spvr-pots3",
+  "das-spvr-brito",
+  "ampatuan-spvr-kauran",
+  "das-spvr-jerao",
+  "das-spvr-jerao-2",
+  "ampatuan-spvr-kapinpilan",
+  "datupiang-spvr-pots",
+  "shariffaguak-spvr-nasrin",
+  "paglas-spvr-castaños",
+  "paglas-spvr-castanos",
+  "dos-spvr-albaser",
+  "paglas-spvr-madidis",
+  "paglas-spvr-suit",
+  "datuhoffer-spvr-limpongo",
+  "montawal-spvr-pots",
+  "pagalungan-spvr-pots",
+  "shariffaguak-spvr-resty",
+  "shariffaguak-spvr-mike",
+  "shariffaguak-spvr-madz",
+  "shariffaguak-spvr-bai",
+  "dalican-spvr-guiaman",
+  "das-spvr-utto",
+  "paglas-spvr-salbo",
+  "das-spvr-bai",
+  "mamasapano-spvr-bai",
+  "mamasapano-spvr-alonto",
+  "buluan-spvr-bai",
+  "buluan-spvr-jay",
+  "rajahbuayan-spvr-mamasahid",
+  "rajahbuayan-spvr-bai",
+  "ampatuan-spvr-poblacion",
+  "datusaudi-spvr mahid-2",
+  "datusaudi-spvr-mahid-2",
+  "datusaudi-spvr mahid",
+  "datusaudi-spvr-mahid",
+  "datupiang-spvr-padjero",
+  "saidona-spvr-dali"
+];
+
+/**
+ * Checks if a supervisor belongs to MAGSUR OFFICE.
+ * Strictly allows only the 37 Magsur supervisors.
+ * @param {string|Object} itemOrKey
+ * @returns {boolean}
+ */
+export function isMagsurOfficeAllowedSupervisor(itemOrKey) {
+  if (!itemOrKey) return false;
+
+  const candidates = typeof itemOrKey === 'object'
+    ? [
+      itemOrKey.supervisor,
+      itemOrKey.username,
+      itemOrKey.user,
+      itemOrKey.supervisor_name,
+      itemOrKey.supervisorName,
+      itemOrKey.spvr
+    ].filter(Boolean).map(s => String(s).toLowerCase().trim())
+    : [String(itemOrKey).toLowerCase().trim()];
+
+  return candidates.some(clean => {
+    const cleanNorm = clean.replace(/\s+/g, '-').replace(/ñ/g, 'n');
+
+    return MAGSUR_ALLOWED_SUPERVISORS.some(allowed => {
+      const a = allowed.toLowerCase();
+      const aNorm = a.replace(/\s+/g, '-').replace(/ñ/g, 'n');
+      const prefix = a.split('@')[0];
+      const prefixNorm = aNorm.split('@')[0];
+
+      return clean === a ||
+        clean === prefix ||
+        cleanNorm === aNorm ||
+        cleanNorm === prefixNorm ||
+        clean.startsWith(prefix) ||
+        cleanNorm.startsWith(prefixNorm) ||
+        clean.includes(prefix) ||
+        cleanNorm.includes(prefixNorm);
     });
   });
 }
@@ -444,6 +529,7 @@ export function isAnyAllowedSupervisor(itemOrKey) {
     isNorthUpiOfficeAllowedSupervisor(itemOrKey) ||
     isSouthUpiOfficeAllowedSupervisor(itemOrKey) ||
     isDosAwangOfficeAllowedSupervisor(itemOrKey) ||
+    isMagsurOfficeAllowedSupervisor(itemOrKey) ||
     isBaloiOfficeAllowedSupervisor(itemOrKey) ||
     isLalaOfficeAllowedSupervisor(itemOrKey) ||
     isIliganSetAAllowedSupervisor(itemOrKey) ||
@@ -463,6 +549,9 @@ export function isAllowedSupervisorForOffice(itemOrKey, officeName = '') {
   if (!itemOrKey) return false;
   const off = String(officeName || '').toLowerCase().trim();
 
+  if (off.includes('magsur') || (off.includes('maguindanao') && off.includes('sur'))) {
+    return isMagsurOfficeAllowedSupervisor(itemOrKey);
+  }
   if (off.includes('awang') || off.includes('dos')) {
     return isDosAwangOfficeAllowedSupervisor(itemOrKey);
   }
@@ -811,12 +900,12 @@ export const DEFAULT_SUPERVISOR_NAMES = {
   "spvr-ramsie": "DOS/AWANG-SPVR-RAMSIE",
   "ramsie": "DOS/AWANG-SPVR-RAMSIE",
 
-  "dos/awang-spvr-lorenzo": "DOS/AWANG-SPVR-LORENZO",
-  "dos-awang-spvr-lorenzo": "DOS/AWANG-SPVR-LORENZO",
-  "dos/awang-spvr-lorenzo@gfldn": "DOS/AWANG-SPVR-LORENZO",
-  "dos-awang-spvr-lorenzo@gfldn": "DOS/AWANG-SPVR-LORENZO",
-  "spvr-lorenzo": "DOS/AWANG-SPVR-LORENZO",
-  "lorenzo": "DOS/AWANG-SPVR-LORENZO",
+  "dos/awang-spvr-norodin": "DOS/AWANG-SPVR-NORODIN",
+  "dos-awang-spvr-norodin": "DOS/AWANG-SPVR-NORODIN",
+  "dos/awang-spvr-norodin@gfldn": "DOS/AWANG-SPVR-NORODIN",
+  "dos-awang-spvr-norodin@gfldn": "DOS/AWANG-SPVR-NORODIN",
+  "spvr-norodin": "DOS/AWANG-SPVR-NORODIN",
+  "norodin": "DOS/AWANG-SPVR-NORODIN",
 
   "dos/awang-spvr-jonny": "DOS/AWANG-SPVR-JONNY",
   "dos-awang-spvr-jonny": "DOS/AWANG-SPVR-JONNY",
@@ -840,7 +929,123 @@ export const DEFAULT_SUPERVISOR_NAMES = {
   "dos/awang-spvr-harif@gfldn": "DOS/AWANG-SPVR-HARIF",
   "dos-awang-spvr-harif@gfldn": "DOS/AWANG-SPVR-HARIF",
   "spvr-harif": "DOS/AWANG-SPVR-HARIF",
-  "harif": "DOS/AWANG-SPVR-HARIF"
+  "harif": "DOS/AWANG-SPVR-HARIF",
+
+  // MAGSUR SUB-OFFICE SUPERVISORS
+  "ampatuan-spvr-bai": "AMPATUAN-SPVR-BAI",
+  "ampatuan-spvr-bai@gfldn": "AMPATUAN-SPVR-BAI",
+
+  "ampatuan-spvr-utto": "AMPATUAN-SPVR-UTTO",
+  "ampatuan-spvr-utto@gfldn": "AMPATUAN-SPVR-UTTO",
+
+  "ampatuan-spvr-teddy": "AMPATUAN-SPVR-TEDDY",
+  "ampatuan-spvr-teddy@gfldn": "AMPATUAN-SPVR-TEDDY",
+
+  "datupiang-spvr-pots3": "DATUPIANG-SPVR-POTS3",
+  "datupiang-spvr-pots3@gfldn": "DATUPIANG-SPVR-POTS3",
+
+  "das-spvr-brito": "DAS-SPVR-BRITO",
+  "das-spvr-brito@gfldn": "DAS-SPVR-BRITO",
+
+  "ampatuan-spvr-kauran": "AMPATUAN-SPVR-KAURAN",
+  "ampatuan-spvr-kauran@gfldn": "AMPATUAN-SPVR-KAURAN",
+
+  "das-spvr-jerao": "DAS-SPVR-JERAO",
+  "das-spvr-jerao@gfldn": "DAS-SPVR-JERAO",
+
+  "das-spvr-jerao-2": "DAS-SPVR-JERAO-2",
+  "das-spvr-jerao-2@gfldn": "DAS-SPVR-JERAO-2",
+
+  "ampatuan-spvr-kapinpilan": "AMPATUAN-SPVR-KAPINPILAN",
+  "ampatuan-spvr-kapinpilan@gfldn": "AMPATUAN-SPVR-KAPINPILAN",
+
+  "datupiang-spvr-pots": "DATUPIANG-SPVR-POTS",
+  "datupiang-spvr-pots@gfldn": "DATUPIANG-SPVR-POTS",
+
+  "shariffaguak-spvr-nasrin": "SHARIFFAGUAK-SPVR-NASRIN",
+  "shariffaguak-spvr-nasrin@gfldn": "SHARIFFAGUAK-SPVR-NASRIN",
+
+  "paglas-spvr-castaños": "PAGLAS-SPVR-CASTAÑOS",
+  "paglas-spvr-castaños@gfldn": "PAGLAS-SPVR-CASTAÑOS",
+  "paglas-spvr-castanos": "PAGLAS-SPVR-CASTAÑOS",
+  "paglas-spvr-castanos@gfldn": "PAGLAS-SPVR-CASTAÑOS",
+
+  "dos-spvr-albaser": "DOS-SPVR-ALBASER",
+  "dos-spvr-albaser@gfldn": "DOS-SPVR-ALBASER",
+
+  "paglas-spvr-madidis": "PAGLAS-SPVR-MADIDIS",
+  "paglas-spvr-madidis@gfldn": "PAGLAS-SPVR-MADIDIS",
+
+  "paglas-spvr-suit": "PAGLAS-SPVR-SUIT",
+  "paglas-spvr-suit@gfldn": "PAGLAS-SPVR-SUIT",
+
+  "datuhoffer-spvr-limpongo": "DATUHOFFER-SPVR-LIMPONGO",
+  "datuhoffer-spvr-limpongo@gfldn": "DATUHOFFER-SPVR-LIMPONGO",
+
+  "montawal-spvr-pots": "MONTAWAL-SPVR-POTS",
+  "montawal-spvr-pots@gfldn": "MONTAWAL-SPVR-POTS",
+
+  "pagalungan-spvr-pots": "PAGALUNGAN-SPVR-POTS",
+  "pagalungan-spvr-pots@gfldn": "PAGALUNGAN-SPVR-POTS",
+
+  "shariffaguak-spvr-resty": "SHARIFFAGUAK-SPVR-RESTY",
+  "shariffaguak-spvr-resty@gfldn": "SHARIFFAGUAK-SPVR-RESTY",
+
+  "shariffaguak-spvr-mike": "SHARIFFAGUAK-SPVR-MIKE",
+  "shariffaguak-spvr-mike@gfldn": "SHARIFFAGUAK-SPVR-MIKE",
+
+  "shariffaguak-spvr-madz": "SHARIFFAGUAK-SPVR-MADZ",
+  "shariffaguak-spvr-madz@gfldn": "SHARIFFAGUAK-SPVR-MADZ",
+
+  "shariffaguak-spvr-bai": "SHARIFFAGUAK-SPVR-BAI",
+  "shariffaguak-spvr-bai@gfldn": "SHARIFFAGUAK-SPVR-BAI",
+
+  "dalican-spvr-guiaman": "DALICAN-SPVR-GUIAMAN",
+  "dalican-spvr-guiaman@gfldn": "DALICAN-SPVR-GUIAMAN",
+
+  "das-spvr-utto": "DAS-SPVR-UTTO",
+  "das-spvr-utto@gfldn": "DAS-SPVR-UTTO",
+
+  "paglas-spvr-salbo": "PAGLAS-SPVR-SALBO",
+  "paglas-spvr-salbo@gfldn": "PAGLAS-SPVR-SALBO",
+
+  "das-spvr-bai": "DAS-SPVR-BAI",
+  "das-spvr-bai@gfldn": "DAS-SPVR-BAI",
+
+  "mamasapano-spvr-bai": "MAMASAPANO-SPVR-BAI",
+  "mamasapano-spvr-bai@gfldn": "MAMASAPANO-SPVR-BAI",
+
+  "mamasapano-spvr-alonto": "MAMASAPANO-SPVR-ALONTO",
+  "mamasapano-spvr-alonto@gfldn": "MAMASAPANO-SPVR-ALONTO",
+
+  "buluan-spvr-bai": "BULUAN-SPVR-BAI",
+  "buluan-spvr-bai@gfldn": "BULUAN-SPVR-BAI",
+
+  "buluan-spvr-jay": "BULUAN-SPVR-JAY",
+  "buluan-spvr-jay@gfldn": "BULUAN-SPVR-JAY",
+
+  "rajahbuayan-spvr-mamasahid": "RAJAHBUAYAN-SPVR-MAMASAHID",
+  "rajahbuayan-spvr-mamasahid@gfldn": "RAJAHBUAYAN-SPVR-MAMASAHID",
+
+  "rajahbuayan-spvr-bai": "RAJAHBUAYAN-SPVR-BAI",
+  "rajahbuayan-spvr-bai@gfldn": "RAJAHBUAYAN-SPVR-BAI",
+
+  "ampatuan-spvr-poblacion": "AMPATUAN-SPVR-POBLACION",
+  "ampatuan-spvr-poblacion@gfldn": "AMPATUAN-SPVR-POBLACION",
+
+  "datusaudi-spvr mahid-2": "DATUSAUDI-SPVR MAHID-2",
+  "datusaudi-spvr-mahid-2": "DATUSAUDI-SPVR MAHID-2",
+  "datusaudi-spvr-mahid-2@gfldn": "DATUSAUDI-SPVR MAHID-2",
+
+  "datusaudi-spvr mahid": "DATUSAUDI-SPVR MAHID",
+  "datusaudi-spvr-mahid": "DATUSAUDI-SPVR MAHID",
+  "datusaudi-spvr-mahid@gfldn": "DATUSAUDI-SPVR MAHID",
+
+  "datupiang-spvr-padjero": "DATUPIANG-SPVR-PADJERO",
+  "datupiang-spvr-padjero@gfldn": "DATUPIANG-SPVR-PADJERO",
+
+  "saidona-spvr-dali": "SAIDONA-SPVR-DALI",
+  "saidona-spvr-dali@gfldn": "SAIDONA-SPVR-DALI"
 };
 /**
  * Checks if a supervisor username/key belongs to the allowed ILIGAN SET B supervisors
@@ -1652,12 +1857,12 @@ export async function fetchDosAwangOfficeSupervisors(gatewayEndpoints = []) {
     "spvr-ramsie": "DOS/AWANG-SPVR-RAMSIE",
     "ramsie": "DOS/AWANG-SPVR-RAMSIE",
 
-    "dos/awang-spvr-lorenzo": "DOS/AWANG-SPVR-LORENZO",
-    "dos-awang-spvr-lorenzo": "DOS/AWANG-SPVR-LORENZO",
-    "dos/awang-spvr-lorenzo@gfldn": "DOS/AWANG-SPVR-LORENZO",
-    "dos-awang-spvr-lorenzo@gfldn": "DOS/AWANG-SPVR-LORENZO",
-    "spvr-lorenzo": "DOS/AWANG-SPVR-LORENZO",
-    "lorenzo": "DOS/AWANG-SPVR-LORENZO",
+    "dos/awang-spvr-norodin": "DOS/AWANG-SPVR-NORODIN",
+    "dos-awang-spvr-norodin": "DOS/AWANG-SPVR-NORODIN",
+    "dos/awang-spvr-norodin@gfldn": "DOS/AWANG-SPVR-NORODIN",
+    "dos-awang-spvr-norodin@gfldn": "DOS/AWANG-SPVR-NORODIN",
+    "spvr-norodin": "DOS/AWANG-SPVR-NORODIN",
+    "norodin": "DOS/AWANG-SPVR-NORODIN",
 
     "dos/awang-spvr-jonny": "DOS/AWANG-SPVR-JONNY",
     "dos-awang-spvr-jonny": "DOS/AWANG-SPVR-JONNY",
@@ -1690,7 +1895,167 @@ export async function fetchDosAwangOfficeSupervisors(gatewayEndpoints = []) {
 }
 
 /**
- * Fetch all supervisors (Mandaue + SET A + SET B + LALA + BALOI + LANDASAN + PARANG + N-KABUNTALAN + NORTH UPI + SOUTH UPI + DOS/AWANG) merged into one map.
+ * Fetches supervisors for MAGSUR OFFICE.
+ * @param {Array} gatewayEndpoints
+ * @returns {Promise<Object>}
+ */
+export async function fetchMagsurOfficeSupervisors(gatewayEndpoints = []) {
+  const cacheKey = 'MAGSUR_OFFICE';
+  if (supervisorCache.has(cacheKey)) return supervisorCache.get(cacheKey);
+
+  const eps = (gatewayEndpoints || []).filter(e => e && e.is_active !== false);
+  const magsurEp = eps.find(e => {
+    const sub = (e.sub_office || e.name || '').toLowerCase();
+    const url = (e.baseUrl || '').toLowerCase();
+    return sub.includes('magsur') || (sub.includes('maguindanao') && sub.includes('sur')) ||
+      url.includes('magsur') || (url.includes('maguindanao') && url.includes('sur'));
+  });
+
+  let dynamicMap = {};
+  if (magsurEp && magsurEp.baseUrl && magsurEp.token) {
+    const authHeader = magsurEp.token.startsWith('Bearer ') ? magsurEp.token : `Bearer ${magsurEp.token}`;
+    const baseUrl = magsurEp.baseUrl.replace(/\/+$/, '');
+    dynamicMap = await fetchSupervisorsFromUrls(
+      [
+        `${baseUrl}/api/accountant/supervisor`,
+        `${baseUrl}/api/accountant/supervisor?id=1`,
+        `${baseUrl}/api/accountant/supervisor?id=2`,
+        `${baseUrl}/api/accountant/supervisor?id=3`,
+        `${baseUrl}/api/accountant/supervisor?id=4`,
+        `${baseUrl}/api/accountant/supervisor?id=5`,
+        `${baseUrl}/api/accountant/supervisor?id=6`,
+        `${baseUrl}/api/accountant/supervisor?id=7`,
+        `${baseUrl}/api/accountant/supervisor?id=8`
+      ],
+      authHeader,
+      isMagsurOfficeAllowedSupervisor
+    );
+  }
+
+  const staticMagsurMap = {
+    "ampatuan-spvr-bai": "AMPATUAN-SPVR-BAI",
+    "ampatuan-spvr-bai@gfldn": "AMPATUAN-SPVR-BAI",
+
+    "ampatuan-spvr-utto": "AMPATUAN-SPVR-UTTO",
+    "ampatuan-spvr-utto@gfldn": "AMPATUAN-SPVR-UTTO",
+
+    "ampatuan-spvr-teddy": "AMPATUAN-SPVR-TEDDY",
+    "ampatuan-spvr-teddy@gfldn": "AMPATUAN-SPVR-TEDDY",
+
+    "datupiang-spvr-pots3": "DATUPIANG-SPVR-POTS3",
+    "datupiang-spvr-pots3@gfldn": "DATUPIANG-SPVR-POTS3",
+
+    "das-spvr-brito": "DAS-SPVR-BRITO",
+    "das-spvr-brito@gfldn": "DAS-SPVR-BRITO",
+
+    "ampatuan-spvr-kauran": "AMPATUAN-SPVR-KAURAN",
+    "ampatuan-spvr-kauran@gfldn": "AMPATUAN-SPVR-KAURAN",
+
+    "das-spvr-jerao": "DAS-SPVR-JERAO",
+    "das-spvr-jerao@gfldn": "DAS-SPVR-JERAO",
+
+    "das-spvr-jerao-2": "DAS-SPVR-JERAO-2",
+    "das-spvr-jerao-2@gfldn": "DAS-SPVR-JERAO-2",
+
+    "ampatuan-spvr-kapinpilan": "AMPATUAN-SPVR-KAPINPILAN",
+    "ampatuan-spvr-kapinpilan@gfldn": "AMPATUAN-SPVR-KAPINPILAN",
+
+    "datupiang-spvr-pots": "DATUPIANG-SPVR-POTS",
+    "datupiang-spvr-pots@gfldn": "DATUPIANG-SPVR-POTS",
+
+    "shariffaguak-spvr-nasrin": "SHARIFFAGUAK-SPVR-NASRIN",
+    "shariffaguak-spvr-nasrin@gfldn": "SHARIFFAGUAK-SPVR-NASRIN",
+
+    "paglas-spvr-castaños": "PAGLAS-SPVR-CASTAÑOS",
+    "paglas-spvr-castaños@gfldn": "PAGLAS-SPVR-CASTAÑOS",
+    "paglas-spvr-castanos": "PAGLAS-SPVR-CASTAÑOS",
+    "paglas-spvr-castanos@gfldn": "PAGLAS-SPVR-CASTAÑOS",
+
+    "dos-spvr-albaser": "DOS-SPVR-ALBASER",
+    "dos-spvr-albaser@gfldn": "DOS-SPVR-ALBASER",
+
+    "paglas-spvr-madidis": "PAGLAS-SPVR-MADIDIS",
+    "paglas-spvr-madidis@gfldn": "PAGLAS-SPVR-MADIDIS",
+
+    "paglas-spvr-suit": "PAGLAS-SPVR-SUIT",
+    "paglas-spvr-suit@gfldn": "PAGLAS-SPVR-SUIT",
+
+    "datuhoffer-spvr-limpongo": "DATUHOFFER-SPVR-LIMPONGO",
+    "datuhoffer-spvr-limpongo@gfldn": "DATUHOFFER-SPVR-LIMPONGO",
+
+    "montawal-spvr-pots": "MONTAWAL-SPVR-POTS",
+    "montawal-spvr-pots@gfldn": "MONTAWAL-SPVR-POTS",
+
+    "pagalungan-spvr-pots": "PAGALUNGAN-SPVR-POTS",
+    "pagalungan-spvr-pots@gfldn": "PAGALUNGAN-SPVR-POTS",
+
+    "shariffaguak-spvr-resty": "SHARIFFAGUAK-SPVR-RESTY",
+    "shariffaguak-spvr-resty@gfldn": "SHARIFFAGUAK-SPVR-RESTY",
+
+    "shariffaguak-spvr-mike": "SHARIFFAGUAK-SPVR-MIKE",
+    "shariffaguak-spvr-mike@gfldn": "SHARIFFAGUAK-SPVR-MIKE",
+
+    "shariffaguak-spvr-madz": "SHARIFFAGUAK-SPVR-MADZ",
+    "shariffaguak-spvr-madz@gfldn": "SHARIFFAGUAK-SPVR-MADZ",
+
+    "shariffaguak-spvr-bai": "SHARIFFAGUAK-SPVR-BAI",
+    "shariffaguak-spvr-bai@gfldn": "SHARIFFAGUAK-SPVR-BAI",
+
+    "dalican-spvr-guiaman": "DALICAN-SPVR-GUIAMAN",
+    "dalican-spvr-guiaman@gfldn": "DALICAN-SPVR-GUIAMAN",
+
+    "das-spvr-utto": "DAS-SPVR-UTTO",
+    "das-spvr-utto@gfldn": "DAS-SPVR-UTTO",
+
+    "paglas-spvr-salbo": "PAGLAS-SPVR-SALBO",
+    "paglas-spvr-salbo@gfldn": "PAGLAS-SPVR-SALBO",
+
+    "das-spvr-bai": "DAS-SPVR-BAI",
+    "das-spvr-bai@gfldn": "DAS-SPVR-BAI",
+
+    "mamasapano-spvr-bai": "MAMASAPANO-SPVR-BAI",
+    "mamasapano-spvr-bai@gfldn": "MAMASAPANO-SPVR-BAI",
+
+    "mamasapano-spvr-alonto": "MAMASAPANO-SPVR-ALONTO",
+    "mamasapano-spvr-alonto@gfldn": "MAMASAPANO-SPVR-ALONTO",
+
+    "buluan-spvr-bai": "BULUAN-SPVR-BAI",
+    "buluan-spvr-bai@gfldn": "BULUAN-SPVR-BAI",
+
+    "buluan-spvr-jay": "BULUAN-SPVR-JAY",
+    "buluan-spvr-jay@gfldn": "BULUAN-SPVR-JAY",
+
+    "rajahbuayan-spvr-mamasahid": "RAJAHBUAYAN-SPVR-MAMASAHID",
+    "rajahbuayan-spvr-mamasahid@gfldn": "RAJAHBUAYAN-SPVR-MAMASAHID",
+
+    "rajahbuayan-spvr-bai": "RAJAHBUAYAN-SPVR-BAI",
+    "rajahbuayan-spvr-bai@gfldn": "RAJAHBUAYAN-SPVR-BAI",
+
+    "ampatuan-spvr-poblacion": "AMPATUAN-SPVR-POBLACION",
+    "ampatuan-spvr-poblacion@gfldn": "AMPATUAN-SPVR-POBLACION",
+
+    "datusaudi-spvr mahid-2": "DATUSAUDI-SPVR MAHID-2",
+    "datusaudi-spvr-mahid-2": "DATUSAUDI-SPVR MAHID-2",
+    "datusaudi-spvr-mahid-2@gfldn": "DATUSAUDI-SPVR MAHID-2",
+
+    "datusaudi-spvr mahid": "DATUSAUDI-SPVR MAHID",
+    "datusaudi-spvr-mahid": "DATUSAUDI-SPVR MAHID",
+    "datusaudi-spvr-mahid@gfldn": "DATUSAUDI-SPVR MAHID",
+
+    "datupiang-spvr-padjero": "DATUPIANG-SPVR-PADJERO",
+    "datupiang-spvr-padjero@gfldn": "DATUPIANG-SPVR-PADJERO",
+
+    "saidona-spvr-dali": "SAIDONA-SPVR-DALI",
+    "saidona-spvr-dali@gfldn": "SAIDONA-SPVR-DALI"
+  };
+
+  const result = { ...staticMagsurMap, ...dynamicMap };
+  supervisorCache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * Fetch all supervisors (Mandaue + SET A + SET B + LALA + BALOI + LANDASAN + PARANG + N-KABUNTALAN + NORTH UPI + SOUTH UPI + DOS/AWANG + MAGSUR) merged into one map.
  * @param {Array} gatewayEndpoints
  * @returns {Promise<Object>}
  */
@@ -1704,7 +2069,7 @@ export async function fetchAllIliganSupervisors(gatewayEndpoints = []) {
 
   const promise = (async () => {
     try {
-      const [mandaue, setA, setB, lala, baloi, landasan, parang, nkabuntalan, northUpi, southUpi, dosAwang] = await Promise.all([
+      const [mandaue, setA, setB, lala, baloi, landasan, parang, nkabuntalan, northUpi, southUpi, dosAwang, magsur] = await Promise.all([
         fetchMandaueSupervisors(gatewayEndpoints),
         fetchIliganSetASupervisors(gatewayEndpoints),
         fetchIliganSupervisors(gatewayEndpoints),
@@ -1715,9 +2080,10 @@ export async function fetchAllIliganSupervisors(gatewayEndpoints = []) {
         fetchNKabuntalanOfficeSupervisors(gatewayEndpoints),
         fetchNorthUpiOfficeSupervisors(gatewayEndpoints),
         fetchSouthUpiOfficeSupervisors(gatewayEndpoints),
-        fetchDosAwangOfficeSupervisors(gatewayEndpoints)
+        fetchDosAwangOfficeSupervisors(gatewayEndpoints),
+        fetchMagsurOfficeSupervisors(gatewayEndpoints)
       ]);
-      const merged = { ...mandaue, ...setB, ...setA, ...lala, ...baloi, ...landasan, ...parang, ...nkabuntalan, ...northUpi, ...southUpi, ...dosAwang };
+      const merged = { ...mandaue, ...setB, ...setA, ...lala, ...baloi, ...landasan, ...parang, ...nkabuntalan, ...northUpi, ...southUpi, ...dosAwang, ...magsur };
       supervisorCache.set(cacheKey, merged);
       return merged;
     } finally {
