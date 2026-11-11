@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useEffect, memo, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, memo, useCallback } from 'react';
 import { 
   X, UploadCloud, FileText, CheckCircle2, 
   Smartphone, Building2, Landmark, Image as ImageIcon, Loader2,
-  AlertTriangle, ShieldCheck, Search, Sparkles, Eye
+  AlertTriangle, ShieldCheck, Search, Sparkles, Eye, Lock
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
@@ -31,6 +31,7 @@ const fastFormatTimestamp = (timestampStr) => {
 
 // Helper key generators for robust identification
 const getItemKey = (t) => String(t.id || t.transactionId || t.transId || '');
+const getClaimedItemKey = (i) => String(i?.transactionId || i?.transId || i?.transaction_id || i?.id || '').trim();
 
 // 1. ISOLATED MEMOIZED TICKETS TABLE (Will NEVER re-render when user types in reference number / amount / sender info)
 const BatchTicketsTable = memo(function BatchTicketsTable({
@@ -285,10 +286,10 @@ function AttachWeeklyProofModal({
   const [modalTableSearch, setModalTableSearch] = useState('');
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
 
-  // Claimed Deletions Deduction State
-  const [selectedClaimedKeys, setSelectedClaimedKeys] = useState(() => new Set());
+  // Claimed Deletions Deduction Modal State
   const [isClaimedModalOpen, setIsClaimedModalOpen] = useState(false);
   const [showUnselectedClaimedWarning, setShowUnselectedClaimedWarning] = useState(false);
+  const prevIsOpenRef = useRef(false);
 
   const isAdmin = isAdminRole(currentUser?.role) || isSuperAdminRole(currentUser?.role);
 
@@ -317,42 +318,38 @@ function AttachWeeklyProofModal({
 
   const selectedCount = selectedItems.length;
 
-    // Filter only DEPOSITED claimed deletion tickets (defense-in-depth safeguard)
+  // Filter only DEPOSITED claimed deletion tickets (defense-in-depth safeguard)
   const eligibleClaimedItems = useMemo(() => {
     return (claimedAdjustmentItems || []).filter(i => {
       return i.is_already_deposited === true || i.is_already_deposited === 'true' || i.is_already_deposited === 1;
     });
   }, [claimedAdjustmentItems]);
 
+  // Automatically detect and lock all eligible deposited approved deletion tickets (no manual override)
+  const selectedClaimedKeys = useMemo(() => {
+    return new Set(
+      (eligibleClaimedItems || [])
+        .map(getClaimedItemKey)
+        .filter(Boolean)
+    );
+  }, [eligibleClaimedItems]);
+
   // Claimed deductions calculation (Strictly from DEPOSITED tickets)
-  const selectedDeductionTotal = useMemo(() => {
-    return (eligibleClaimedItems || [])
-      .filter(i => {
-        const k = String(i.transactionId || i.transId || i.id).trim();
-        return selectedClaimedKeys.has(k);
-      })
-      .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  const selectedClaimedItems = useMemo(() => {
+    return (eligibleClaimedItems || []).filter(i => selectedClaimedKeys.has(getClaimedItemKey(i)));
   }, [eligibleClaimedItems, selectedClaimedKeys]);
 
-  const selectedClaimedCount = useMemo(() => {
-    return (eligibleClaimedItems || []).filter(i => {
-      const k = String(i.transactionId || i.transId || i.id).trim();
-      return selectedClaimedKeys.has(k);
-    }).length;
-  }, [eligibleClaimedItems, selectedClaimedKeys]);
+  const selectedDeductionTotal = useMemo(() => {
+    return selectedClaimedItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  }, [selectedClaimedItems]);
+
+  const selectedClaimedCount = selectedClaimedItems.length;
 
   const totalClaimedWinAmount = useMemo(() => {
     return (eligibleClaimedItems || []).reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
   }, [eligibleClaimedItems]);
 
-  const selectedClaimedItems = useMemo(() => {
-    return (eligibleClaimedItems || []).filter(i => {
-      const k = String(i.transactionId || i.transId || i.id).trim();
-      return selectedClaimedKeys.has(k);
-    });
-  }, [eligibleClaimedItems, selectedClaimedKeys]);
-
-  const hasUnselectedClaimed = (eligibleClaimedItems?.length || 0) > 0 && selectedClaimedKeys.size === 0;
+  const hasUnselectedClaimed = (eligibleClaimedItems?.length || 0) > 0 && selectedClaimedKeys.size < eligibleClaimedItems.length;
 
   const netPayableTotal = useMemo(() => {
     const gross = parseFloat(selectedWinTotal || 0) || 0;
@@ -360,9 +357,9 @@ function AttachWeeklyProofModal({
     return baseDeducted + selectedDeductionTotal;
   }, [selectedWinTotal, totalClaimedWinAmount, selectedDeductionTotal]);
 
-  // Sync initial state on modal open
+  // Sync initial state cleanly when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       setFormError('');
       setReferenceNumber('');
       setPreviewImage(null);
@@ -372,18 +369,17 @@ function AttachWeeklyProofModal({
       setShowUnselectedClaimedWarning(false);
       setIsClaimedModalOpen(false);
 
-      // Default unchecked for claimed deletion tickets
-      setSelectedClaimedKeys(new Set());
-
       const unremitted = filteredData.filter(i => isEligibleForRemittanceProof(i));
       const initialKeys = new Set(unremitted.map(t => getItemKey(t)));
       setSelectedKeys(initialKeys);
 
       const targetAmount = unremitted.reduce((sum, i) => sum + parseFloat(i.winAmount ?? 0), 0);
-      const initialDeducted = Math.max(0, targetAmount - totalClaimedWinAmount);
-      setCustomRemittanceAmount(initialDeducted.toFixed(2));
+      const initialBaseDeducted = Math.max(0, targetAmount - totalClaimedWinAmount);
+      const initialMatchedAmount = initialBaseDeducted + selectedDeductionTotal;
+      setCustomRemittanceAmount(initialMatchedAmount.toFixed(2));
     }
-  }, [isOpen, filteredData, currentUser, eligibleClaimedItems, totalClaimedWinAmount]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, filteredData, currentUser, totalClaimedWinAmount, selectedDeductionTotal]);
 
   // Toggle single ticket selection
   const handleToggleSelect = useCallback((key) => {
@@ -421,43 +417,6 @@ function AttachWeeklyProofModal({
       }
     });
   }, [targetBatch, totalClaimedWinAmount, selectedDeductionTotal]);
-
-  // Toggle claimed deletion tickets
-  const handleToggleClaimedSelect = useCallback((key) => {
-    setSelectedClaimedKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      const newAdditions = (eligibleClaimedItems || [])
-        .filter(i => next.has(String(i.transactionId || i.transId || i.id).trim()))
-        .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-      const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalClaimedWinAmount);
-      const newTotal = baseDeducted + newAdditions;
-      setCustomRemittanceAmount(newTotal.toFixed(2));
-      return next;
-    });
-  }, [eligibleClaimedItems, selectedWinTotal, totalClaimedWinAmount]);
-
-  const handleToggleAllClaimed = useCallback(() => {
-    if (!eligibleClaimedItems || !eligibleClaimedItems.length) return;
-    setSelectedClaimedKeys(prev => {
-      const allKeys = eligibleClaimedItems.map(i => String(i.transactionId || i.transId || i.id).trim());
-      const isAll = allKeys.length > 0 && allKeys.every(k => prev.has(k));
-      const baseDeducted = Math.max(0, (parseFloat(selectedWinTotal || 0) || 0) - totalClaimedWinAmount);
-      if (isAll) {
-        setCustomRemittanceAmount(baseDeducted.toFixed(2));
-        return new Set();
-      } else {
-        const fullAdditions = claimedAdjustmentItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-        const newTotal = baseDeducted + fullAdditions;
-        setCustomRemittanceAmount(newTotal.toFixed(2));
-        return new Set(allKeys);
-      }
-    });
-  }, [claimedAdjustmentItems, selectedWinTotal, totalClaimedWinAmount]);
 
   // Dynamically compute Remittance Serial Number based on sub-office and remittance date
   const effectiveBatchSrn = useMemo(() => {
@@ -775,7 +734,7 @@ function AttachWeeklyProofModal({
               </div>
               <div 
                 className={`p-2.5 rounded-lg border shadow-2xs transition-all ${
-                  claimedAdjustmentItems.length > 0 
+                  eligibleClaimedItems.length > 0 
                     ? (hasUnselectedClaimed ? 'bg-rose-50/70 border-rose-300' : 'bg-emerald-50/60 border-emerald-200') 
                     : 'bg-white border-blue-100/80'
                 }`}
@@ -784,11 +743,11 @@ function AttachWeeklyProofModal({
                   <span className={`text-[9px] font-sans font-extrabold uppercase block ${hasUnselectedClaimed ? 'text-rose-600' : 'text-slate-400'}`}>
                     Approved Deletions
                   </span>
-                  {claimedAdjustmentItems.length > 0 && (
+                  {eligibleClaimedItems.length > 0 && (
                     <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
                       hasUnselectedClaimed ? 'bg-rose-200 text-rose-900' : 'text-emerald-700 bg-emerald-100'
                     }`}>
-                      {selectedClaimedCount}/{claimedAdjustmentItems.length}
+                      {selectedClaimedCount}/{eligibleClaimedItems.length}
                     </span>
                   )}
                 </div>
@@ -801,8 +760,8 @@ function AttachWeeklyProofModal({
             </div>
           </div>
 
-          {/* APPROVED DELETION ALERT WARNING BANNER */}
-          {claimedAdjustmentItems.length > 0 && (
+          {/* APPROVED DELETION ALERT / AUTO-INCLUDED BANNER */}
+          {eligibleClaimedItems.length > 0 && (
             <div
               onClick={() => setIsClaimedModalOpen(true)}
               className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
@@ -821,18 +780,19 @@ function AttachWeeklyProofModal({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black uppercase text-[11px] tracking-wide text-slate-800">
                       {selectedClaimedCount > 0
-                        ? `Approved Deletion Ticket Included (+${selectedClaimedCount} Selected)`
+                        ? `Approved Deletion Ticket Auto-Included (+${selectedClaimedCount} Detected)`
                         : `Action Required: Approved Deletion Ticket Reconciliation (${eligibleClaimedItems.length} Available)`}
                     </span>
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                    <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
                       selectedClaimedCount > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
                     }`}>
-                      {selectedClaimedCount > 0 ? 'Subtotal Matched' : 'Action Required'}
+                      {selectedClaimedCount > 0 && <Lock size={9} />}
+                      {selectedClaimedCount > 0 ? 'Auto-Included • Locked' : 'Action Required'}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-600 truncate mt-0.5">
                     {selectedClaimedCount > 0
-                      ? `Subtotal Matched: ₱${netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₱${Math.max(0, selectedWinTotal - totalClaimedWinAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })} + ₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}). Total Remittance Amount matches selected subtotal.`
+                      ? `Subtotal Matched: ₱${netPayableTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₱${Math.max(0, selectedWinTotal - totalClaimedWinAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })} + ₱${selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}). Auto-detected tickets cannot be overridden.`
                       : `Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Need to open the modal and select ticket to include in the attach proof modal table.`}
                   </p>
                 </div>
@@ -850,7 +810,7 @@ function AttachWeeklyProofModal({
                     : 'bg-rose-600 hover:bg-rose-700 text-white'
                 }`}
               >
-                {selectedClaimedCount > 0 ? 'Edit Selected Tickets' : 'Select Ticket to Include →'}
+                {selectedClaimedCount > 0 ? 'View Auto-Included →' : 'Select Ticket to Include →'}
               </button>
             </div>
           )}
@@ -1397,14 +1357,13 @@ function AttachWeeklyProofModal({
           </div>
         )}
 
-        {/* 7. CLAIMED DELETIONS DEDUCTION SELECTION MODAL */}
+        {/* 7. CLAIMED DELETIONS DEDUCTION SELECTION MODAL (AUTO-DETECTED & LOCKED) */}
         <SelectClaimedDeductionsModal
           isOpen={isClaimedModalOpen}
           onClose={() => setIsClaimedModalOpen(false)}
           items={eligibleClaimedItems}
           selectedKeys={selectedClaimedKeys}
-          onToggleSelect={handleToggleClaimedSelect}
-          onToggleSelectAll={handleToggleAllClaimed}
+          isLocked={true}
           formatDrawTime={formatDrawTime}
         />
 

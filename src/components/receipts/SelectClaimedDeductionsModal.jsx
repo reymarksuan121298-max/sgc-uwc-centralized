@@ -4,8 +4,12 @@ import {
   Search,
   Check,
   X,
-  Ticket
+  Ticket,
+  Lock
 } from 'lucide-react';
+
+const getClaimedItemKey = (item, fallbackIdx = '') =>
+  String(item?.transactionId || item?.transId || item?.transaction_id || item?.id || fallbackIdx).trim();
 
 export default function SelectClaimedDeductionsModal({
   isOpen,
@@ -14,17 +18,22 @@ export default function SelectClaimedDeductionsModal({
   selectedKeys = new Set(),
   onToggleSelect,
   onToggleSelectAll,
+  isLocked = true,
   formatDrawTime
 }) {
   const [searchTerm, setSearchTerm] = useState('');
 
-    // Search filter (Strictly DEPOSITED tickets only)
-  const filteredItems = useMemo(() => {
+  // Normalized deposited list (Strictly DEPOSITED tickets only)
+  const depositedItems = useMemo(() => {
     if (!items || !items.length) return [];
-    const depositedOnly = items.filter(i => i.is_already_deposited === true || i.is_already_deposited === 'true' || i.is_already_deposited === 1);
-    if (!searchTerm.trim()) return depositedOnly;
+    return items.filter(i => i.is_already_deposited === true || i.is_already_deposited === 'true' || i.is_already_deposited === 1);
+  }, [items]);
+
+  // Search filter over deposited tickets
+  const filteredItems = useMemo(() => {
+    if (!searchTerm.trim()) return depositedItems;
     const q = searchTerm.toLowerCase().trim();
-    return depositedOnly.filter(item => {
+    return depositedItems.filter(item => {
       const transId = String(item.transactionId || item.transId || item.transaction_id || '').toLowerCase();
       const teller = String(item.fullName || item.teller_outlet || item.outlet || item.username || '').toLowerCase();
       const betNo = String(item.betNo || item.bet_no || '').toLowerCase();
@@ -32,26 +41,25 @@ export default function SelectClaimedDeductionsModal({
       const reason = String(item.deletion_request_reason || item.reason || '').toLowerCase();
       return transId.includes(q) || teller.includes(q) || betNo.includes(q) || betCode.includes(q) || reason.includes(q);
     });
-  }, [items, searchTerm]);
+  }, [depositedItems, searchTerm]);
 
-  // Selected totals
+  // Selected totals (when locked, all deposited items are automatically included)
   const selectedCount = useMemo(() => {
-    return items.filter(i => {
-      const k = String(i.transactionId || i.transId || i.transaction_id || i.id).trim();
-      return selectedKeys.has(k);
-    }).length;
-  }, [items, selectedKeys]);
+    if (isLocked) return depositedItems.length;
+    return depositedItems.filter(i => selectedKeys.has(getClaimedItemKey(i))).length;
+  }, [depositedItems, selectedKeys, isLocked]);
 
   const selectedDeductionTotal = useMemo(() => {
-    return items
-      .filter(i => {
-        const k = String(i.transactionId || i.transId || i.transaction_id || i.id).trim();
-        return selectedKeys.has(k);
-      })
-      .reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
-  }, [items, selectedKeys]);
+    const activeItems = isLocked
+      ? depositedItems
+      : depositedItems.filter(i => selectedKeys.has(getClaimedItemKey(i)));
+    return activeItems.reduce((sum, i) => sum + parseFloat(i.winAmount || i.win_amount || 0), 0);
+  }, [depositedItems, selectedKeys, isLocked]);
 
-  const isAllSelected = items.length > 0 && selectedCount === items.length;
+  const isAllSelected = depositedItems.length > 0 && selectedCount === depositedItems.length;
+  const checkboxClassName = `w-4 h-4 rounded border-slate-300 text-[#002B66] accent-[#002B66] ${
+    isLocked ? 'cursor-not-allowed opacity-75 pointer-events-none' : 'focus:ring-[#002B66] cursor-pointer'
+  }`;
 
   if (!isOpen) return null;
 
@@ -70,7 +78,9 @@ export default function SelectClaimedDeductionsModal({
                 Include Approved Deletion Ticket in Remittance Batch
               </h3>
               <p className="text-[10px] text-blue-200">
-                Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Select ticket to include in the attach proof modal table.
+                {isLocked
+                  ? 'Approved deletion tickets are automatically detected and locked into this remittance batch to prevent manual override.'
+                  : 'Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Select ticket to include in the attach proof modal table.'}
               </p>
             </div>
           </div>
@@ -85,13 +95,19 @@ export default function SelectClaimedDeductionsModal({
 
         {/* NOTICE BANNER */}
         <div className="bg-blue-50/80 border-b border-blue-200 px-4 py-2.5 flex items-start gap-2.5 text-xs text-blue-900 shrink-0">
-          <AlertTriangle size={16} className="text-[#002B66] shrink-0 mt-0.5" />
+          {isLocked ? (
+            <Lock size={16} className="text-[#002B66] shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle size={16} className="text-[#002B66] shrink-0 mt-0.5" />
+          )}
           <div className="leading-tight">
             <span className="font-extrabold uppercase text-[10px] tracking-wide text-[#002B66] block">
-              Approved Deletion Reconciliation
+              {isLocked ? 'Automatic Approved Deletion Detection (Locked)' : 'Approved Deletion Reconciliation'}
             </span>
             <span className="text-[11px] text-slate-700">
-              Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Select ticket below to include in the attach proof modal table.
+              {isLocked
+                ? 'Approved deletion tickets shown below are automatically detected and included in this remittance batch. Selection is locked and cannot be checked or unchecked.'
+                : 'Approved deletion ticket is deducted from the total remittance to match the selected sub total amount. Select ticket below to include in the attach proof modal table.'}
             </span>
           </div>
         </div>
@@ -109,13 +125,23 @@ export default function SelectClaimedDeductionsModal({
             />
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onToggleSelectAll}
-              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#002B66] border border-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs"
-            >
-              {isAllSelected ? 'Deselect All' : 'Select All'}
-            </button>
+            {isLocked ? (
+              <div
+                className="px-3 py-1.5 bg-amber-50 text-[#002B66] border border-amber-300 rounded-lg text-xs font-extrabold flex items-center gap-1.5 select-none shadow-2xs"
+                title="Automatically detected and locked — selection cannot be modified"
+              >
+                <Lock size={13} className="text-amber-600" />
+                <span>Auto-Detected (Locked)</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onToggleSelectAll}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#002B66] border border-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+              >
+                {isAllSelected ? 'Deselect All' : 'Select All'}
+              </button>
+            )}
             <div className="bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg text-right">
               <span className="text-[9px] font-extrabold text-emerald-600 uppercase block leading-none">Addition Total</span>
               <span className="font-mono text-xs font-black text-emerald-800">
@@ -140,8 +166,12 @@ export default function SelectClaimedDeductionsModal({
                       <input
                         type="checkbox"
                         checked={isAllSelected}
-                        onChange={onToggleSelectAll}
-                        className="w-4 h-4 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+                        disabled={isLocked}
+                        readOnly={isLocked}
+                        onChange={isLocked ? undefined : onToggleSelectAll}
+                        aria-label={isLocked ? 'All approved deletion tickets auto-included and locked' : 'Select all approved deletion tickets'}
+                        title={isLocked ? 'Automatically detected and locked — cannot check or uncheck' : 'Toggle select all'}
+                        className={checkboxClassName}
                       />
                     </th>
                     <th className="p-2.5 border-l border-slate-200">Trans ID</th>
@@ -153,9 +183,9 @@ export default function SelectClaimedDeductionsModal({
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredItems.map((item, idx) => {
-                    const key = String(item.transactionId || item.transId || item.transaction_id || item.id || idx).trim();
+                    const key = getClaimedItemKey(item, idx);
                     const transId = item.transactionId || item.transId || item.transaction_id || `REC-${idx + 1}`;
-                    const isChecked = selectedKeys.has(key);
+                    const isChecked = isLocked ? true : selectedKeys.has(key);
                     const winAmt = parseFloat(item.winAmount || item.win_amount || 0);
                     const teller = item.fullName || item.teller_outlet || item.outlet || 'N/A';
                     const betNo = item.betNo || item.bet_no || 'N/A';
@@ -167,19 +197,30 @@ export default function SelectClaimedDeductionsModal({
                     return (
                       <tr
                         key={key}
-                        onClick={() => onToggleSelect(key)}
-                        className={`cursor-pointer transition-colors select-none ${
+                        onClick={isLocked ? undefined : () => onToggleSelect?.(key)}
+                        className={`transition-colors select-none ${
+                          isLocked ? 'cursor-default' : 'cursor-pointer'
+                        } ${
                           isChecked
                             ? 'bg-amber-50/70 hover:bg-amber-100/60 font-semibold'
                             : 'bg-white hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <td
+                          className="p-2.5 text-center"
+                          onClick={(e) => {
+                            if (!isLocked) e.stopPropagation();
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => onToggleSelect(key)}
-                            className="w-4 h-4 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
+                            disabled={isLocked}
+                            readOnly={isLocked}
+                            onChange={isLocked ? undefined : () => onToggleSelect?.(key)}
+                            aria-label={`Approved deletion ticket ${transId}`}
+                            title={isLocked ? 'Automatically detected and locked — cannot check or uncheck' : 'Toggle ticket selection'}
+                            className={checkboxClassName}
                           />
                         </td>
                         <td className="p-2.5 border-l border-slate-200 font-mono font-bold text-[#002B66] whitespace-nowrap">
@@ -233,26 +274,39 @@ export default function SelectClaimedDeductionsModal({
           <div className="flex items-center gap-2">
             <Ticket size={16} className="text-[#002B66]" />
             <span className="text-xs font-bold text-slate-700">
-              <span className="font-black text-[#002B66]">{selectedCount}</span> of {items.length} ticket(s) selected
+              <span className="font-black text-[#002B66]">{selectedCount}</span> of {depositedItems.length} ticket(s) {isLocked ? 'auto-included (Locked)' : 'selected'}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-white transition-colors cursor-pointer text-xs"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
-            >
-              <Check size={14} className="text-[#FFD700]" />
-              Include & Match Selected ({selectedCount} Selected • +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
-            </button>
+            {isLocked ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
+              >
+                <Lock size={13} className="text-[#FFD700]" />
+                Close • {selectedCount} Auto-Included (+₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-white transition-colors cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-2 bg-[#002B66] hover:bg-blue-900 text-[#FFD700] rounded-xl font-black transition-colors cursor-pointer text-xs shadow-sm flex items-center gap-1.5"
+                >
+                  <Check size={14} className="text-[#FFD700]" />
+                  Include & Match Selected ({selectedCount} Selected • +₱{selectedDeductionTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })})
+                </button>
+              </>
+            )}
           </div>
         </div>
 
