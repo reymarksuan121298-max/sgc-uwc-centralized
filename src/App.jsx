@@ -1812,29 +1812,38 @@ export default function App() {
 
   const handleSaveAgreement = async (payload) => {
     try {
-      // Write all settlement data directly onto the returned_winnings row.
+      // Write all settlement data directly onto the returned_winnings row(s).
       // No separate settlement_agreements table is used.
-      const { error } = await supabase
-        .from('returned_winnings')
-        .update({
-          isUnderSettlement: true,
-          settlementTerms: {
-            agreementDate: payload.agreementDate,
-            reason: payload.reason,
-            frequency: payload.frequency,
-            sub_office: payload.ticket?.sub_office || payload.sub_office || 'Mandaue Central',
-            installmentsCount: payload.installmentsCount,
-            installments: payload.installments,
-            signatories: payload.signatories || null
-          },
-          // Keep the row column in sync so sub-office scoping (reminder cron,
-          // saved-agreements list) resolves correctly without parsing JSONB.
+      const updateFields = {
+        isUnderSettlement: true,
+        settlementTerms: {
+          agreementDate: payload.agreementDate,
+          reason: payload.reason,
+          frequency: payload.frequency,
           sub_office: payload.ticket?.sub_office || payload.sub_office || 'Mandaue Central',
-          totalInstallmentAmount: payload.totalInstallmentAmount,
-          settlementStatus: 'PENDING',
-          updated_at: new Date().toISOString()
-        })
-        .eq('transactionId', payload.transactionId);
+          bundledTickets: Array.isArray(payload.bundledTickets) ? payload.bundledTickets : undefined,
+          totalWinAmount: payload.totalWinAmount ?? payload.ticket?.winAmount ?? undefined,
+          installmentsCount: payload.installmentsCount,
+          installments: payload.installments,
+          signatories: payload.signatories || null
+        },
+        // Keep the row column in sync so sub-office scoping (reminder cron,
+        // saved-agreements list) resolves correctly without parsing JSONB.
+        sub_office: payload.ticket?.sub_office || payload.sub_office || 'Mandaue Central',
+        totalInstallmentAmount: payload.totalInstallmentAmount,
+        settlementStatus: 'PENDING',
+        updated_at: new Date().toISOString()
+      };
+
+      let saveQuery = supabase.from('returned_winnings').update(updateFields);
+      const rowIds = Array.isArray(payload.ticketRowIds) ? payload.ticketRowIds.filter(Boolean) : [];
+      if (rowIds.length > 0) {
+        saveQuery = saveQuery.in('id', rowIds);
+      } else {
+        saveQuery = saveQuery.eq('transactionId', payload.transactionId);
+      }
+
+      const { error } = await saveQuery;
 
       if (error) throw error;
 

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, ChevronDown, Check, X, Ticket, Sparkles, User, DollarSign } from 'lucide-react';
+import { getSettlementTranscodeKey, getTicketWinAmount } from '../../utils/settlementAggregation';
 
 export default function TransactionSelectSearch({
   tickets = [],
@@ -13,12 +14,13 @@ export default function TransactionSelectSearch({
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Helper to extract clean ticket ID
-  const getTicketId = (t) => t?.transactionId || t?.transId || t?.receipt_no || t?.ticket_no || '';
+  // Helper to extract normalized ticket transcode ID
+  const getTicketId = (t) => getSettlementTranscodeKey(t) || t?.transactionId || t?.transId || t?.receipt_no || t?.ticket_no || '';
 
   // Find currently selected ticket object
   const selectedTicket = useMemo(() => {
-    return tickets.find((t) => getTicketId(t) === selectedId) || tickets[0] || null;
+    const normalizedSelected = String(selectedId || '').trim();
+    return tickets.find((t) => getTicketId(t) === normalizedSelected) || tickets[0] || null;
   }, [tickets, selectedId]);
 
   // Close when clicking outside
@@ -56,27 +58,37 @@ export default function TransactionSelectSearch({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  // Filter tickets by search query
+  // Filter tickets by search query (checks all bundled rows sharing the same transcode)
   const filteredTickets = useMemo(() => {
     if (!searchQuery.trim()) return tickets;
-    const q = searchQuery.toLowerCase().trim().replace(/[\s-]+/g, '');
+    const rawQ = searchQuery.toLowerCase().trim();
+    const q = rawQ.replace(/[\s-]+/g, '');
 
     return tickets.filter((item) => {
+      const constituentRows = Array.isArray(item.groupedTickets) && item.groupedTickets.length > 0 ? item.groupedTickets : [item];
       const tid = getTicketId(item).toLowerCase().replace(/[\s-]+/g, '');
       const rawTid = getTicketId(item).toLowerCase();
-      const name = (item.fullName || item.outlet || item.username || '').toLowerCase();
-      const bet = String(item.betNo || item.CombiNo || '').toLowerCase();
-      const office = (item.sub_office || item.subOffice || item.branch || '').toLowerCase();
-      const amount = String(item.winAmount || '');
+      const totalAmountStr = String(item.totalWinAmount ?? item.winAmount ?? '');
 
-      return (
-        tid.includes(q) ||
-        rawTid.includes(searchQuery.toLowerCase().trim()) ||
-        name.includes(searchQuery.toLowerCase().trim()) ||
-        bet.includes(searchQuery.toLowerCase().trim()) ||
-        office.includes(searchQuery.toLowerCase().trim()) ||
-        amount.includes(searchQuery.toLowerCase().trim())
-      );
+      if (tid.includes(q) || rawTid.includes(rawQ) || totalAmountStr.includes(rawQ)) {
+        return true;
+      }
+
+      return constituentRows.some((row) => {
+        const rowTid = String(row.transactionId || row.transId || row.receipt_no || '').toLowerCase();
+        const name = (row.fullName || row.outlet || row.username || '').toLowerCase();
+        const bet = String(row.betNo || row.CombiNo || '').toLowerCase();
+        const office = (row.sub_office || row.subOffice || row.branch || '').toLowerCase();
+        const amount = String(row.winAmount ?? row.win_amount ?? '');
+        return (
+          rowTid.includes(rawQ) ||
+          rowTid.replace(/[\s-]+/g, '').includes(q) ||
+          name.includes(rawQ) ||
+          bet.includes(rawQ) ||
+          office.includes(rawQ) ||
+          amount.includes(rawQ)
+        );
+      });
     });
   }, [tickets, searchQuery]);
 
@@ -88,7 +100,9 @@ export default function TransactionSelectSearch({
 
   const selectedTid = selectedTicket ? getTicketId(selectedTicket) : '';
   const selectedPayer = selectedTicket?.fullName || selectedTicket?.outlet || selectedTicket?.username || 'Accountable Payer';
-  const selectedAmount = selectedTicket?.winAmount !== undefined ? parseFloat(selectedTicket.winAmount).toLocaleString() : '0';
+  const selectedTotal = selectedTicket ? (selectedTicket.totalWinAmount ?? getTicketWinAmount(selectedTicket)) : 0;
+  const selectedAmount = Number(selectedTotal || 0).toLocaleString();
+  const selectedRowCount = selectedTicket?.ticketCount || selectedTicket?.groupedTickets?.length || 1;
 
   return (
     <div ref={containerRef} className={`relative w-full md:w-[420px] ${className}`}>
@@ -116,6 +130,11 @@ export default function TransactionSelectSearch({
               {selectedTicket && (
                 <span className="text-[10px] font-black px-1.5 py-0.2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded shrink-0">
                   ₱{selectedAmount}
+                </span>
+              )}
+              {selectedTicket && selectedRowCount > 1 && (
+                <span className="text-[9.5px] font-black px-1.5 py-0.2 text-[#002B66] bg-blue-50 border border-blue-200 rounded shrink-0">
+                  {selectedRowCount} Bets
                 </span>
               )}
             </div>
@@ -195,8 +214,15 @@ export default function TransactionSelectSearch({
                 const tid = getTicketId(item) || `TID-${idx}`;
                 const isSelected = tid === selectedTid;
                 const payer = item.fullName || item.outlet || item.username || 'Accountable Payer';
-                const amt = parseFloat(item.winAmount || 0).toLocaleString();
-                const office = item.sub_office || item.subOffice || item.branch;
+                const totalWin = item.totalWinAmount ?? getTicketWinAmount(item);
+                const amt = Number(totalWin || 0).toLocaleString();
+                const constituentRows = Array.isArray(item.groupedTickets) && item.groupedTickets.length > 0 ? item.groupedTickets : [item];
+                const isMultiRow = constituentRows.length > 1;
+                const betPreview = isMultiRow
+                  ? constituentRows
+                      .map((r) => `Bet ${r.betNo || r.CombiNo || '—'}: ₱${getTicketWinAmount(r).toLocaleString()}`)
+                      .join(' • ')
+                  : '';
 
                 return (
                   <button
@@ -231,6 +257,17 @@ export default function TransactionSelectSearch({
                           >
                             {tid}
                           </span>
+                          {isMultiRow && (
+                            <span
+                              className={`text-[9.5px] font-black px-1.5 py-0.2 rounded ${
+                                isSelected
+                                  ? 'bg-white/20 text-[#FFD700]'
+                                  : 'bg-blue-100 text-[#002B66]'
+                              }`}
+                            >
+                              {constituentRows.length} Bets Combined
+                            </span>
+                          )}
                         </div>
 
                         <div
@@ -240,6 +277,15 @@ export default function TransactionSelectSearch({
                         >
                           {payer}
                         </div>
+                        {betPreview && (
+                          <div
+                            className={`text-[10px] font-mono truncate mt-0.5 ${
+                              isSelected ? 'text-emerald-200' : 'text-slate-500'
+                            }`}
+                          >
+                            {betPreview}
+                          </div>
+                        )}
                       </div>
                     </div>
 

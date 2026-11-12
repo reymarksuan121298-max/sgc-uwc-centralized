@@ -2,6 +2,7 @@ import { supabase } from '../config/supabaseClient';
 import { getLocalDateString } from '../utils/dateFormatting';
 import { isSSRRole, isAdminRole } from '../utils/permissions';
 import { notificationService } from './notificationService';
+import { groupTicketsByTranscode } from '../utils/settlementAggregation';
 
 /**
  * Safely parse settlement terms from database record
@@ -72,7 +73,8 @@ export const evaluateSettlementDueDates = async ({ currentUser = null, todayOver
 
     const reminders = [];
 
-    (data || []).forEach((item) => {
+    const groupedAgreements = groupTicketsByTranscode(data || []);
+    groupedAgreements.forEach((item) => {
       const terms = parseSettlementTerms(item.settlementTerms);
       if (!terms || !Array.isArray(terms.installments) || terms.installments.length === 0) return;
 
@@ -80,9 +82,9 @@ export const evaluateSettlementDueDates = async ({ currentUser = null, todayOver
       const transId = item.transactionId || 'Unknown Record';
       const subOffice = item.sub_office || terms.sub_office || '';
 
-      // Track how much of this agreement's recorded payments has been applied to
-      // earlier installments (earliest-first, mirrors applyPaymentToInstallments)
-      let remainingPaid = Number(paymentsByAgreement[item.id]) || 0;
+      // Track how much of this bundled agreement's recorded payments across all linked rows has been applied
+      const rowIds = Array.isArray(item.groupedRowIds) && item.groupedRowIds.length > 0 ? item.groupedRowIds : [item.id];
+      let remainingPaid = rowIds.reduce((sum, rid) => sum + (Number(paymentsByAgreement[rid]) || 0), 0);
 
       terms.installments.forEach((inst) => {
         // Skip installments already marked as paid

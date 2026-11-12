@@ -26,9 +26,17 @@ import {
 } from '../../services/supervisorService';
 import ModernDropdown from '../../components/common/ModernDropdown';
 import TransactionSelectSearch from '../../components/winnings/TransactionSelectSearch';
+import AccountabilityDetailsTable from '../../components/winnings/AccountabilityDetailsTable';
 import InstallmentDatePicker from '../../components/winnings/InstallmentDatePicker';
 import { getLocalDateString } from '../../utils/dateFormatting';
 import { isAdminRole, isSuperAdminRole } from '../../utils/permissions';
+import {
+  groupTicketsByTranscode,
+  getSettlementTranscodeKey,
+  buildBundledTicketSnapshot,
+  getGroupedPaymentsList,
+  sumGroupedPayments
+} from '../../utils/settlementAggregation';
 
 const FREQUENCY_OPTIONS = [
   {
@@ -280,6 +288,31 @@ const createInstallmentRows = ({
   });
 };
 
+const getSelectedTicketId = (ticket) =>
+  getSettlementTranscodeKey(ticket) || ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
+
+const getWinAmount = (ticket) => {
+  if (!ticket) return 0;
+  const val = parseFloat(ticket?.totalWinAmount ?? ticket?.winAmount ?? 5000);
+  return Number.isFinite(val) ? val : 0;
+};
+
+const buildDefaultSchedule = (winAmount, agreementDate, frequency) => {
+  const amt = Number.isFinite(winAmount) ? winAmount : 5000;
+  const count = Math.max(1, Math.min(100, Math.ceil(amt / 500)));
+  return {
+    installmentsCount: count,
+    customAmount: '500',
+    installments: createInstallmentRows({
+      count,
+      amountPerInstallment: '500',
+      winAmount: amt,
+      agreementDate,
+      frequency
+    })
+  };
+};
+
 // Applies a payment to the agreement's installments, marking the earliest unpaid
 // installment(s) covered by the amount as PAID. Partial payments leave the
 // installment flagged unpaid so due-date reminders keep working correctly.
@@ -387,6 +420,9 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     return itemOffice === targetOffice || (targetOffice.includes('mandaue') && (!itemOffice || itemOffice === 'all'));
   });
 
+  // Bundle rows sharing the same transcode so multi-bet tickets sum winning amounts cleanly
+  const bundledTickets = useMemo(() => groupTicketsByTranscode(availableTickets), [availableTickets]);
+
   const [paymentsByAgreement, setPaymentsByAgreement] = useState({});
   const [expandedAgreementId, setExpandedAgreementId] = useState(null);
   const [paymentModalItem, setPaymentModalItem] = useState(null);
@@ -424,15 +460,15 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   }, [savedAgreementsList, savedSearchQuery]);
 
   // States for Editable Form
-  const [selectedTicketId, setSelectedTicketId] = useState(initialTicketId || '');
+  const normalizedInitialTicketId = initialTicketId
+    ? (getSettlementTranscodeKey({ transactionId: initialTicketId }) || initialTicketId)
+    : '';
+  const [selectedTicketId, setSelectedTicketId] = useState(normalizedInitialTicketId);
   const [agreementDate, setAgreementDate] = useState(getLocalDateString());
   const [reason, setReason] = useState(REASON_TEMPLATES[0].text);
-  const initialWinAmount = parseFloat(availableTickets[0]?.winAmount || filteredData[0]?.winAmount || 5000);
-  // Keep the default installment count consistent with the ₱500 / installment default
-  const initialInstallmentsCount = Math.max(1, Math.min(100, Math.ceil(initialWinAmount / 500)));
-  const [installmentsCount, setInstallmentsCount] = useState(initialInstallmentsCount);
-  const [customAmount, setCustomAmount] = useState('500');
   const [frequency, setFrequency] = useState('weekly');
+  // Stores user-edited schedule keyed to the active ticket signature; otherwise derives the default ₱500 schedule
+  const [scheduleOverride, setScheduleOverride] = useState(null);
 
   // Dynamic Supervisors from Supervisor Service
   const [dynamicSupervisors, setDynamicSupervisors] = useState({});
@@ -543,30 +579,35 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     return 'SALES SUPERVISOR';
   });
 
-  const [installments, setInstallments] = useState(() =>
-    createInstallmentRows({
-      count: initialInstallmentsCount,
-      amountPerInstallment: '500',
-      winAmount: initialWinAmount,
-      agreementDate: getLocalDateString(),
-      frequency: 'weekly'
-    })
-  );
-
-  // Find selected ticket from availableTickets — null when nothing is explicitly chosen
-  const selectedTicket = selectedTicketId
-    ? availableTickets.find(
-        (item) => (item.transactionId || item.transId || item.receipt_no) === selectedTicketId
+  // Resolve active bundled ticket group; fall back to first available bundled ticket before explicit selection
+  const normalizedSelectedTicketId = String(selectedTicketId || '').trim();
+  const matchedSelectedTicket = normalizedSelectedTicketId
+    ? bundledTickets.find(
+        (item) =>
+          getSettlementTranscodeKey(item) === normalizedSelectedTicketId ||
+          item.rawTranscodes?.includes(normalizedSelectedTicketId) ||
+          (item.transactionId || item.transId || item.receipt_no) === normalizedSelectedTicketId
       ) || null
     : null;
+  const selectedTicket = matchedSelectedTicket || (!normalizedSelectedTicketId ? bundledTickets[0] || null : null);
 
-  // Auto-select first available ticket if selectedTicketId is not set
-  useEffect(() => {
-    if (!selectedTicketId && availableTickets.length > 0) {
-      const firstId = getSelectedTicketId(availableTickets[0]);
-      if (firstId) setSelectedTicketId(firstId);
-    }
-  }, [availableTickets, selectedTicketId]);
+  const selectedTicketWinAmount = selectedTicket
+    ? getWinAmount(selectedTicket)
+    : (parseFloat(filteredData[0]?.winAmount || 5000) || 5000);
+  const activeTicketSignature = selectedTicket
+    ? `${getSelectedTicketId(selectedTicket)}:${selectedTicketWinAmount}`
+    : '';
+
+  const defaultSchedule = useMemo(
+    () => buildDefaultSchedule(selectedTicketWinAmount, agreementDate, frequency),
+    [selectedTicketWinAmount, agreementDate, frequency]
+  );
+
+  const activeSchedule =
+    scheduleOverride && scheduleOverride.signature === activeTicketSignature
+      ? scheduleOverride
+      : defaultSchedule;
+  const { installmentsCount, customAmount, installments } = activeSchedule;
 
   // Auto-update supervisorName based on selectedTicket's supervisor resolution
   useEffect(() => {
@@ -695,9 +736,6 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   const ticketSubOfficeAddress = resolvedOfficeMeta?.address || getSubOfficeAddress(ticketSubOffice);
   const ticketSubOfficeLogo = resolvedOfficeMeta?.logo_url || getSubOfficeLogo(ticketSubOffice);
 
-  const getSelectedTicketId = (ticket) => ticket?.transactionId || ticket?.transId || ticket?.receipt_no || '';
-  const getWinAmount = (ticket) => parseFloat(ticket?.winAmount || 5000);
-
   // Helper function to format date cleanly in English
   const formatTransactionDate = (dateString) => {
     if (!dateString) return 'August 16, 2026';
@@ -716,67 +754,91 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   // Handler for custom payment amount changes (weekly / periodic payment)
   const handleAmountChange = (value) => {
-    setCustomAmount(value);
     const winAmt = getWinAmount(selectedTicket);
     const amt = parseFloat(value);
     if (!isNaN(amt) && amt > 0) {
       const computedCount = Math.min(100, Math.max(1, Math.ceil(winAmt / amt)));
-      setInstallmentsCount(computedCount);
-      setInstallments(createInstallmentRows({
-        count: computedCount,
-        amountPerInstallment: value,
-        winAmount: winAmt,
-        agreementDate,
-        frequency
-      }));
+      setScheduleOverride({
+        signature: activeTicketSignature,
+        installmentsCount: computedCount,
+        customAmount: value,
+        installments: createInstallmentRows({
+          count: computedCount,
+          amountPerInstallment: value,
+          winAmount: winAmt,
+          agreementDate,
+          frequency
+        })
+      });
+      return;
     }
+    setScheduleOverride({
+      signature: activeTicketSignature,
+      installmentsCount,
+      customAmount: value,
+      installments
+    });
   };
 
   // Handler for total number of installments change
   const handleInstallmentCountChange = (count) => {
     const nextCount = parseInt(count, 10) || 1;
     const winAmt = getWinAmount(selectedTicket);
-    setInstallmentsCount(nextCount);
     const perInst = (winAmt / nextCount).toFixed(2);
-    setCustomAmount(perInst);
-    setInstallments(createInstallmentRows({
-      count: nextCount,
-      amountPerInstallment: perInst,
-      winAmount: winAmt,
-      agreementDate,
-      frequency
-    }));
+    setScheduleOverride({
+      signature: activeTicketSignature,
+      installmentsCount: nextCount,
+      customAmount: perInst,
+      installments: createInstallmentRows({
+        count: nextCount,
+        amountPerInstallment: perInst,
+        winAmount: winAmt,
+        agreementDate,
+        frequency
+      })
+    });
   };
 
   const handleFrequencyChange = (nextFrequency) => {
     setFrequency(nextFrequency);
-    setInstallments(createInstallmentRows({
-      count: installmentsCount,
-      amountPerInstallment: customAmount,
-      winAmount: getWinAmount(selectedTicket),
-      agreementDate,
-      frequency: nextFrequency,
-      preserveExisting: true,
-      existingRows: installments
-    }));
+    if (scheduleOverride && scheduleOverride.signature === activeTicketSignature) {
+      setScheduleOverride({
+        ...scheduleOverride,
+        installments: createInstallmentRows({
+          count: installmentsCount,
+          amountPerInstallment: customAmount,
+          winAmount: getWinAmount(selectedTicket),
+          agreementDate,
+          frequency: nextFrequency,
+          preserveExisting: true,
+          existingRows: installments
+        })
+      });
+    }
   };
 
   const handleAgreementDateChange = (nextAgreementDate) => {
     setAgreementDate(nextAgreementDate);
-    setInstallments(createInstallmentRows({
-      count: installmentsCount,
-      amountPerInstallment: customAmount,
-      winAmount: getWinAmount(selectedTicket),
-      agreementDate: nextAgreementDate,
-      frequency,
-      preserveExisting: true,
-      existingRows: installments
-    }));
+    if (scheduleOverride && scheduleOverride.signature === activeTicketSignature) {
+      setScheduleOverride({
+        ...scheduleOverride,
+        installments: createInstallmentRows({
+          count: installmentsCount,
+          amountPerInstallment: customAmount,
+          winAmount: getWinAmount(selectedTicket),
+          agreementDate: nextAgreementDate,
+          frequency,
+          preserveExisting: true,
+          existingRows: installments
+        })
+      });
+    }
   };
 
   const handleTicketChange = (ticketId) => {
-    const nextTicket = availableTickets.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
+    const nextTicket = bundledTickets.find((item) => getSelectedTicketId(item) === ticketId) || selectedTicket;
     setSelectedTicketId(ticketId);
+    setScheduleOverride(null);
     if (nextTicket) {
       const targetOffice = nextTicket.sub_office || nextTicket.subOffice || nextTicket.branch;
       if (targetOffice) {
@@ -789,16 +851,6 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
         setSupervisorName(resolved);
       }
     }
-    const winAmt = getWinAmount(nextTicket);
-    const perInst = (winAmt / installmentsCount).toFixed(2);
-    setCustomAmount(perInst);
-    setInstallments(createInstallmentRows({
-      count: installmentsCount,
-      amountPerInstallment: perInst,
-      winAmount: winAmt,
-      agreementDate,
-      frequency
-    }));
   };
 
   // Handler for updating a single installment row
@@ -820,7 +872,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       }
     }
 
-    setInstallments(updated);
+    setScheduleOverride({
+      signature: activeTicketSignature,
+      installmentsCount,
+      customAmount,
+      installments: updated
+    });
   };
 
   const handleSave = () => {
@@ -831,10 +888,16 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     if (onSaveAgreement) {
       const totalAmountVal = installments.reduce((sum, item) => sum + parseFloat(item.amountDue || 0), 0);
       const chosenSubOffice = selectedTicket?.sub_office || selectedTicket?.subOffice || (selectedSubOfficeFilter !== 'ALL' ? selectedSubOfficeFilter : (currentUser?.sub_office || 'Mandaue Central'));
+      const bundledSnapshot = buildBundledTicketSnapshot(selectedTicket);
+      const summedWinAmount = getWinAmount(selectedTicket);
+      const ticketRowIds = selectedTicket.groupedRowIds || (selectedTicket.id ? [selectedTicket.id] : []);
 
       onSaveAgreement({
         transactionId: selectedTicket?.transactionId || selectedTicket?.transId || selectedTicket?.receipt_no,
-        ticket: { ...selectedTicket, sub_office: chosenSubOffice },
+        ticketRowIds,
+        ticket: { ...selectedTicket, winAmount: summedWinAmount, sub_office: chosenSubOffice },
+        bundledTickets: bundledSnapshot,
+        totalWinAmount: summedWinAmount,
         sub_office: chosenSubOffice,
         agreementDate,
         reason,
@@ -852,6 +915,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           reason,
           frequency,
           sub_office: chosenSubOffice,
+          bundledTickets: bundledSnapshot,
+          totalWinAmount: summedWinAmount,
           installmentsCount: installments.length,
           installments,
           signatories: {
@@ -904,7 +969,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
           console.warn('Failed to load settlement tickets:', error.message);
         } else {
           const actualAgreements = (data || []).filter((item) => Boolean(item.settlementTerms));
-          setSavedAgreementsList(actualAgreements);
+          setSavedAgreementsList(groupTicketsByTranscode(actualAgreements));
         }
       } catch (err) {
         console.warn('Failed to load settlement tickets:', err);
@@ -929,8 +994,14 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     };
   }, [selectedSubOfficeFilter]);
 
-  // Fetch payment history for visible agreements
-  const displayedAgreementIds = savedAgreementsList.map((item) => item.id).filter(Boolean);
+  // Fetch payment history for visible agreements (includes all row IDs sharing a bundled transcode)
+  const displayedAgreementIds = Array.from(
+    new Set(
+      savedAgreementsList
+        .flatMap((item) => (Array.isArray(item.groupedRowIds) && item.groupedRowIds.length > 0 ? item.groupedRowIds : [item.id]))
+        .filter(Boolean)
+    )
+  );
   const displayedAgreementIdsKey = displayedAgreementIds.join(',');
 
   useEffect(() => {
@@ -971,10 +1042,12 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
   }, [displayedAgreementIdsKey]);
 
   const getPaymentSummary = (item) => {
-    const payments = paymentsByAgreement[item.id] || [];
-    const paidAmount = payments.reduce((sum, payment) => sum + parseFloat(payment.paymentAmount || 0), 0);
-    // All amounts come from returned_winnings camelCase fields
-    const totalAmount = parseFloat(item.totalInstallmentAmount || item.winAmount || 0);
+    const targetIds = Array.isArray(item.groupedRowIds) && item.groupedRowIds.length > 0
+      ? item.groupedRowIds
+      : [item.id].filter(Boolean);
+    const payments = getGroupedPaymentsList(targetIds, paymentsByAgreement);
+    const paidAmount = sumGroupedPayments(targetIds, paymentsByAgreement);
+    const totalAmount = parseFloat(item.totalInstallmentAmount || item.totalWinAmount || item.winAmount || 0);
     const isFullyPaid = (paidAmount >= totalAmount && totalAmount > 0) || item.settlementStatus === 'FULLY PAID';
     const status = isFullyPaid
       ? 'UNREMITTED'
@@ -1061,11 +1134,15 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       updatePayload.receipt_status = 'NO_RECEIPT';
     }
 
-    // Update settlementStatus and ticket unremitted status on the returned_winnings row directly
+    // Update settlementStatus and ticket unremitted status across all linked returned_winnings rows in the transcode group
+    const targetIds = Array.isArray(paymentModalItem.groupedRowIds) && paymentModalItem.groupedRowIds.length > 0
+      ? paymentModalItem.groupedRowIds
+      : [paymentModalItem.id].filter(Boolean);
+
     const { error: statusError } = await supabase
       .from('returned_winnings')
       .update(updatePayload)
-      .eq('id', paymentModalItem.id);
+      .in('id', targetIds);
 
     if (statusError) {
       setPaymentError(`Payment saved, but settlement status could not be updated: ${statusError.message}`);
@@ -1076,7 +1153,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
     const { data: refreshedPayments, error: refreshError } = await supabase
       .from('settlement_payments')
       .select('*')
-      .eq('returnedWinningsId', paymentModalItem.id)
+      .in('returnedWinningsId', targetIds)
       .order('paymentDate', { ascending: false });
     if (refreshError) {
       setPaymentError(`Payment saved, but payment history could not be refreshed: ${refreshError.message}`);
@@ -1084,7 +1161,13 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       return;
     }
 
-    setPaymentsByAgreement((current) => ({ ...current, [paymentModalItem.id]: refreshedPayments || [] }));
+    setPaymentsByAgreement((current) => {
+      const next = { ...current };
+      targetIds.forEach((rid) => {
+        next[rid] = (refreshedPayments || []).filter((p) => p.returnedWinningsId === rid);
+      });
+      return next;
+    });
     setPaymentModalItem(null);
     setIsSavingPayment(false);
   };
@@ -1241,6 +1324,11 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                         <span className="bg-blue-50 text-[#002B66] border border-blue-200 font-mono font-bold px-2.5 py-1 rounded-lg text-xs">
                           {item.transactionId}
                         </span>
+                        {item.ticketCount > 1 && (
+                          <span className="bg-blue-100 text-[#002B66] border border-blue-200 font-sans font-black px-2 py-1 rounded-lg text-[10px] uppercase">
+                            {item.ticketCount} Bets Bundled{item.combinedBetNo ? ` (${item.combinedBetNo})` : ''}
+                          </span>
+                        )}
                         <span className="bg-amber-50 text-amber-900 border border-amber-200 font-sans font-bold px-2.5 py-1 rounded-lg text-[10px] uppercase flex items-center gap-1.5">
                           {(() => {
                             const officeLogo = getSubOfficeLogo(item.sub_office);
@@ -1437,8 +1525,8 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               <span className="text-[11px] text-slate-500">Choose or search the returned winning record for this agreement.</span>
             </div>
             <TransactionSelectSearch
-              tickets={availableTickets}
-              selectedId={selectedTicketId || (availableTickets[0]?.transactionId || availableTickets[0]?.transId || '')}
+              tickets={bundledTickets}
+              selectedId={selectedTicketId || getSelectedTicketId(bundledTickets[0])}
               onSelect={(tid) => handleTicketChange(tid)}
             />
           </div>
@@ -1507,34 +1595,11 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
                 1. DETAILS OF ACCOUNTABILITY
               </h3>
               {selectedTicket ? (
-                <table className="w-full text-xs border-collapse border border-slate-300">
-                  <tbody>
-                    <tr>
-                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50 w-1/3">Transaction ID</td>
-                      <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
-                        {selectedTicket.transactionId || selectedTicket.transId || selectedTicket.receipt_no}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Transaction Date</td>
-                      <td className="border border-slate-300 px-3 py-1.5 font-mono text-slate-900">
-                        {formatTransactionDate(selectedTicket.drawDate || selectedTicket.transactionDate || selectedTicket.created_at)}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Winning Combination / Bet No.</td>
-                      <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
-                        {selectedTicket.betNo || selectedTicket.CombiNo || '—'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Total Winning Amount</td>
-                      <td className="border border-slate-300 px-3 py-1.5 font-mono font-extrabold text-emerald-700">
-                        PHP {parseFloat(selectedTicket.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <AccountabilityDetailsTable
+                  ticket={selectedTicket}
+                  formatTransactionDate={formatTransactionDate}
+                  emptyFallback="—"
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center gap-1.5 py-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-center">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3-3v6M4.5 12a7.5 7.5 0 1115 0 7.5 7.5 0 01-15 0z" /></svg>
@@ -1719,7 +1784,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
               </h3>
               <p>1. Payments shall be remitted strictly according to the schedule specified above.</p>
               <p>
-                2. Upon full receipt of the final payment, the entire liability amount of **PHP {parseFloat(selectedTicket?.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}** shall be deemed fully satisfied and settled.
+                2. Upon full receipt of the final payment, the entire liability amount of **PHP {getWinAmount(selectedTicket).toLocaleString('en-US', { minimumFractionDigits: 2 })}** shall be deemed fully satisfied and settled.
               </p>
             </div>
 

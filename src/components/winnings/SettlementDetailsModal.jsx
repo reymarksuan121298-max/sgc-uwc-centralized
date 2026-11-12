@@ -3,43 +3,49 @@ import {
   resolveSupervisorDisplayName,
   fetchAllIliganSupervisors
 } from '../../services/supervisorService';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { X, Printer, CheckCircle, CheckCircle2, Building2 } from 'lucide-react';
 import { openSettlementAgreementPrint } from '../../utils/settlementAgreementPrint';
 import { supabase } from '../../config/supabaseClient';
 import { systemService } from '../../services/systemService';
+import AccountabilityDetailsTable from './AccountabilityDetailsTable';
+import {
+  buildBundledTicketSnapshot,
+  getTicketWinAmount,
+  groupTicketsByTranscode
+} from '../../utils/settlementAggregation';
 
 
 export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUpdated }) {
   // --- 1. Top-Level State Hooks ---
   const [payments, setPayments] = useState([]);
+  const [siblingRows, setSiblingRows] = useState([]);
   const [dynamicSupervisors, setDynamicSupervisors] = useState({});
 
-  // Parse settlement terms early so targetSubOffice is available
-  const parseSettlementTermsEarly = (terms) => {
-    if (!terms) return null;
+  // --- 2. Safe Parsing of Settlement Terms (memoized for stable downstream hooks) ---
+  const rawSettlementTerms = item?.settlementTerms || item?.settlement_terms;
+  const parsedTerms = useMemo(() => {
+    if (!rawSettlementTerms) return null;
     try {
-      return typeof terms === 'string' ? JSON.parse(terms) : terms;
+      return typeof rawSettlementTerms === 'string'
+        ? JSON.parse(rawSettlementTerms)
+        : rawSettlementTerms;
     } catch {
       return null;
     }
-  };
-  const earlyParsedTerms = parseSettlementTermsEarly(item?.settlementTerms || item?.settlement_terms);
-  const targetSubOffice = item?.sub_office || item?.subOffice || earlyParsedTerms?.sub_office || item?.branch || '';
+  }, [rawSettlementTerms]);
+
+  const savedBundledIds = useMemo(
+    () =>
+      Array.isArray(parsedTerms?.bundledTickets)
+        ? parsedTerms.bundledTickets.map((t) => t?.id).filter(Boolean)
+        : [],
+    [parsedTerms]
+  );
+
+  const targetSubOffice = item?.sub_office || item?.subOffice || parsedTerms?.sub_office || item?.branch || '';
 
   const [subOfficeMeta, setSubOfficeMeta] = useState(() => systemService.resolveSubOfficeSync(targetSubOffice));
-
-  // --- 2. Safe Parsing of Settlement Terms ---
-  const parseSettlementTerms = (terms) => {
-    if (!terms) return null;
-    try {
-      return typeof terms === 'string' ? JSON.parse(terms) : terms;
-    } catch {
-      return null;
-    }
-  };
-
-  const parsedTerms = parseSettlementTerms(item?.settlementTerms || item?.settlement_terms);
 
   // --- 3. Top-Level Effect Hooks (Run unconditionally on every render) ---
   // Load live dynamic supervisors from gateway endpoints
@@ -73,18 +79,53 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
     return () => { isMounted = false; };
   }, [isOpen]);
 
-  // Load settlement payments for this returned winning
+  // Load sibling same-transcode rows and all settlement payments linked to this agreement
   useEffect(() => {
     let isMounted = true;
-    const fetchPayments = async () => {
-      if (!isOpen || !item?.id) {
+    const fetchPaymentsAndSiblings = async () => {
+      if (!isOpen || (!item?.id && !item?.transactionId)) {
         setPayments([]);
+        setSiblingRows([]);
         return;
       }
+
+      const linkedIds = [...savedBundledIds];
+      if (item?.id && !linkedIds.includes(item.id)) {
+        linkedIds.push(item.id);
+      }
+
+      if (item?.transactionId) {
+        try {
+          const { data: siblings } = await supabase
+            .from('returned_winnings')
+            .select('*')
+            .eq('transactionId', item.transactionId);
+          if (isMounted && Array.isArray(siblings) && siblings.length > 0) {
+            setSiblingRows(siblings);
+            siblings.forEach((s) => {
+              if (s?.id && !linkedIds.includes(s.id)) {
+                linkedIds.push(s.id);
+              }
+            });
+          } else if (isMounted) {
+            setSiblingRows([]);
+          }
+        } catch {
+          if (isMounted) setSiblingRows([]);
+        }
+      } else if (isMounted) {
+        setSiblingRows([]);
+      }
+
+      if (linkedIds.length === 0) {
+        if (isMounted) setPayments([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('settlement_payments')
         .select('*')
-        .eq('returnedWinningsId', item.id)
+        .in('returnedWinningsId', linkedIds)
         .order('paymentDate', { ascending: false });
 
       if (!isMounted) return;
@@ -92,10 +133,10 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
         setPayments(data || []);
       }
     };
-    fetchPayments();
+    fetchPaymentsAndSiblings();
 
     return () => { isMounted = false; };
-  }, [isOpen, item?.id]);
+  }, [isOpen, item?.id, item?.transactionId, savedBundledIds]);
 
   // Load sub-office details (address, franchise, and logo) directly from DB with no fallback
   useEffect(() => {
@@ -294,6 +335,29 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
     openSettlementAgreementPrint();
   };
 
+  const resolvedTicket = useMemo(() => {
+    if (!item) return null;
+    if (siblingRows.length > 1) {
+      return groupTicketsByTranscode(siblingRows)[0] || item;
+    }
+    return item;
+  }, [item, siblingRows]);
+
+  const bundledEntries = useMemo(
+    () => buildBundledTicketSnapshot(resolvedTicket, parsedTerms),
+    [resolvedTicket, parsedTerms]
+  );
+
+  const totalLiability = useMemo(() => {
+    if (bundledEntries.length > 1) {
+      return Math.round(bundledEntries.reduce((sum, e) => sum + getTicketWinAmount(e), 0) * 100) / 100;
+    }
+    if (parsedTerms?.totalWinAmount !== undefined && parsedTerms?.totalWinAmount !== null) {
+      return Math.round((parseFloat(parsedTerms.totalWinAmount) || 0) * 100) / 100;
+    }
+    return Math.round((parseFloat(resolvedTicket?.totalWinAmount ?? item?.winAmount ?? 0) || 0) * 100) / 100;
+  }, [bundledEntries, parsedTerms, resolvedTicket, item]);
+
   // --- 5. Conditional Rendering Guard (Placed strictly AFTER all hooks) ---
   if (!isOpen || !item) return null;
 
@@ -374,34 +438,12 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
               <h3 className="text-xs font-black text-[#002B66] uppercase border-l-4 border-[#002B66] pl-2">
                 1. DETAILS OF ACCOUNTABILITY
               </h3>
-              <table className="w-full text-xs border-collapse border border-slate-300">
-                <tbody>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50 w-1/3">Transaction ID</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
-                      {item.transactionId || item.transId || item.receipt_no || 'N/A'}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Transaction Date</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono text-slate-900">
-                      {formatTransactionDate(item.drawTime || item.drawDate || item.created_at)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Winning Combination / Bet No.</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono font-bold text-slate-900">
-                      {item.betNo || item.CombiNo || 'N/A'}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-600 bg-slate-50">Total Winning Amount</td>
-                    <td className="border border-slate-300 px-3 py-1.5 font-mono font-extrabold text-emerald-700">
-                      PHP {parseFloat(item.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <AccountabilityDetailsTable
+                ticket={resolvedTicket || item}
+                parsedTerms={parsedTerms}
+                formatTransactionDate={formatTransactionDate}
+                emptyFallback="N/A"
+              />
             </div>
 
             {/* 2. SUMMARY / REASON OF SETTLEMENT */}
@@ -423,7 +465,7 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
                 3. PAYMENT SCHEDULE & BREAKDOWN
               </h3>
               <p className="text-xs text-slate-700">
-                The total winning liability of <span className="font-bold">PHP {parseFloat(item.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> will be paid in <span className="font-bold">{installments.length} installments</span> ({getFrequencyLabel(frequency)}) scheduled accordingly below:
+                The total winning liability of <span className="font-bold">PHP {totalLiability.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> will be paid in <span className="font-bold">{installments.length} installments</span> ({getFrequencyLabel(frequency)}) scheduled accordingly below:
               </p>
 
               <table className="w-full text-xs border-collapse border border-slate-300 text-center">
@@ -480,7 +522,7 @@ export default function SettlementDetailsModal({ isOpen, onClose, item, onDataUp
               </h3>
               <p>1. Payments shall be remitted strictly according to the schedule specified above.</p>
               <p>
-                2. Upon full receipt of the final payment, the entire liability amount of <strong className="font-bold">PHP {parseFloat(item.winAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong> shall be deemed fully satisfied and settled.
+                2. Upon full receipt of the final payment, the entire liability amount of <strong className="font-bold">PHP {totalLiability.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong> shall be deemed fully satisfied and settled.
               </p>
             </div>
 
