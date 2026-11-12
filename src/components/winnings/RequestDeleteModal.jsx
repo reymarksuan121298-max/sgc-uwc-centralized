@@ -20,7 +20,6 @@ export default function RequestDeleteModal({
 }) {
   const [reason, setReason] = useState('Winning ticket has been claimed in the system. Requesting deletion and deduction from collections.');
   const [ticketImage, setTicketImage] = useState(null);
-  const [isAlreadyDeposited, setIsAlreadyDeposited] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -29,9 +28,6 @@ export default function RequestDeleteModal({
 
   useEffect(() => {
     if (ticket) {
-      // Default deposited status to false (NOT DEPOSITED) for claimed deletion requests
-      setIsAlreadyDeposited(false);
-
       // Pre-populate existing receipt image from ticket if available
       const existingProof = ticket.deletion_request_attachment || 
                             ticket.hard_copy_ticket_url || 
@@ -123,7 +119,7 @@ export default function RequestDeleteModal({
     setErrorMessage('');
 
     try {
-      await winningsService.createDeletionRequest(ticket, reason, ticketImage, currentUser, isAlreadyDeposited);
+      await winningsService.createDeletionRequest(ticket, reason, ticketImage, currentUser);
 
       if (onSuccess) {
         onSuccess(transId);
@@ -314,23 +310,17 @@ export default function RequestDeleteModal({
             />
           </div>
 
-          {/* Already Deposited Checkbox */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-3">
-            <input
-              type="checkbox"
-              id="already-deposited-check"
-              checked={isAlreadyDeposited}
-              onChange={(e) => setIsAlreadyDeposited(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#002B66] focus:ring-[#002B66] cursor-pointer accent-[#002B66]"
-            />
-            <label htmlFor="already-deposited-check" className="cursor-pointer select-none">
+          {/* Auto-Detected Deposit Status Notice */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-2.5">
+            <ShieldAlert size={15} className="text-[#002B66] shrink-0 mt-0.5" />
+            <div>
               <span className="font-bold text-slate-800 text-[11px] block">
-                Already Deposited in Remittance Collections
+                Deposit Status Determined Automatically
               </span>
               <span className="text-[10px] text-slate-500 block mt-0.5">
-                Check this if this claimed ticket was already included and remitted in a previous collection batch.
+                Whether this claimed ticket was deposited in remittance collections is automatically detected from its remittance proof and verified in the Deletion Requests table.
               </span>
-            </label>
+            </div>
           </div>
 
           {/* Error Message Alert */}

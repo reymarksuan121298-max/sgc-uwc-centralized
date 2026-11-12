@@ -156,12 +156,40 @@ export const isPendingDeletionRecord = (item) => {
 };
 
 /**
+ * Helper to determine if a ticket's receipt_status indicates attached remittance proof (DEPOSITED)
+ */
+export const isReceiptStatusDeposited = (receiptStatus) => {
+  const normalized = String(receiptStatus ?? '').trim().toUpperCase();
+  return Boolean(normalized && normalized !== 'NO_RECEIPT');
+};
+
+/**
+ * Normalize boolean/string/numeric is_already_deposited values from the deletion requests table
+ */
+export const isDeletionDepositedFlag = (value) => (
+  value === true || value === 'true' || value === 1 || value === '1'
+);
+
+/**
+ * Deletion requests eligible to appear when attaching a remittance deposit:
+ * must be APPROVED, marked DEPOSITED, and not yet deducted from collections.
+ */
+export const isEligibleDeletionAdjustmentItem = (record) => {
+  if (!record) return false;
+  const isApproved = String(record.status || '').trim().toUpperCase() === 'APPROVED';
+  if (!isApproved) return false;
+  if (!isDeletionDepositedFlag(record.is_already_deposited)) return false;
+  if (record.deducted_from_collections) return false;
+  return true;
+};
+
+/**
  * Helper to determine if a returned winning ticket is eligible for attaching remittance proof
  * (Excludes AWOL/Pull-out/Terminated/Inactive, Pending Approval for Deletion, Under Settlement, and Already Remitted)
  */
 export const isEligibleForRemittanceProof = (item) => {
   if (!item) return false;
-  if (item.receipt_status && item.receipt_status !== 'NO_RECEIPT') return false;
+  if (isReceiptStatusDeposited(item.receipt_status)) return false;
   if (item.isUnderSettlement && item.settlementStatus !== 'FULLY PAID') return false;
   if (isInactiveTellerRecord(item)) return false;
   if (isPendingDeletionRecord(item)) return false;

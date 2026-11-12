@@ -15,7 +15,7 @@ import ConfirmPopover from '../../components/common/ConfirmPopover';
 import SettlementDetailsModal from '../../components/winnings/SettlementDetailsModal';
 import DeletionRequestsTable from '../../components/winnings/DeletionRequestsTable';
 import ModernDropdown from '../../components/common/ModernDropdown';
-import { superClean, getTicketTransId, generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord, isPendingDeletionRecord } from '../../utils/formatters';
+import { superClean, getTicketTransId, generateRemittanceSerial, isEligibleForRemittanceProof, isInactiveTellerRecord, isPendingDeletionRecord, isEligibleDeletionAdjustmentItem } from '../../utils/formatters';
 import { isAdminRole, isSuperAdminRole, canApproveDeletionRequests, isSSRRole, isUnclaimedSpecialistRole } from '../../utils/permissions';
 
 import { DEFAULT_SUPERVISOR_NAMES } from '../../services/supervisorService';
@@ -52,6 +52,7 @@ export default function ReturnedWinnings({
   const [rejectReason, setRejectReason] = useState('');
   const [approvingItem, setApprovingItem] = useState(null);
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
+  const [togglingDepositedId, setTogglingDepositedId] = useState(null);
 
 
 
@@ -286,19 +287,7 @@ export default function ReturnedWinnings({
   // STRICT RULE: If an approved claimed ticket has already been included in a remittance batch (deducted_from_collections === true), do NOT fetch or include it!
   const claimedDeletionAdjustmentItems = useMemo(() => {
     return (scopedDeletionRequests || [])
-      .filter(r => {
-        // STRICT RULE: Only include deletion requests that have been explicitly APPROVED by Unclaimed Specialist / Admin
-        const isApproved = String(r.status || '').toUpperCase() === 'APPROVED';
-        if (!isApproved) return false;
-
-        // STRICT RULE 2: Only include tickets that were already DEPOSITED in collections
-        const isDeposited = r.is_already_deposited === true || r.is_already_deposited === 'true' || r.is_already_deposited === 1;
-        if (!isDeposited) return false;
-
-        // STRICT RULE 3: Strictly exclude tickets already added to a previous remittance batch
-        if (r.deducted_from_collections) return false;
-        return true;
-      })
+      .filter(r => isEligibleDeletionAdjustmentItem(r))
       .map(r => ({
         id: r.returned_winnings_id || r.id,
         transactionId: r.transaction_id,
@@ -452,6 +441,30 @@ export default function ReturnedWinnings({
       alert(`Failed to reject request: ${err.message}`);
     } finally {
       setIsProcessingAdminAction(false);
+    }
+  };
+
+  // Admin / Unclaimed Specialist Action: Toggle DEPOSITED / NOT DEPOSITED directly in the Deletion Table
+  const handleToggleDeletionDeposited = async (item, nextDeposited) => {
+    if (!canApprove || !item?.id || item.deducted_from_collections) return;
+    const transId = item.transaction_id || item.transactionId || item.transId || 'N/A';
+
+    setTogglingDepositedId(item.id);
+    try {
+      const updated = await winningsService.updateDeletionDepositedStatus(item, nextDeposited, currentUser);
+      setDedicatedDeletionRequests(prev =>
+        prev.map(row => (row.id === item.id ? { ...row, ...updated } : row))
+      );
+      showToast(
+        `${transId} marked as ${nextDeposited ? 'DEPOSITED' : 'NOT DEPOSITED'} (${
+          nextDeposited ? 'will appear when attaching deposit' : 'excluded when attaching deposit'
+        }).`
+      );
+    } catch (err) {
+      console.error('Toggle deletion deposited status failed:', err);
+      showToast('Failed to update deposited status. Please refresh and try again.');
+    } finally {
+      setTogglingDepositedId(null);
     }
   };
 
@@ -670,6 +683,8 @@ export default function ReturnedWinnings({
           onReject={(item) => setRejectingItem(item)}
           onViewTicket={(item) => setSelectedViewingTicket(item)}
           onRefresh={loadDedicatedDeletionRequests}
+          onToggleDeposited={handleToggleDeletionDeposited}
+          togglingDepositedId={togglingDepositedId}
         />
       ) : (
         <div className="bg-white border border-slate-300 shadow-xs overflow-hidden w-full rounded-xl">

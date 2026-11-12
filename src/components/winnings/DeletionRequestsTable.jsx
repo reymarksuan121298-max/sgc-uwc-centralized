@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle, CheckCircle2, Ban, Clock, Search, Eye,
   FileText, ShieldAlert, UserCheck, Image as ImageIcon,
-  Check, X, ChevronRight, Filter
+  Check, X, ChevronRight, Filter, Loader2, Lock
 } from 'lucide-react';
+import { isDeletionDepositedFlag } from '../../utils/formatters';
 
 export default function DeletionRequestsTable({
   requests = [],
@@ -14,6 +15,8 @@ export default function DeletionRequestsTable({
   onReject,
   onViewTicket,
   onRefresh,
+  onToggleDeposited,
+  togglingDepositedId = null,
   initialStatusFilter = 'ALL',
   onStatusFilterChange
 }) {
@@ -115,6 +118,79 @@ export default function DeletionRequestsTable({
     } catch {
       return ts;
     }
+  };
+
+  /**
+   * Render DEPOSITED / NOT DEPOSITED control for desktop and mobile views.
+   * Authorized reviewers can toggle status until a ticket is deducted in a remittance batch.
+   */
+  const renderDepositedControl = (item, isRejected, compact = false) => {
+    const isDeposited = isDeletionDepositedFlag(item.is_already_deposited);
+    const isDeducted = Boolean(item.deducted_from_collections);
+    const isUpdating = Boolean(togglingDepositedId && item?.id && togglingDepositedId === item.id);
+    const canToggle = Boolean(canApprove && onToggleDeposited && item?.id && !isRejected && !isDeducted);
+
+    const sizeClasses = compact ? 'text-[8.5px] px-1.5 py-0.5 gap-1' : 'text-[9.5px] px-2 py-0.5 gap-1';
+    const iconSize = compact ? 9 : 10;
+    const toneClasses = isDeposited
+      ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold'
+      : 'bg-slate-100 text-slate-600 border-slate-200 font-semibold';
+
+    const icon = isUpdating
+      ? <Loader2 size={iconSize} className="animate-spin text-[#002B66]" />
+      : isDeposited
+        ? <CheckCircle2 size={iconSize} className="text-emerald-700" />
+        : null;
+
+    const lockIcon = isDeducted ? <Lock size={iconSize - 1} className="text-slate-500 ml-0.5" /> : null;
+    const label = isDeposited ? 'DEPOSITED' : 'NOT DEPOSITED';
+
+    if (canToggle) {
+      return (
+        <div className="inline-flex flex-col items-center">
+          <button
+            type="button"
+            disabled={isUpdating}
+            onClick={() => onToggleDeposited(item, !isDeposited)}
+            aria-pressed={isDeposited}
+            className={`inline-flex items-center border rounded-full transition-all cursor-pointer hover:ring-2 hover:ring-[#002B66]/20 hover:shadow-2xs disabled:opacity-60 disabled:cursor-wait ${sizeClasses} ${toneClasses}`}
+            title={`Click to mark as ${isDeposited ? 'NOT DEPOSITED' : 'DEPOSITED'} — controls whether this ticket appears when attaching a remittance deposit`}
+          >
+            {icon}
+            <span>{label}</span>
+          </button>
+          {!compact && (
+            <span className="text-[8.5px] text-slate-400 font-medium mt-0.5">
+              {isUpdating ? 'Updating...' : 'Click to toggle'}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    const readOnlyTitle = isDeducted
+      ? 'Locked: already deducted in a remittance batch'
+      : isDeposited
+        ? 'Already deposited in previous collections'
+        : 'Not yet deposited in collections';
+
+    return (
+      <div className="inline-flex flex-col items-center">
+        <span
+          className={`inline-flex items-center border rounded-full ${sizeClasses} ${toneClasses}`}
+          title={readOnlyTitle}
+        >
+          {icon}
+          <span>{label}</span>
+          {lockIcon}
+        </span>
+        {!compact && isDeducted && (
+          <span className="text-[8.5px] text-slate-400 font-medium mt-0.5">
+            Batch Deducted
+          </span>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -262,15 +338,7 @@ export default function DeletionRequestsTable({
 
                       {/* Deposited Status */}
                       <td className="px-3 py-2.5 border-r border-slate-100 text-center whitespace-nowrap">
-                        {Boolean(item.is_already_deposited === true || item.is_already_deposited === 'true' || item.is_already_deposited === 1) ? (
-                          <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[9.5px] px-2 py-0.5 rounded-full" title="Already deposited in previous collections">
-                            <CheckCircle2 size={10} className="text-emerald-700" /> DEPOSITED
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 font-semibold text-[9.5px] px-2 py-0.5 rounded-full" title="Not yet deposited in collections">
-                            NOT DEPOSITED
-                          </span>
-                        )}
+                        {renderDepositedControl(item, isRejected, false)}
                       </td>
 
                       {/* Hard Copy Proof Photo */}
@@ -406,15 +474,7 @@ export default function DeletionRequestsTable({
                   <div>
                     <span>{betNo} ({betCode})</span> • <span>{formatDrawTime ? formatDrawTime(draw) : draw}</span>
                   </div>
-                  {Boolean(item.is_already_deposited === true || item.is_already_deposited === 'true' || item.is_already_deposited === 1) ? (
-                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-[8.5px] px-1.5 py-0.2 rounded-full">
-                      DEPOSITED
-                    </span>
-                  ) : (
-                    <span className="bg-slate-100 text-slate-500 border border-slate-200 font-semibold text-[8.5px] px-1.5 py-0.2 rounded-full">
-                      NOT DEPOSITED
-                    </span>
-                  )}
+                  {renderDepositedControl(item, st === 'REJECTED', true)}
                 </div>
 
                 <div className="text-[10px] text-slate-500" title={reason ? `Reason: ${reason}` : undefined}>

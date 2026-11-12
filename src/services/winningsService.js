@@ -1,4 +1,40 @@
 import { supabase } from '../config/supabaseClient';
+import { isReceiptStatusDeposited, isDeletionDepositedFlag } from '../utils/formatters';
+import { canApproveDeletionRequests } from '../utils/permissions';
+
+/**
+ * Automatically determine if a ticket has been deposited from its remittance proof status,
+ * falling back to a returned_winnings lookup if the caller payload omitted receipt_status.
+ */
+const resolveTicketDepositedStatus = async (ticket, transId) => {
+  if (
+    ticket &&
+    ticket.receipt_status !== undefined &&
+    ticket.receipt_status !== null &&
+    String(ticket.receipt_status).trim() !== ''
+  ) {
+    return isReceiptStatusDeposited(ticket.receipt_status);
+  }
+
+  if (ticket?.id || transId) {
+    try {
+      let lookupQuery = supabase.from('returned_winnings').select('receipt_status');
+      if (ticket?.id) {
+        lookupQuery = lookupQuery.eq('id', ticket.id).limit(1);
+      } else {
+        lookupQuery = lookupQuery.eq('transactionId', transId).limit(10);
+      }
+      const { data, error } = await lookupQuery;
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.some((row) => isReceiptStatusDeposited(row.receipt_status));
+      }
+    } catch (lookupErr) {
+      console.warn('Deposited status lookup fallback failed:', lookupErr);
+    }
+  }
+
+  return false;
+};
 
 export const winningsService = {
   async fetchReturnedWinnings() {
@@ -54,6 +90,12 @@ export const winningsService = {
   async approveDeletionAndDeductCollections(record, adminUser) {
     const transId = String(record.transaction_id || record.transactionId || record.transId || record.computedTransId || '').trim();
     const returnedWinningsId = record.returned_winnings_id || (record.table !== 'returned_winnings_deletion_requests' ? record.id : null);
+
+    // Resolve deposit status before deleting from returned_winnings in case fallback insert is needed
+    const resolvedDeposited =
+      record?.is_already_deposited !== undefined && record?.is_already_deposited !== null
+        ? isDeletionDepositedFlag(record.is_already_deposited)
+        : await resolveTicketDepositedStatus(record, transId);
     
     // 1. Delete from returned_winnings so it is removed from active/unremitted lists
     let query = supabase.from('returned_winnings').delete();
@@ -128,7 +170,7 @@ export const winningsService = {
           reviewed_by: reviewer,
           reviewed_at: nowIso,
           deducted_from_collections: false,
-          is_already_deposited: Boolean(record.is_already_deposited),
+          is_already_deposited: resolvedDeposited,
           is_claim: Boolean(record.isClaim ?? record.is_claim ?? record.isClaimed ?? record.is_claimed ?? false),
           created_at: record.created_at || nowIso,
           updated_at: nowIso
@@ -311,8 +353,9 @@ export const winningsService = {
   },
 
   // Create a new deletion request in returned_winnings_deletion_requests & update returned_winnings
-  async createDeletionRequest(ticket, reason, attachmentUrl, user, isAlreadyDeposited = false) {
+  async createDeletionRequest(ticket, reason, attachmentUrl, user) {
     const transId = String(ticket.transactionId || ticket.transId || ticket.transaction_id || ticket.computedTransId || '').trim();
+    const detectedDeposited = await resolveTicketDepositedStatus(ticket, transId);
     const isClaimValue = Boolean(
       ticket.isClaim == 1 || ticket.isClaim === true || ticket.isClaim === '1' ||
       ticket.is_claim == 1 || ticket.is_claim === true || ticket.is_claim === '1' ||
@@ -338,7 +381,7 @@ export const winningsService = {
       requested_by: user?.full_name || user?.username || 'SSR',
       requested_by_role: user?.role || 'SSR',
       requested_at: new Date().toISOString(),
-      is_already_deposited: Boolean(isAlreadyDeposited),
+      is_already_deposited: detectedDeposited,
       is_claim: isClaimValue,
       deducted_from_collections: false
     };
@@ -400,7 +443,7 @@ export const winningsService = {
           reason: payload.reason,
           requestedBy: payload.requested_by,
           hasHardCopyProof: Boolean(attachmentUrl),
-          isAlreadyDeposited: Boolean(isAlreadyDeposited)
+          isAlreadyDeposited: detectedDeposited
         }
       }]);
     } catch (auditErr) {
@@ -408,6 +451,66 @@ export const winningsService = {
     }
 
     return insertedRecord || payload;
+  },
+
+  /**
+   * Toggle is_already_deposited on a deletion table record (Admin / Unclaimed Specialist only,
+   * locked once deducted_from_collections is true).
+   */
+  async updateDeletionDepositedStatus(record, isDeposited, actorUser) {
+    if (!canApproveDeletionRequests(actorUser?.role)) {
+      throw new Error('Only Admin or Unclaimed Specialist reviewers can update deposited status.');
+    }
+    if (!record?.id) {
+      throw new Error('Deletion request record ID is missing.');
+    }
+    if (record.deducted_from_collections) {
+      throw new Error('Cannot change deposited status after ticket has been included in a remittance batch.');
+    }
+
+    const nextDeposited = Boolean(isDeposited);
+    const transId = String(record.transaction_id || record.transactionId || record.transId || record.computedTransId || '').trim();
+    const nowIso = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('returned_winnings_deletion_requests')
+      .update({
+        is_already_deposited: nextDeposited,
+        updated_at: nowIso
+      })
+      .eq('id', record.id)
+      .or('deducted_from_collections.eq.false,deducted_from_collections.is.null')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error('updateDeletionDepositedStatus DB error:', error);
+      throw new Error('Failed to update deposited status. Please refresh and try again.');
+    }
+    if (!data) {
+      throw new Error('Unable to update deposited status because this ticket may already be deducted in a remittance batch.');
+    }
+
+    try {
+      await supabase.from('audit_logs').insert([{
+        actor_username: actorUser?.username || actorUser?.full_name || 'admin',
+        actor_role: actorUser?.role || 'Admin',
+        action: 'DELETION_REQUEST_DEPOSITED_TOGGLED',
+        target_type: 'RETURNED_WINNING',
+        target_id: transId || String(record.id),
+        sub_office: record.sub_office || actorUser?.sub_office || 'All',
+        details: {
+          deletionRequestId: record.id,
+          transId,
+          previousIsAlreadyDeposited: isDeletionDepositedFlag(record.is_already_deposited),
+          newIsAlreadyDeposited: nextDeposited
+        }
+      }]);
+    } catch (auditErr) {
+      console.warn('Audit log write error for deposited status update:', auditErr);
+    }
+
+    return data;
   },
 
   async updateBatchReceiptStatus(transIds, status = 'PENDING_VERIFICATION') {
