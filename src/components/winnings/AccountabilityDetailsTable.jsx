@@ -70,7 +70,7 @@ export default function AccountabilityDetailsTable({
               <div className="flex flex-wrap items-center gap-2">
                 <span>{transcodeDisplay}</span>
                 {isBundled && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-[#002B66] border border-blue-200 font-sans text-[10px] font-black uppercase">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-[#002B66] border border-blue-200 font-sans text-[10px] font-black uppercase print:hidden">
                     {entries.length} Entries Bundled
                   </span>
                 )}
@@ -103,58 +103,6 @@ export default function AccountabilityDetailsTable({
           </tr>
         </tbody>
       </table>
-
-      {isBundled && (
-        <div className="space-y-1">
-          <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-            Included Ticket Breakdown ({entries.length} Entries)
-          </div>
-          <table className="w-full text-[11px] border-collapse border border-slate-300">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold text-left">
-                <th className="border border-slate-300 px-2.5 py-1 w-10 text-center">#</th>
-                <th className="border border-slate-300 px-2.5 py-1">Transcode / ID</th>
-                <th className="border border-slate-300 px-2.5 py-1">Bet No. / Code</th>
-                <th className="border border-slate-300 px-2.5 py-1">Draw Date / Time</th>
-                <th className="border border-slate-300 px-2.5 py-1 text-right">Winning Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry, idx) => (
-                <tr key={entry.id || `${entry.transactionId}-${entry.betNo}-${idx}`} className="odd:bg-white even:bg-slate-50/70">
-                  <td className="border border-slate-300 px-2.5 py-1 text-center font-mono font-bold text-slate-500">
-                    {idx + 1}
-                  </td>
-                  <td className="border border-slate-300 px-2.5 py-1 font-mono font-bold text-[#002B66]">
-                    {entry.transactionId || fallbackTid}
-                  </td>
-                  <td className="border border-slate-300 px-2.5 py-1 font-mono font-bold text-slate-900">
-                    {entry.betNo}
-                    {entry.betCode ? <span className="text-slate-500 font-normal ml-1">({entry.betCode})</span> : null}
-                  </td>
-                  <td className="border border-slate-300 px-2.5 py-1 font-mono text-slate-700">
-                    {formatTransactionDate ? formatTransactionDate(entry.drawDate || entry.drawTime) : (entry.drawDate || entry.drawTime || emptyFallback)}
-                    {entry.drawTime && entry.drawDate && entry.drawTime !== entry.drawDate ? ` • ${entry.drawTime}` : ''}
-                  </td>
-                  <td className="border border-slate-300 px-2.5 py-1 text-right font-mono font-bold text-emerald-700">
-                    PHP {getTicketWinAmount(entry).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-emerald-50/80 font-extrabold text-slate-800">
-                <td colSpan={4} className="border border-slate-300 px-2.5 py-1 text-right uppercase text-[10px] tracking-wider">
-                  Total Winning Amount
-                </td>
-                <td className="border border-slate-300 px-2.5 py-1 text-right font-mono text-emerald-800">
-                  PHP {resolvedTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
