@@ -54,6 +54,10 @@ export default function ReturnedWinnings({
   const [isProcessingAdminAction, setIsProcessingAdminAction] = useState(false);
   const [togglingDepositedId, setTogglingDepositedId] = useState(null);
 
+  // Unclaimed Specialist Final Validation State
+  const [validatingSpecialistItem, setValidatingSpecialistItem] = useState(null);
+  const [isProcessingSpecialistAction, setIsProcessingSpecialistAction] = useState(false);
+
 
 
   // Admin / Staff Approval Permission (SSR can request, Staff/Admin can approve)
@@ -468,6 +472,67 @@ export default function ReturnedWinnings({
     }
   };
 
+  // Unclaimed Specialist Final Validation execution
+  const executeSpecialistFinalValidate = async () => {
+    if (!validatingSpecialistItem) return;
+    const transId = validatingSpecialistItem.computedTransId || validatingSpecialistItem.transactionId || validatingSpecialistItem.transId || 'N/A';
+    const validatorName = currentUser?.full_name || currentUser?.username || 'Unclaimed Specialist';
+    const validatorRole = currentUser?.role || 'Unclaimed Specialist';
+
+    setIsProcessingSpecialistAction(true);
+    try {
+      const existingApprover = validatingSpecialistItem.unclaimed_approved_by || validatingSpecialistItem.hr_valid_email || 'HR Verified';
+      const updatedApproverText = `${existingApprover} | Final Validated by: ${validatorName}`;
+      const issueText = `Final validation completed by ${validatorName} (${validatorRole}) on ${new Date().toLocaleDateString('en-US')}`;
+
+      // Update in returned_winnings (covers all sibling bets sharing this physical ticket transId)
+      const q = validatingSpecialistItem.transactionId
+        ? supabase.from('returned_winnings').update({
+            unclaimed_approval_status: 'FINAL_APPROVED',
+            unclaimed_approved_by: updatedApproverText,
+            unclaimed_approval_issue: issueText
+          }).eq('transactionId', validatingSpecialistItem.transactionId)
+        : supabase.from('returned_winnings').update({
+            unclaimed_approval_status: 'FINAL_APPROVED',
+            unclaimed_approved_by: updatedApproverText,
+            unclaimed_approval_issue: issueText
+          }).eq('id', validatingSpecialistItem.id);
+
+      const { error: updErr } = await q;
+      if (updErr) throw updErr;
+
+      // Log into audit_logs table
+      try {
+        await supabase.from('audit_logs').insert([{
+          actor_username: validatorName,
+          actor_role: validatorRole,
+          action: 'UNCLAIMED_SPECIALIST_FINAL_VALIDATION',
+          target_type: 'returned_winnings',
+          target_id: transId,
+          sub_office: validatingSpecialistItem.sub_office || 'All',
+          details: {
+            teller_status: validatingSpecialistItem.teller_status,
+            hr_approved_by: validatingSpecialistItem.unclaimed_approved_by,
+            hr_email: validatingSpecialistItem.hr_valid_email,
+            validated_by: validatorName,
+            notes: issueText
+          }
+        }]);
+      } catch (logErr) {
+        console.warn('Audit log insert warning (non-fatal):', logErr);
+      }
+
+      showToast(`Teller status for ticket ${transId} has been successfully validated by ${validatorName}!`);
+      setValidatingSpecialistItem(null);
+      if (onDataUpdated) onDataUpdated();
+    } catch (err) {
+      console.error('Specialist final validation failed:', err);
+      alert(`Failed to complete final validation: ${err.message}`);
+    } finally {
+      setIsProcessingSpecialistAction(false);
+    }
+  };
+
 
   const exportToCSV = () => {
     if (!displayItems.length) return alert("No records available to export.");
@@ -798,8 +863,12 @@ export default function ReturnedWinnings({
                                   <Clock size={10} className="text-amber-700" /> PENDING HR ({item.teller_status})
                                 </span>
                               ) : item.unclaimed_approval_status === 'APPROVED' ? (
-                                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded-full uppercase" title={`Approved by HR: ${item.unclaimed_approved_by || 'HR Officer'}`}>
-                                  <CheckCircle2 size={10} className="text-emerald-700" /> HR APPROVED ({item.teller_status})
+                                <span className="inline-flex items-center gap-1 bg-blue-100 text-[#002B66] border border-blue-300 font-bold text-[10px] px-2 py-0.5 rounded-full uppercase" title={`Approved by HR: ${item.unclaimed_approved_by || 'HR Officer'} • Awaiting Specialist Final Validation`}>
+                                  <UserCheck size={10} className="text-blue-700" /> HR APPROVED ({item.teller_status})
+                                </span>
+                              ) : item.unclaimed_approval_status === 'FINAL_APPROVED' || item.unclaimed_approval_status === 'VALIDATED' ? (
+                                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded-full uppercase" title={`Final Validated: ${item.unclaimed_approved_by || 'Unclaimed Specialist'}`}>
+                                  <CheckCircle2 size={10} className="text-emerald-700" /> VALIDATED ({item.teller_status})
                                 </span>
                               ) : item.unclaimed_approval_status === 'REJECTED' ? (
                                 <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 font-bold text-[10px] px-2 py-0.5 rounded-full uppercase" title={`Rejected by HR: ${item.unclaimed_approved_by || 'HR Officer'}`}>
@@ -866,8 +935,25 @@ export default function ReturnedWinnings({
                                     ) : isDeletionPending ? null : (
                                       <>
                                         {item.unclaimed_approval_status === 'APPROVED' && (
-                                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold" title={`Approved by: ${item.unclaimed_approved_by || 'HR Officer'}`}>
-                                            <CheckCircle2 size={11} className="text-emerald-600" /> Approved by HR
+                                          canApprove ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => setValidatingSpecialistItem({ ...item, computedTransId: transId })}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-all cursor-pointer shadow-xs active:scale-95"
+                                              title="Complete final validation for this HR-approved teller status"
+                                            >
+                                              <CheckCircle2 size={11} className="stroke-[2.5]" />
+                                              <span>Final Validate</span>
+                                            </button>
+                                          ) : (
+                                            <span className="text-[10px] text-blue-700 font-bold italic" title={`Approved by HR: ${item.unclaimed_approved_by || 'HR Officer'}`}>
+                                              Awaiting Specialist
+                                            </span>
+                                          )
+                                        )}
+                                        {(item.unclaimed_approval_status === 'FINAL_APPROVED' || item.unclaimed_approval_status === 'VALIDATED') && (
+                                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold" title={`Final Validated: ${item.unclaimed_approved_by || 'Unclaimed Specialist'}`}>
+                                            <CheckCircle2 size={11} className="text-emerald-600" /> Fully Validated
                                           </span>
                                         )}
                                         {item.unclaimed_approval_status === 'REJECTED' && (
@@ -1033,8 +1119,12 @@ export default function ReturnedWinnings({
                                 <Clock size={9} className="text-amber-700" /> PENDING HR ({item.teller_status})
                               </span>
                             ) : item.unclaimed_approval_status === 'APPROVED' ? (
-                              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300 uppercase" title={`Approved by HR: ${item.unclaimed_approved_by || 'HR Officer'}`}>
-                                <CheckCircle2 size={9} className="text-emerald-700" /> HR APPROVED ({item.teller_status})
+                              <span className="inline-flex items-center gap-1 bg-blue-100 text-[#002B66] font-bold text-[9px] px-2 py-0.5 rounded-full border border-blue-300 uppercase" title={`Approved by HR: ${item.unclaimed_approved_by || 'HR Officer'} • Awaiting Specialist Final Validation`}>
+                                <UserCheck size={9} className="text-blue-700" /> HR APPROVED ({item.teller_status})
+                              </span>
+                            ) : item.unclaimed_approval_status === 'FINAL_APPROVED' || item.unclaimed_approval_status === 'VALIDATED' ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-emerald-300 uppercase" title={`Final Validated: ${item.unclaimed_approved_by || 'Unclaimed Specialist'}`}>
+                                <CheckCircle2 size={9} className="text-emerald-700" /> VALIDATED ({item.teller_status})
                               </span>
                             ) : item.unclaimed_approval_status === 'REJECTED' ? (
                               <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-bold text-[9px] px-2 py-0.5 rounded-full border border-rose-300 uppercase" title={`Rejected by HR: ${item.unclaimed_approved_by || 'HR Officer'}`}>
@@ -1102,8 +1192,25 @@ export default function ReturnedWinnings({
                               ) : isDeletionPending ? null : (
                                 <>
                                   {item.unclaimed_approval_status === 'APPROVED' && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
-                                      <CheckCircle2 size={11} className="text-emerald-600" /> Approved by HR
+                                    canApprove ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setValidatingSpecialistItem({ ...item, computedTransId: transId })}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
+                                        title="Complete final validation for this HR-approved teller status"
+                                      >
+                                        <CheckCircle2 size={11} className="stroke-[2.5]" />
+                                        <span>Final Validate</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] text-blue-700 font-bold italic">
+                                        Awaiting Specialist
+                                      </span>
+                                    )
+                                  )}
+                                  {(item.unclaimed_approval_status === 'FINAL_APPROVED' || item.unclaimed_approval_status === 'VALIDATED') && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-bold" title={`Final Validated: ${item.unclaimed_approved_by || 'Unclaimed Specialist'}`}>
+                                      <CheckCircle2 size={11} className="text-emerald-600" /> Fully Validated
                                     </span>
                                   )}
                                   {item.unclaimed_approval_status === 'REJECTED' && (
@@ -1304,6 +1411,93 @@ export default function ReturnedWinnings({
               <button onClick={confirmAndDelete} disabled={isDeleting} className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black cursor-pointer uppercase text-[11px] flex items-center gap-1.5 disabled:opacity-50">
                 <Trash2 size={13} />
                 <span>{isDeleting ? 'Deleting...' : 'Delete Record'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UNCLAIMED SPECIALIST FINAL VALIDATION CONFIRMATION MODAL */}
+      {validatingSpecialistItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-300 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-xs animate-in zoom-in-95 duration-150">
+            {/* Header with Navy & Gold Accent */}
+            <div className="bg-[#002B66] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#FFD700] shrink-0">
+              <div className="flex items-center gap-2.5 font-black uppercase tracking-wider text-xs sm:text-sm">
+                <div className="bg-[#FFD700] text-[#002B66] p-1.5 rounded-lg font-black shadow-xs">
+                  <ShieldCheck size={16} />
+                </div>
+                <span>Final Teller Validation</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValidatingSpecialistItem(null)}
+                disabled={isProcessingSpecialistAction}
+                className="text-slate-300 hover:text-white cursor-pointer p-1 rounded-md hover:bg-white/10 transition-colors"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-3.5">
+              <p className="text-slate-700 font-medium leading-relaxed">
+                As an <strong>Unclaimed Specialist</strong>, please confirm the final validation for transaction <strong className="font-mono text-[#002B66] font-bold">{validatingSpecialistItem.computedTransId || validatingSpecialistItem.transactionId}</strong>. This record has already been approved by HR.
+              </p>
+
+              {/* Summary Card */}
+              <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3.5 space-y-2 text-xs font-mono shadow-2xs">
+                <div className="flex justify-between items-center pb-1.5 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Trans. ID:</span>
+                  <span className="font-bold text-[#002B66]">{validatingSpecialistItem.computedTransId || validatingSpecialistItem.transactionId}</span>
+                </div>
+                <div className="flex justify-between items-center pb-1.5 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Teller / Outlet:</span>
+                  <span className="font-bold text-slate-800 truncate max-w-[200px]">{validatingSpecialistItem.fullName || validatingSpecialistItem.outlet || validatingSpecialistItem.username || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center pb-1.5 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Teller Status:</span>
+                  <span className="font-black text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded text-[10px] uppercase">
+                    {validatingSpecialistItem.teller_status || 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pb-1.5 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">HR Approved By:</span>
+                  <span className="font-bold text-emerald-800 truncate max-w-[200px]" title={validatingSpecialistItem.unclaimed_approved_by}>
+                    {validatingSpecialistItem.unclaimed_approved_by || validatingSpecialistItem.hr_valid_email || 'HR Verified'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-0.5">
+                  <span className="text-slate-500 font-sans font-bold text-[10px] uppercase">Final Validator:</span>
+                  <span className="font-bold text-[#002B66]">
+                    {currentUser?.full_name || currentUser?.username || 'Unclaimed Specialist'}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-500 italic leading-relaxed">
+                Completing final validation will release this ticket from inactive quarantine and mark it fully validated in the audit ledger.
+              </p>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="bg-slate-50/90 px-5 py-3.5 border-t border-slate-200 flex justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setValidatingSpecialistItem(null)}
+                disabled={isProcessingSpecialistAction}
+                className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-black px-5 py-2.5 rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeSpecialistFinalValidate}
+                disabled={isProcessingSpecialistAction}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-6 py-2.5 rounded-lg text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer hover:shadow-lg"
+              >
+                {isProcessingSpecialistAction ? <Loader2 size={14} className="animate-spin text-white" /> : <Check size={14} className="text-white" />}
+                <span>Confirm Final Validation</span>
               </button>
             </div>
           </div>

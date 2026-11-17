@@ -370,6 +370,15 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
 
   // Helper to identify inactive/separated teller records (AWOL, Pull-out, Terminated)
   const isInactiveTeller = (item) => {
+    const approvalStatus = String(
+      item.unclaimed_approval_status ||
+      item.unclaimedApprovalStatus ||
+      item.raw_data?.unclaimed_approval_status ||
+      ''
+    ).toUpperCase().trim();
+    if (approvalStatus === 'FINAL_APPROVED' || approvalStatus === 'VALIDATED') {
+      return false;
+    }
     const ts = String(
       item.teller_status ||
       item.tellerStatus ||
@@ -385,7 +394,7 @@ export default function SettlementAgreement({ filteredData = [], onSaveAgreement
       ts === 'PULLOUTS' ||
       ts === 'TERMINATED' ||
       ts === 'APPROVE TELLER STATUS' ||
-      item.unclaimed_approval_status === 'PENDING'
+      approvalStatus === 'PENDING'
     );
   };
 

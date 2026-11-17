@@ -158,9 +158,9 @@ export default function ConfirmReturnModal({
                   {
                     value: 'APPROVE TELLER STATUS',
                     label: 'APPROVE TELLER STATUS',
-                    subLabel: 'Requires Admin/HR Status Approval',
+                    subLabel: 'Requires HR Email Approval',
                     color: 'amber',
-                    badge: 'Requires Approval'
+                    badge: 'Requires HR'
                   },
                   {
                     value: 'PULL-OUT',
@@ -187,8 +187,8 @@ export default function ConfirmReturnModal({
               />
             </div>
 
-            {/* HR Valid Email Input for Inactive / AWOL Statuses */}
-            {(tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED') && (
+            {/* HR Valid Email Input for Inactive / AWOL / Approve Teller Statuses */}
+            {(tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED' || tellerStatus === 'APPROVE TELLER STATUS') && (
               <div className="bg-amber-50/90 border border-amber-300/90 rounded-xl p-3 space-y-1.5 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black text-amber-900 uppercase tracking-wider">
@@ -207,7 +207,7 @@ export default function ConfirmReturnModal({
                   required
                 />
                 <p className="text-[9px] text-amber-800 leading-tight font-medium">
-                  An official approval link will be emailed to HR to directly approve this teller status. Unclaimed specialists cannot approve this record.
+                  An official approval link will be emailed to HR to validate this teller status, followed by final validation by the Unclaimed Specialist.
                 </p>
               </div>
             )}
@@ -395,7 +395,7 @@ export default function ConfirmReturnModal({
                   <button
                     type="button"
                     onClick={() => {
-                      if (tellerStatus === 'AWOL' || tellerStatus === 'PULL-OUT' || tellerStatus === 'TERMINATED') {
+                      if (tellerStatus === 'AWOL' || tellerStatus === 'PULL-OUT' || tellerStatus === 'TERMINATED' || tellerStatus === 'APPROVE TELLER STATUS') {
                         if (!hrValidEmail.trim()) {
                           alert("Please provide a valid HR email address to proceed with this status.");
                           return;

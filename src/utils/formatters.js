@@ -126,6 +126,19 @@ export const generateRemittanceSerial = (subOfficeName = 'Mandaue Central', seed
  */
 export const isInactiveTellerRecord = (item) => {
   if (!item) return false;
+  const approvalStatus = String(
+    item.unclaimed_approval_status ||
+    item.unclaimedApprovalStatus ||
+    item.raw_data?.unclaimed_approval_status ||
+    item.raw_data?.unclaimedApprovalStatus ||
+    ''
+  ).toUpperCase().trim();
+
+  // If already final approved / validated by Unclaimed Specialist, it is no longer inactive
+  if (approvalStatus === 'FINAL_APPROVED' || approvalStatus === 'VALIDATED') {
+    return false;
+  }
+
   const ts = String(
     item.teller_status ||
     item.tellerStatus ||
@@ -141,8 +154,7 @@ export const isInactiveTellerRecord = (item) => {
     ts === 'PULLOUT' ||
     ts === 'PULLOUTS' ||
     ts === 'APPROVE TELLER STATUS' ||
-    item.unclaimed_approval_status === 'PENDING' ||
-    item.raw_data?.unclaimed_approval_status === 'PENDING'
+    approvalStatus === 'PENDING'
   );
 };
 

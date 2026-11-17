@@ -1596,7 +1596,7 @@ export default function App() {
     // Support legacy string or new object format
     const tellerStatus = typeof payloadObj === 'object' ? payloadObj.tellerStatus : (payloadObj || 'ACTIVE');
     const hrValidEmail = typeof payloadObj === 'object' ? payloadObj.hrValidEmail : null;
-    const isInactiveStatus = tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED';
+    const isInactiveStatus = tellerStatus === 'PULL-OUT' || tellerStatus === 'AWOL' || tellerStatus === 'TERMINATED' || tellerStatus === 'APPROVE TELLER STATUS';
     const isApprovalRequired = isInactiveStatus || tellerStatus === 'APPROVE TELLER STATUS' || tellerStatus === 'FOR_APPROVAL';
 
     const winAmt = parseFloat(selectedTicket.winAmount ?? 0);
